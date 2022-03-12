@@ -1,0 +1,103 @@
+name: Continuous integration
+
+on: [pull_request]
+
+env:
+    CARGO_TERM_COLOR: always
+
+jobs:
+  check:
+    name: Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v2
+      
+      - name: Install Stable Toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          override: true
+
+      - name: Check IDE
+        working-directory: ./ide
+        run: cargo check --verbose
+
+      - name: Check Engine
+        working-directory: ./game_engine
+        run: cargo check --verbose
+
+  test:
+    name: Test Suite
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v2
+      
+      - name: Install Stable Toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          override: true
+
+      - name: Test IDE
+        working-directory: ./ide
+        run: cargo test --verbose
+
+      - name: Test Engine 
+        working-directory: ./game_engine
+        run: cargo test --verbose
+
+  build:
+      name: Build
+      runs-on: ubuntu-latest
+      steps:
+        - name: Checkout sources
+          uses: actions/checkout@v2
+
+        - name: Install Stable Toolchain
+          uses: actions-rs/toolchain@v1
+          with: 
+            profile: minimal
+            toolchain: stable
+            override: true
+
+        - name: Build IDE
+        working-directory: ./ide
+        run: cargo build --verbose 
+
+      - name: Build Engine 
+        working-directory: ./game_engine
+        run: cargo build --verbose
+
+  clippy:
+    name: Clippy
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v2
+      
+      - name: Install Stable Toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          override: true
+        
+      - name: Clippy IDE
+        working-directory: ./ide
+        run: | 
+          rustup component add clippy
+          cargo clippy
+        # cargo clippy -- -D warnings # This line will interpet Warnings as errors
+
+      - name: Clippy Engine
+        working-directory: ./game_engine
+        run: |
+          rustup component add clippy
+          cargo clippy
+        # cargo clippy -- -D warnings # This line will interpet Warnings as errors
+
+
