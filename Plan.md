@@ -1,4 +1,4 @@
-
+# Project Plan (Svenska)
 ## Mål
 ### Spelmotor
 - Basic 3D Pipeline
@@ -32,23 +32,24 @@
 - Vincent (Fysik)
 - Mathias (ECS)
 - Theodor
-## IDE
+### IDE
 - Lukas
 - Daniel
-Projektledning?
-Olle J (Kan tänka sig)
-Mathias (Kan offra sig om Olle dör, men Olle är Vaccinerad)
-Workflow/CI CD?
-Olle J
-Lukas
-Scriptingspråk
-Mathias
+### Projektledning?
+- Olle J (Kan tänka sig)
+- Mathias (Kan offra sig om Olle dör, men Olle är Vaccinerad)
+### Workflow/CI CD?
+- Olle J
+- Lukas
+### Scriptingspråk
+- Mathias
 
-Tekniker
-Spelmotor
-Rust
-Vulkan, Ash (rätta gärna)
-IDE
-https://github.com/emilk/egui
+## Tekniker
+### Spelmotor
+- Rust (Stable)
+- Vulkan, Ash 
+### IDE
+- Rust (Stable)
+- [egui](https://github.com/emilk/egui)
 
 
