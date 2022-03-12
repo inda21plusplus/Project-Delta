@@ -51,22 +51,22 @@ jobs:
         run: cargo test --verbose
 
   build:
-      name: Build
-      runs-on: ubuntu-latest
-      steps:
-        - name: Checkout sources
-          uses: actions/checkout@v2
+    name: Build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v2
 
-        - name: Install Stable Toolchain
-          uses: actions-rs/toolchain@v1
-          with: 
-            profile: minimal
-            toolchain: stable
-            override: true
+      - name: Install Stable Toolchain
+        uses: actions-rs/toolchain@v1
+        with: 
+          profile: minimal
+          toolchain: stable
+          override: true
 
-        - name: Build IDE
-        working-directory: ./ide
-        run: cargo build --verbose 
+      - name: Build IDE
+      working-directory: ./ide
+      run: cargo build --verbose 
 
       - name: Build Engine 
         working-directory: ./game_engine
