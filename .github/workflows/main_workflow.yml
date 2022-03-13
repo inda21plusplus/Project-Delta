@@ -3,7 +3,7 @@ name: Continuous integration
 on: [pull_request]
 
 env:
-    CARGO_TERM_COLOR: always
+  CARGO_TERM_COLOR: always
 
 jobs:
   check:
@@ -12,7 +12,7 @@ jobs:
     steps:
       - name: Checkout sources
         uses: actions/checkout@v2
-      
+
       - name: Install Stable Toolchain
         uses: actions-rs/toolchain@v1
         with:
@@ -25,7 +25,7 @@ jobs:
         run: cargo check --verbose
 
       - name: Check Engine
-        working-directory: ./game_engine
+        working-directory: ./game-engine
         run: cargo check --verbose
 
   build:
@@ -34,7 +34,7 @@ jobs:
     steps:
       - name: Checkout sources
         uses: actions/checkout@v2
-      
+
       - name: Install Stable Toolchain
         uses: actions-rs/toolchain@v1
         with:
@@ -46,8 +46,8 @@ jobs:
         working-directory: ./ide
         run: cargo build --verbose
 
-      - name: Build Engine 
-        working-directory: ./game_engine
+      - name: Build Engine
+        working-directory: ./game-engine
         run: cargo build --verbose
 
   test:
@@ -56,7 +56,7 @@ jobs:
     steps:
       - name: Checkout sources
         uses: actions/checkout@v2
-      
+
       - name: Install Stable Toolchain
         uses: actions-rs/toolchain@v1
         with:
@@ -68,8 +68,8 @@ jobs:
         working-directory: ./ide
         run: cargo test --verbose
 
-      - name: Test Engine 
-        working-directory: ./game_engine
+      - name: Test Engine
+        working-directory: ./game-engine
         run: cargo test --verbose
 
   clippy:
@@ -78,23 +78,23 @@ jobs:
     steps:
       - name: Checkout sources
         uses: actions/checkout@v2
-      
+
       - name: Install Stable Toolchain
         uses: actions-rs/toolchain@v1
         with:
           profile: minimal
           toolchain: stable
           override: true
-        
+
       - name: Clippy IDE
         working-directory: ./ide
-        run: | 
+        run: |
           rustup component add clippy
           cargo clippy
         # cargo clippy -- -D warnings # This line will interpet Warnings as errors
 
       - name: Clippy Engine
-        working-directory: ./game_engine
+        working-directory: ./game-engine
         run: |
           rustup component add clippy
           cargo clippy
