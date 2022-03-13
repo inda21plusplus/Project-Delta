@@ -56,17 +56,17 @@ jobs:
     steps:
       - name: Checkout sources
         uses: actions/checkout@v2
-
+      
       - name: Install Stable Toolchain
         uses: actions-rs/toolchain@v1
-        with: 
+        with:
           profile: minimal
           toolchain: stable
           override: true
 
       - name: Build IDE
-      working-directory: ./ide
-      run: cargo build --verbose 
+        working-directory: ./ide
+        run: cargo build --verbose
 
       - name: Build Engine 
         working-directory: ./game_engine
