@@ -11,7 +11,7 @@ fn main() {
     let window = WindowBuilder::new().build(&event_loop).unwrap();
     let size = window.inner_size();
 
-    let context = Context::new(&window, (size.width, size.height));
+    let mut context = Context::new(&window, (size.width, size.height));
 
     event_loop.run(move |event, _, control_flow| {
         *control_flow = ControlFlow::Wait;
@@ -21,7 +21,7 @@ fn main() {
                 event: WindowEvent::CloseRequested,
                 window_id,
             } if window_id == window.id() => *control_flow = ControlFlow::Exit,
-            Event::RedrawRequested(_) => {}
+            Event::RedrawRequested(_) => context.renderer.render().expect("lol"),
             _ => (),
         }
     });
