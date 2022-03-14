@@ -1,10 +1,12 @@
 mod component_registry;
+mod entity;
 
 pub use component_registry::ComponentRegistry;
+pub use entity::{Entities, Entity};
 
 #[cfg(test)]
 mod tests {
-    use std::mem::size_of;
+    use std::{collections::HashSet, mem::size_of};
 
     use super::*;
 
@@ -28,5 +30,53 @@ mod tests {
         assert_eq!(Some(a_id), reg.id::<A>());
         assert_eq!(Some(b_id), reg.id::<B>());
         assert_eq!(None, reg.id::<C>());
+    }
+
+    #[test]
+    fn entities() {
+        let mut entities = Entities::default();
+        let a = entities.spawn();
+        assert!(entities.exists(a));
+        assert!(entities.delete(a));
+
+        let b = entities.spawn();
+        assert!(entities.exists(b));
+        assert!(!entities.exists(a));
+        assert_ne!(a, b);
+
+        let c = entities.spawn();
+        let d = entities.spawn();
+        assert!(!entities.exists(a));
+        assert!(entities.exists(b));
+        assert!(entities.exists(c));
+        assert!(entities.exists(d));
+
+        assert!(entities.delete(c));
+
+        assert!(!entities.exists(a));
+        assert!(entities.exists(b));
+        assert!(!entities.exists(c));
+        assert!(entities.exists(d));
+
+        let e = entities.spawn();
+
+        assert!(!entities.exists(a));
+        assert!(entities.exists(b));
+        assert!(!entities.exists(c));
+        assert!(entities.exists(d));
+        assert!(entities.exists(e));
+
+        assert_eq!(
+            [b, d, e].into_iter().collect::<HashSet<Entity>>(),
+            entities.iter().collect::<HashSet<Entity>>()
+        );
+
+        let arr = [a, b, c, d, e];
+        let iter = arr.iter().enumerate();
+        for (i, x) in iter.clone() {
+            for (j, y) in iter.clone() {
+                assert!((x == y) == (i == j));
+            }
+        }
     }
 }
