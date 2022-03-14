@@ -3,8 +3,17 @@
 version = 3
 
 [[package]]
+name = "dense_bitset"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1d15f1502ab53843a74b1ab2f4bd66761b6f717fe40d12ba0e3f87a733006498"
+
+[[package]]
 name = "ecs"
 version = "0.1.0"
+dependencies = [
+ "dense_bitset",
+]
 
 [[package]]
 name = "game-engine"

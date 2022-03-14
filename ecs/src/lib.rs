@@ -1,12 +1,15 @@
-mod component_registry;
+pub mod component;
 mod entity;
+mod world;
 
-pub use component_registry::ComponentRegistry;
 pub use entity::{Entities, Entity};
+pub use world::World;
 
 #[cfg(test)]
 mod tests {
-    use std::{collections::HashSet, mem::size_of};
+    use std::{any, collections::HashSet};
+
+    use crate::component::ComponentRegistry;
 
     use super::*;
 
@@ -20,8 +23,8 @@ mod tests {
         let a_id = reg.register::<A>();
         let b_id = reg.register::<B>();
 
-        assert_eq!(size_of::<A>(), reg[a_id].layout().size());
-        assert_eq!(size_of::<B>(), reg[b_id].layout().size());
+        assert_eq!(any::type_name::<A>(), reg[a_id].name());
+        assert_eq!(any::type_name::<B>(), reg[b_id].name());
 
         assert_eq!(Some(&reg[a_id]), reg.info::<A>());
         assert_eq!(Some(&reg[b_id]), reg.info::<B>());

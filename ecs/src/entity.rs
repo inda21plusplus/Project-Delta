@@ -5,7 +5,7 @@ type Generation = u32;
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
 pub struct Entity {
-    id: EntityId,
+    pub(crate) id: EntityId,
     gen: Generation,
 }
 

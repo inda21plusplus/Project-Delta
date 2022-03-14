@@ -5,29 +5,26 @@ use std::{
     ops,
 };
 
+use super::Storage;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ComponentId(u16);
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct ComponentInfo {
     name: String,
-    layout: Layout,
 }
 
 impl ComponentInfo {
     pub fn name(&self) -> &str {
         self.name.as_ref()
     }
-
-    pub fn layout(&self) -> Layout {
-        self.layout
-    }
 }
 
 #[derive(Debug, Default)]
 pub struct ComponentRegistry {
     // Indexed by ComponentId's
-    components: Vec<ComponentInfo>,
+    components: Vec<(ComponentInfo, Storage)>,
     rust_types: HashMap<TypeId, ComponentId>,
 }
 
@@ -40,9 +37,9 @@ impl ComponentRegistry {
         let id = ComponentId(id.try_into().unwrap());
         let info = ComponentInfo {
             name: any::type_name::<T>().to_string(),
-            layout: Layout::new::<T>(),
         };
-        self.components.push(info);
+        let storage = Storage::new::<T>();
+        self.components.push((info, storage));
         self.rust_types.insert(TypeId::of::<T>(), id);
         id
     }
@@ -66,6 +63,6 @@ impl ops::Index<ComponentId> for ComponentRegistry {
     type Output = ComponentInfo;
 
     fn index(&self, index: ComponentId) -> &Self::Output {
-        &self.components[index.0 as usize]
+        &self.components[index.0 as usize].0
     }
 }
