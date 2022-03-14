@@ -33,20 +33,20 @@ pub fn opengl_to_wgpu_matrix() -> Mat4<f32> {
 
 const NUM_INSTANCES_PER_ROW: u32 = 10;
 
-struct Camera {
-    eye: Vec3<f32>,
-    target: Vec3<f32>,
-    up: Vec3<f32>,
-    aspect: f32,
-    fovy: f32,
-    znear: f32,
-    zfar: f32,
+pub struct Camera {
+    pub eye: Vec3<f32>,
+    pub target: Vec3<f32>,
+    pub up: Vec3<f32>,
+    pub aspect: f32,
+    pub fovy: f32,
+    pub znear: f32,
+    pub zfar: f32,
 }
 
 impl Camera {
     fn build_view_projection_matrix(&self) -> Mat4<f32> {
         let view = Mat4::look_at_rh(self.eye, self.target, self.up);
-        let proj = Mat4::perspective_fov_rh_zo(self.fovy, 2.0, 2.0, self.znear, self.zfar);
+        let proj = Mat4::perspective_fov_rh_zo(self.fovy, 1.6, 0.9, self.znear, self.zfar);
         proj * view
     }
 }
@@ -71,57 +71,6 @@ impl CameraUniform {
     }
 }
 
-struct CameraController {
-    speed: f32,
-    is_forward_pressed: bool,
-    is_backward_pressed: bool,
-    is_left_pressed: bool,
-    is_right_pressed: bool,
-}
-
-impl CameraController {
-    fn new(speed: f32) -> Self {
-        Self {
-            speed,
-            is_forward_pressed: false,
-            is_backward_pressed: false,
-            is_left_pressed: false,
-            is_right_pressed: false,
-        }
-    }
-
-    fn update_camera(&self, camera: &mut Camera) {
-        let forward = camera.target - camera.eye;
-        let forward_norm = forward.normalized();
-        let forward_mag = forward.magnitude();
-
-        // Prevents glitching when camera gets too close to the
-        // center of the scene.
-        if self.is_forward_pressed && forward_mag > self.speed {
-            camera.eye += forward_norm * self.speed;
-        }
-        if self.is_backward_pressed {
-            camera.eye -= forward_norm * self.speed;
-        }
-
-        let right = forward_norm.cross(camera.up);
-
-        // Redo radius calc in case the up/ down is pressed.
-        let forward = camera.target - camera.eye;
-        let forward_mag = forward.magnitude();
-
-        if self.is_right_pressed {
-            // Rescale the distance between the target and eye so
-            // that it doesn't change. The eye therefore still
-            // lies on the circle made by the target and eye.
-            camera.eye = camera.target - (forward + right * self.speed).normalized() * forward_mag;
-        }
-        if self.is_left_pressed {
-            camera.eye = camera.target - (forward - right * self.speed).normalized() * forward_mag;
-        }
-    }
-}
-
 #[derive(Copy, Clone, Debug)]
 pub struct Instance {
     pub position: Vec3<f32>,
@@ -134,26 +83,24 @@ impl Instance {
         InstanceRaw {
             model: unsafe {
                 mem::transmute::<Mat4<f32>, _>(
-                    Mat4::<f32>::translation_3d(self.position)
-                        * Mat4::from(self.rotation)
-                        * Mat4::new(
-                            self.scale.x,
-                            0.0,
-                            0.0,
-                            0.0,
-                            0.0,
-                            self.scale.y,
-                            0.0,
-                            0.0,
-                            0.0,
-                            0.0,
-                            self.scale.z,
-                            0.0,
-                            0.0,
-                            0.0,
-                            0.0,
-                            1.0,
-                        ),
+                    Mat4::<f32>::translation_3d(self.position)* Mat4::from(self.rotation) * Mat4::new(
+                        self.scale.x,
+                        0.0,
+                        0.0,
+                        0.0,
+                        0.0,
+                        self.scale.y,
+                        0.0,
+                        0.0,
+                        0.0,
+                        0.0,
+                        self.scale.z,
+                        0.0,
+                        0.0,
+                        0.0,
+                        0.0,
+                        1.0,
+                    )   
                 )
             },
         }
@@ -221,8 +168,7 @@ pub struct Renderer {
     render_pipeline: wgpu::RenderPipeline,
     models: Vec<model::Model>,
     texture_bind_group_layout: wgpu::BindGroupLayout,
-    camera: Camera,
-    camera_controller: CameraController,
+    pub camera: Camera,
     camera_uniform: CameraUniform,
     camera_buffer: wgpu::Buffer,
     camera_bind_group: wgpu::BindGroup,
@@ -303,7 +249,6 @@ impl Renderer {
             znear: 0.1,
             zfar: 100.0,
         };
-        let camera_controller = CameraController::new(0.2);
 
         let mut camera_uniform = CameraUniform::new();
         camera_uniform.update_view_proj(&camera);
@@ -412,7 +357,6 @@ impl Renderer {
             models: std::vec::Vec::new(),
             texture_bind_group_layout,
             camera,
-            camera_controller,
             camera_buffer,
             camera_bind_group,
             camera_uniform,
@@ -423,7 +367,7 @@ impl Renderer {
         }
     }
 
-    fn resize(&mut self, new_size: PhysicalSize) {
+    pub fn resize(&mut self, new_size: PhysicalSize) {
         if new_size.width > 0 && new_size.height > 0 {
             self.camera.aspect = self.config.width as f32 / self.config.height as f32;
             self.size = new_size;
@@ -458,7 +402,16 @@ impl Renderer {
         Ok(idx)
     }
 
-    pub fn update(&mut self, instances: &[(ModelIndex, &[Instance])]) {
+    pub fn update_camera(&mut self) {
+        self.camera_uniform.update_view_proj(&self.camera);
+        self.queue.write_buffer(
+            &self.camera_buffer,
+            0,
+            bytemuck::cast_slice(&[self.camera_uniform]),
+        );
+    }
+
+    pub fn update_instances(&mut self, instances: &[(ModelIndex, &[Instance])]) {
         for (idx, data) in instances {
             let raw_data = data.iter().map(Instance::to_raw).collect::<Vec<_>>();
             self.queue.write_buffer(
@@ -468,14 +421,6 @@ impl Renderer {
             );
             self.instances[*idx] = Vec::from(*data);
         }
-
-        self.camera_controller.update_camera(&mut self.camera);
-        self.camera_uniform.update_view_proj(&self.camera);
-        self.queue.write_buffer(
-            &self.camera_buffer,
-            0,
-            bytemuck::cast_slice(&[self.camera_uniform]),
-        );
     }
 
     pub fn render(&mut self, clear_color: [f64; 4]) -> Result<(), wgpu::SurfaceError> {
