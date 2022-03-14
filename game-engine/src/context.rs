@@ -2,7 +2,7 @@ use crate::renderer::Renderer;
 use raw_window_handle::HasRawWindowHandle;
 
 pub struct Context {
-    renderer: Renderer,
+    pub renderer: Renderer,
 }
 
 impl Context {
