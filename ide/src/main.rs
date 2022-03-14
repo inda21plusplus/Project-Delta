@@ -22,7 +22,8 @@ fn main() {
 
     let mut context = Context::new(&window, (size.width, size.height));
     let model = context.renderer.load_model("./res/Cube.obj").unwrap();
-
+	let model_pawn = context.renderer.load_model("./res/ball.obj").unwrap();
+	
     let instances = (0..NUM_INSTANCES_PER_ROW)
         .flat_map(|z| {
             (0..NUM_INSTANCES_PER_ROW).map(move |x| {
@@ -45,7 +46,7 @@ fn main() {
             })
         })
         .collect::<Vec<_>>();
-
+		
     event_loop.run(move |event, _, control_flow| {
         *control_flow = ControlFlow::Wait;
 
@@ -55,8 +56,8 @@ fn main() {
                 window_id,
             } if window_id == window.id() => *control_flow = ControlFlow::Exit,
             Event::RedrawRequested(_) => {
-                context.renderer.update(&[(model, &instances[..])]);
-                context.renderer.render([0.0; 4]).expect("lol");
+                context.renderer.update(&[(model, &instances[..8]),(model_pawn, &instances[8..])]);
+                context.renderer.render([0.229,0.507,0.921,1.0]).expect("lol");
             }
             Event::MainEventsCleared => window.request_redraw(),
             _ => (),

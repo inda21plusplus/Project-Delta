@@ -450,7 +450,7 @@ impl Renderer {
             .push(self.device.create_buffer(&wgpu::BufferDescriptor {
                 label: Some(&format!("Instance buffer {}", self.models.len())),
                 size: 16 * 4 * 4 * mem::size_of::<f32>() as u64,
-                usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::INDEX,
+                usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::INDEX | wgpu::BufferUsages::VERTEX,
                 mapped_at_creation: false,
             }));
         self.instances.push(vec![]);

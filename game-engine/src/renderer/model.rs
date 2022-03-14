@@ -123,7 +123,7 @@ impl Model {
                         m.mesh.positions[i * 3 + 1],
                         m.mesh.positions[i * 3 + 2],
                     ],
-                    tex_coords: [m.mesh.texcoords[i * 2], m.mesh.texcoords[i * 2 + 1]],
+                    tex_coords: [*m.mesh.texcoords.get(i * 2).unwrap_or(&0.0f32), *m.mesh.texcoords.get(i * 2 + 1).unwrap_or(&0.0f32)],
                     normal: [
                         m.mesh.normals[i * 3],
                         m.mesh.normals[i * 3 + 1],
