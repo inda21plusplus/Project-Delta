@@ -1,3 +1,7 @@
+pub mod renderer;
+pub mod context;
+pub use context::Context;
+
 #[cfg(test)]
 mod tests {
     #[test]
