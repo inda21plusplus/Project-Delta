@@ -28,6 +28,10 @@ jobs:
         working-directory: ./game-engine
         run: cargo check --verbose
 
+      - name: Check ECS
+        working-directory: ./ecs
+        run: cargo check --verbose
+
   build:
     name: Build
     runs-on: ubuntu-latest
@@ -50,6 +54,10 @@ jobs:
         working-directory: ./game-engine
         run: cargo build --verbose
 
+      - name: Build ECS
+        working-directory: ./ecs
+        run: cargo build --verbose
+
   test:
     name: Test Suite
     runs-on: ubuntu-latest
@@ -70,6 +78,10 @@ jobs:
 
       - name: Test Engine
         working-directory: ./game-engine
+        run: cargo test --verbose
+
+      - name: Test ECS
+        working-directory: ./ecs
         run: cargo test --verbose
 
   clippy:
@@ -100,4 +112,9 @@ jobs:
           cargo clippy
         # cargo clippy -- -D warnings # This line will interpet Warnings as errors
 
-
+      - name: Clippy ECS
+        working-directory: ./ecs
+        run: |
+          rustup component add clippy
+          cargo clippy
+        # cargo clippy -- -D warnings # This line will interpet Warnings as errors
