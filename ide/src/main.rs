@@ -6,7 +6,11 @@ use winit::{
     window::WindowBuilder,
 };
 
+use env_logger;
+
 fn main() {
+    env_logger::init();
+
     let event_loop = EventLoop::new();
     let window = WindowBuilder::new().build(&event_loop).unwrap();
     let size = window.inner_size();
