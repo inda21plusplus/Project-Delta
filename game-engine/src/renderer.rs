@@ -123,6 +123,7 @@ impl CameraController {
 struct Instance {
     position: Vec3<f32>,
     rotation: Quaternion<f32>,
+    scale: Vec3<f32>,
 }
 
 impl Instance {
@@ -130,7 +131,26 @@ impl Instance {
         InstanceRaw {
             model: unsafe {
                 mem::transmute::<Mat4<f32>, _>(
-                    Mat4::<f32>::translation_3d(self.position) * Mat4::from(self.rotation),
+                    Mat4::<f32>::translation_3d(self.position)
+                        * Mat4::from(self.rotation)
+                        * Mat4::new(
+                            self.scale.x,
+                            0.0,
+                            0.0,
+                            0.0,
+                            0.0,
+                            self.scale.y,
+                            0.0,
+                            0.0,
+                            0.0,
+                            0.0,
+                            self.scale.z,
+                            0.0,
+                            0.0,
+                            0.0,
+                            0.0,
+                            1.0,
+                        ),
                 )
             },
         }
@@ -206,6 +226,7 @@ pub struct Renderer {
     #[allow(dead_code)]
     instance_buffer: wgpu::Buffer,
     depth_texture: texture::Texture,
+    start : std::time::Instant,
 }
 
 impl Renderer {
@@ -229,7 +250,7 @@ impl Renderer {
             .request_device(
                 &wgpu::DeviceDescriptor {
                     label: None,
-                    features: wgpu::Features::empty(),
+                    features: wgpu::Features::MAPPABLE_PRIMARY_BUFFERS,
                     limits: wgpu::Limits::default(),
                 },
                 // Some(&std::path::Path::new("trace")), // Trace path
@@ -300,6 +321,11 @@ impl Renderer {
                     let z = SPACE_BETWEEN * (z as f32 - NUM_INSTANCES_PER_ROW as f32 / 2.0);
 
                     let position = Vec3 { x, y: 0.0, z };
+                    let scale = Vec3 {
+                        x: 1f32,
+                        y: 1f32,
+                        z: 1.0f32,
+                    };
 
                     let rotation = if position == Vec3::zero() {
                         Quaternion::rotation_3d(0.0, Vec3::unit_z())
@@ -307,7 +333,11 @@ impl Renderer {
                         Quaternion::rotation_3d(std::f32::consts::FRAC_PI_4, position.normalized())
                     };
 
-                    Instance { position, rotation }
+                    Instance {
+                        position,
+                        rotation,
+                        scale,
+                    }
                 })
             })
             .collect::<Vec<_>>();
@@ -316,7 +346,7 @@ impl Renderer {
         let instance_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Instance Buffer"),
             contents: bytemuck::cast_slice(&instance_data),
-            usage: wgpu::BufferUsages::VERTEX,
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
         });
 
         info!("got instance buffer");
@@ -441,6 +471,7 @@ impl Renderer {
             instances,
             instance_buffer,
             depth_texture,
+            start : std::time::Instant::now()
         }
     }
 
@@ -456,7 +487,34 @@ impl Renderer {
         }
     }
 
-    fn update(&mut self) {
+    pub fn update(&mut self) {
+        let time = self.start.elapsed().as_secs_f32();
+        let offset = time.sin();
+        for x in &mut self.instances {
+            x.scale = Vec3 {
+                x: 1.1f32 + offset,
+                y: 1.1f32 + offset,
+                z: 1.1f32 + offset,
+            };
+        }
+        let instance_data = self
+            .instances
+            .iter()
+            .map(Instance::to_raw)
+            .collect::<Vec<_>>();
+        //let a = self.instance_buffer.slice(..).map_async(wgpu::MapMode::Write);
+        // self.instance_buffer.slice(..).get_mapped_range_mut().copy_from_slice(bytemuck::cast_slice(&instance_data));
+        self.queue.write_buffer(
+            &self.instance_buffer,
+            0,
+            bytemuck::cast_slice(&instance_data),
+        );
+        /*self.instance_buffer = self.device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Instance Buffer"),
+            contents: bytemuck::cast_slice(&instance_data),
+            usage: wgpu::BufferUsages::VERTEX,
+        });*/
+        //println!("IS GONnA UPdATE {} from {}",offset,time);
         self.camera_controller.update_camera(&mut self.camera);
         self.camera_uniform.update_view_proj(&self.camera);
         self.queue.write_buffer(

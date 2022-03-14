@@ -25,7 +25,10 @@ fn main() {
                 event: WindowEvent::CloseRequested,
                 window_id,
             } if window_id == window.id() => *control_flow = ControlFlow::Exit,
-            Event::RedrawRequested(_) => context.renderer.render().expect("lol"),
+            Event::RedrawRequested(_) => {
+                context.renderer.update();
+                context.renderer.render().expect("lol");
+            },
             Event::MainEventsCleared => window.request_redraw(),
             _ => (),
         }
