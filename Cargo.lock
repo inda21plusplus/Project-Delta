@@ -3,6 +3,10 @@
 version = 3
 
 [[package]]
+name = "ecs"
+version = "0.1.0"
+
+[[package]]
 name = "game-engine"
 version = "0.1.0"
 
