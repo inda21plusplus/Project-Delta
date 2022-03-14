@@ -1,7 +1,9 @@
 use pollster::FutureExt as _;
 use raw_window_handle::HasRawWindowHandle;
 
-struct Renderer {
+use std::iter;
+
+pub struct Renderer {
     surface: wgpu::Surface,
     device: wgpu::Device,
     queue: wgpu::Queue,
@@ -12,7 +14,7 @@ struct Renderer {
 }
 
 impl Renderer {
-    fn new<W: HasRawWindowHandle>(window: &W, size: (u32, u32)) -> Self {
+    pub fn new<W: HasRawWindowHandle>(window: &W, size: (u32, u32)) -> Self {
         // The instance is a handle to our GPU
         // BackendBit::PRIMARY => Vulkan + Metal + DX12 + Browser WebGPU
         let instance = wgpu::Instance::new(wgpu::Backends::all());
@@ -119,11 +121,6 @@ impl Renderer {
             self.config.height = new_size.1;
             self.surface.configure(&self.device, &self.config);
         }
-    }
-
-    #[allow(unused_variables)]
-    fn input(&mut self, event: &WindowEvent) -> bool {
-        false
     }
 
     fn update(&mut self) {}
