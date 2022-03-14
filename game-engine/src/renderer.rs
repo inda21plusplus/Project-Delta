@@ -1,3 +1,5 @@
+use log::info;
+
 use vek::mat::repr_c::Mat4;
 use vek::quaternion::repr_c::Quaternion;
 use vek::vec::repr_c::Vec3;
@@ -211,7 +213,9 @@ impl Renderer {
         // The instance is a handle to our GPU
         // BackendBit::PRIMARY => Vulkan + Metal + DX12 + Browser WebGPU
         let instance = wgpu::Instance::new(wgpu::Backends::all());
+        info!("created instance");
         let surface = unsafe { instance.create_surface(window) };
+        info!("created surface");
         let adapter = instance
             .request_adapter(&wgpu::RequestAdapterOptions {
                 power_preference: wgpu::PowerPreference::default(),
@@ -220,6 +224,7 @@ impl Renderer {
             })
             .block_on()
             .unwrap();
+        info!("got adapter");
         let (device, queue) = adapter
             .request_device(
                 &wgpu::DeviceDescriptor {
@@ -232,6 +237,7 @@ impl Renderer {
             )
             .block_on()
             .unwrap();
+        info!("got device");
 
         let config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
@@ -313,6 +319,8 @@ impl Renderer {
             usage: wgpu::BufferUsages::VERTEX,
         });
 
+        info!("got instance buffer");
+
         let camera_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                 entries: &[wgpu::BindGroupLayoutEntry {
@@ -337,7 +345,9 @@ impl Renderer {
             label: Some("camera_bind_group"),
         });
 
-        let res_dir = std::path::Path::new(env!("OUT_DIR")).join("res");
+        info!("made camera bind group");
+
+        let res_dir = std::path::Path::new("./").join("res");
         let obj_model = model::Model::load(
             &device,
             &queue,
@@ -350,6 +360,8 @@ impl Renderer {
             source: wgpu::ShaderSource::Wgsl(include_str!("shader.wgsl").into()),
         });
 
+        info!("created shader");
+
         let depth_texture =
             texture::Texture::create_depth_texture(&device, &config, "depth_texture");
 
@@ -359,6 +371,8 @@ impl Renderer {
                 bind_group_layouts: &[&texture_bind_group_layout, &camera_bind_group_layout],
                 push_constant_ranges: &[],
             });
+
+        info!("created pipeline layout");
 
         let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("Render Pipeline"),
@@ -408,6 +422,8 @@ impl Renderer {
             // indicates how many array layers the attachments will have.
             multiview: None,
         });
+
+        info!("created pipeline");
 
         Self {
             surface,

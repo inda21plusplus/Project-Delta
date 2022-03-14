@@ -14,3 +14,4 @@ vek = "0.15.6"
 bytemuck = { version = "1.4", features = [ "derive" ] }
 tobj = "3.2.1"
 image = "0.24.1"
+log = "0.4.14"
