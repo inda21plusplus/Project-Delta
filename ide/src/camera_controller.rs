@@ -143,5 +143,7 @@ impl CameraController {
 
         camera.eye = self.position;
         camera.target = self.position + forward;
+
+        //println!("{:?} {:?}", camera.eye, self.rotation);
     }
 }
