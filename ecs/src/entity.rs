@@ -40,8 +40,7 @@ impl Entities {
         entity
     }
 
-    pub fn delete(&mut self, entity: Entity) -> bool {
-        // TODO: `entity`'s components should also be deleted
+    pub fn despawn(&mut self, entity: Entity) -> bool {
         self.gen_counter += 1;
         match self.entities[entity.id as usize] {
             MaybeEntity::Free(_) => false,

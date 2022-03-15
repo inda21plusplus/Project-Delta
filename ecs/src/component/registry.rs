@@ -21,12 +21,12 @@ impl ComponentInfo {
 }
 
 #[derive(Debug)]
-pub struct Component {
+pub struct ComponentEntry {
     pub info: ComponentInfo,
     pub storage: Storage,
 }
 
-impl Component {
+impl ComponentEntry {
     pub fn new(info: ComponentInfo, storage: Storage) -> Self {
         Self { info, storage }
     }
@@ -35,7 +35,7 @@ impl Component {
 #[derive(Debug, Default)]
 pub struct ComponentRegistry {
     // Indexed by ComponentId's
-    components: Vec<Component>,
+    entries: Vec<ComponentEntry>,
     rust_types: HashMap<TypeId, ComponentId>,
 }
 
@@ -44,8 +44,11 @@ impl ComponentRegistry {
     where
         T: 'static,
     {
-        let id = self.components.len();
+        let type_id = TypeId::of::<T>();
+        let id = self.entries.len();
         let id = ComponentId(id.try_into().unwrap());
+        debug_assert!(self.rust_types.insert(type_id, id).is_none());
+
         let info = ComponentInfo {
             name: any::type_name::<T>().to_string(),
         };
@@ -53,8 +56,7 @@ impl ComponentRegistry {
         // struct will always want the same kind of storage since they will probably be on most
         // components?
         let storage = Storage::new::<T>(StorageType::VecStorage);
-        self.components.push(Component::new(info, storage));
-        self.rust_types.insert(TypeId::of::<T>(), id);
+        self.entries.push(ComponentEntry::new(info, storage));
         id
     }
 
@@ -65,18 +67,29 @@ impl ComponentRegistry {
         self.rust_types.get(&TypeId::of::<T>()).copied()
     }
 
-    pub fn component<T>(&self) -> Option<&Component>
+    pub fn component<T>(&self) -> Option<&ComponentEntry>
     where
         T: 'static,
     {
         self.id::<T>().map(|id| &self[id])
     }
+
+    /// Get a mutable reference to the component registry's entries.
+    pub fn entries_mut(&mut self) -> &mut [ComponentEntry] {
+        &mut self.entries
+    }
 }
 
 impl ops::Index<ComponentId> for ComponentRegistry {
-    type Output = Component;
+    type Output = ComponentEntry;
 
     fn index(&self, index: ComponentId) -> &Self::Output {
-        &self.components[index.0 as usize]
+        &self.entries[index.0 as usize]
+    }
+}
+
+impl ops::IndexMut<ComponentId> for ComponentRegistry {
+    fn index_mut(&mut self, index: ComponentId) -> &mut Self::Output {
+        &mut self.entries[index.0 as usize]
     }
 }

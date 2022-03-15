@@ -2,10 +2,10 @@
 
 pub mod component;
 mod entity;
-// mod world;
+mod world;
 
 pub use entity::{Entities, Entity};
-// pub use world::World;
+pub use world::World;
 
 #[cfg(test)]
 mod tests {
@@ -42,7 +42,7 @@ mod tests {
         let mut entities = Entities::default();
         let a = entities.spawn();
         assert!(entities.exists(a));
-        assert!(entities.delete(a));
+        assert!(entities.despawn(a));
 
         let b = entities.spawn();
         assert!(entities.exists(b));
@@ -56,7 +56,7 @@ mod tests {
         assert!(entities.exists(c));
         assert!(entities.exists(d));
 
-        assert!(entities.delete(c));
+        assert!(entities.despawn(c));
 
         assert!(!entities.exists(a));
         assert!(entities.exists(b));
@@ -120,5 +120,91 @@ mod tests {
             assert_eq!(75, counter.get());
         }
         assert_eq!(0, counter.get());
+    }
+
+    #[test]
+    fn world() {
+        let mut world = World::default();
+
+        #[derive(Debug, PartialEq)]
+        struct Position {
+            x: f32,
+            y: f32,
+            z: f32,
+        }
+        struct Health(u8);
+        #[derive(Debug, PartialEq)]
+        enum Rarity {
+            Common,
+            Rare,
+        }
+
+        let player = world
+            .spawn()
+            .add(Position {
+                x: 0.,
+                y: 0.,
+                z: 0.,
+            })
+            .add(Health(100))
+            .entity();
+
+        assert_eq!(
+            Some(&Position {
+                x: 0.,
+                y: 0.,
+                z: 0.
+            }),
+            world.get::<Position>(player)
+        );
+
+        assert!(world.get_mut::<Rarity>(player).is_none());
+
+        let common_sword = world
+            .spawn()
+            .add(Position {
+                x: 1.,
+                y: 0.,
+                z: 1.,
+            })
+            .add(Rarity::Common)
+            .entity();
+
+        assert!(world.get_mut::<Rarity>(player).is_none());
+
+        let rare_sword = world
+            .spawn()
+            .add(Position {
+                x: 1.,
+                y: 1.,
+                z: 1.,
+            })
+            .add(Rarity::Rare)
+            .entity();
+
+        assert!(world.get_mut::<Rarity>(player).is_none());
+
+        assert_eq!(Some(&Rarity::Common), world.get::<Rarity>(common_sword));
+        assert_eq!(Some(&Rarity::Rare), world.get::<Rarity>(rare_sword));
+
+        assert_eq!(
+            Some(&Position {
+                x: 0.,
+                y: 0.,
+                z: 0.
+            }),
+            world.get::<Position>(player)
+        );
+
+        world.get_mut::<Position>(rare_sword).unwrap().x += 1.;
+
+        assert_eq!(
+            Some(&Position {
+                x: 2.,
+                y: 1.,
+                z: 1.
+            }),
+            world.get::<Position>(rare_sword)
+        );
     }
 }

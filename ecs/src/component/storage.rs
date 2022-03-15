@@ -30,19 +30,45 @@ impl Storage {
         }
     }
 
-    pub fn set<T>(&mut self, entity: Entity, mut value: T) {
-        unsafe {
-            self.set_ptr(entity, ((&mut value) as *mut T).cast());
-        }
+    // Returns true if `entity` previously had this kind of component.
+    pub fn set<T>(&mut self, entity: Entity, mut value: T) -> bool {
+        let res = unsafe { self.set_ptr(entity, ((&mut value) as *mut T).cast()) };
         mem::forget(value);
+        res
     }
 
+    // Returns true if `entity` previously had this kind of component.
     // #SAFETY:
     // The value pointed to by `ptr` must not be freed by the caller.
-    pub unsafe fn set_ptr(&mut self, entity: Entity, ptr: *mut u8) {
+    pub unsafe fn set_ptr(&mut self, entity: Entity, ptr: *mut u8) -> bool {
         let index = entity.id as usize;
         match self {
             Self::VecStorage(s) => s.set(index, ptr),
+        }
+    }
+
+    pub fn remove(&mut self, entity: Entity) -> bool {
+        let index = entity.id as usize;
+        match self {
+            Self::VecStorage(s) => s.remove(index),
+        }
+    }
+
+    pub fn get<T>(&self, entity: Entity) -> Option<&T> {
+        let index = entity.id as usize;
+        unsafe {
+            match self {
+                Self::VecStorage(s) => s.get(index).cast::<T>().as_ref(),
+            }
+        }
+    }
+
+    pub fn get_mut<T>(&mut self, entity: Entity) -> Option<&mut T> {
+        let index = entity.id as usize;
+        unsafe {
+            match self {
+                Self::VecStorage(s) => s.get_mut(index).map(|p| p.cast::<T>().as_mut()),
+            }
         }
     }
 }
@@ -69,25 +95,28 @@ impl VecStorage {
     }
 
     /// `self` effectively takes ownership over the value pointed to by `value` and should not be
-    /// freed by the caller.
-    unsafe fn set(&mut self, index: usize, value: *mut u8) {
+    /// freed by the caller. Returns true if there was a component at `index` before.
+    unsafe fn set(&mut self, index: usize, value: *mut u8) -> bool {
         self.ensure_capacity(index + 1);
 
-        self.unset(index);
-        self.get_mut_ptr(index)
+        let res = self.remove(index);
+        self.get_mut_unchecked(index)
             .as_ptr()
             .copy_from_nonoverlapping(value, self.item_layout.size());
         self.occupied.insert(index);
+        res
     }
 
-    fn unset(&mut self, index: usize) {
+    /// Returns true if the component was removed
+    fn remove(&mut self, index: usize) -> bool {
         if !self.occupied.get(index) {
-            return;
+            return false;
         }
         unsafe {
-            (self.drop)(self.get_mut_ptr(index).as_ptr());
+            (self.drop)(self.get_mut_unchecked(index).as_ptr());
         }
         self.occupied.remove(index);
+        true
     }
 
     fn ensure_capacity(&mut self, cap: usize) {
@@ -112,13 +141,33 @@ impl VecStorage {
         while self.cap > 0 {
             self.cap -= 1;
             let i = self.cap;
-            self.unset(i);
+            self.remove(i);
         }
     }
 
-    fn get_mut_ptr(&mut self, index: usize) -> NonNull<u8> {
+    /// Returns a null pointer if nothing exists as `index`
+    fn get(&self, index: usize) -> *const u8 {
+        let offset = self.offset();
+        if self.occupied.get(index) {
+            unsafe { (self.ptr.as_ptr() as *const u8).add(index * offset) }
+        } else {
+            0 as *const u8
+        }
+    }
+
+    /// May be dangling
+    fn get_mut_unchecked(&mut self, index: usize) -> NonNull<u8> {
         let offset = self.offset();
         unsafe { NonNull::new_unchecked(self.ptr.as_ptr().add(index * offset)) }
+    }
+
+    /// Returns `None` if nothing exists at `index`
+    fn get_mut(&mut self, index: usize) -> Option<NonNull<u8>> {
+        if self.occupied.get(index) {
+            Some(self.get_mut_unchecked(index))
+        } else {
+            None
+        }
     }
 
     fn layout_with_cap(&self, cap: usize) -> Layout {
@@ -126,7 +175,7 @@ impl VecStorage {
     }
 
     fn offset(&self) -> usize {
-        padding_needed_for(&self.item_layout, self.item_layout.align())
+        self.item_layout.size() + padding_needed_for(&self.item_layout, self.item_layout.align())
     }
 }
 
