@@ -16,15 +16,15 @@ pub fn get_logo(file_name: String) -> (u32, u32, Vec<u8>) {
     let mut content: Vec<u8> = Vec::with_capacity(width * height * 4);
     for _ in 0..height {
         for _ in 0..width {
-            let mut line = lines.next().unwrap().splitn(3, ' ');
+            let mut line = lines.next().unwrap().splitn(4, ' ');
             let r: u8 = line.next().unwrap().parse().unwrap();
             let g: u8 = line.next().unwrap().parse().unwrap();
             let b: u8 = line.next().unwrap().parse().unwrap();
+            let a: u8 = line.next().unwrap().parse().unwrap();
+            content.push(g);
             content.push(b);
             content.push(r);
-            content.push(g);
-
-            content.push(255);
+            content.push(a);
         }
     }
 
