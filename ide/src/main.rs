@@ -16,7 +16,7 @@ mod camera_controller;
 const SPACE_BETWEEN: f32 = 3.0;
 const NUM_INSTANCES_PER_ROW: u32 = 4;
 
-fn update(start: std::time::Instant, objects: &mut Vec<Instance>) {
+fn update(start: std::time::Instant, dt: f32, objects: &mut Vec<Instance>) {
     let offset = start.elapsed().as_secs_f32().sin();
     for obj in objects {}
 }
@@ -63,6 +63,7 @@ fn main() {
         })
         .collect::<Vec<_>>();
 
+    let mut last_frame = std::time::Instant::now();
     event_loop.run(move |event, _, control_flow| {
         *control_flow = ControlFlow::Poll;
         match event {
@@ -91,7 +92,12 @@ fn main() {
             }
             Event::MainEventsCleared => window.request_redraw(),
             Event::RedrawRequested(_) => {
-                update(start, &mut instances);
+                let dt = last_frame.elapsed().as_secs_f32();
+                last_frame = std::time::Instant::now();
+                let frame_rate = 1.0 / dt; // TODO render on screen
+
+                update(start, dt, &mut instances);
+                
                 camera_controller.update_camera(&mut context.renderer.camera);
                 context.renderer.update_camera();
 
