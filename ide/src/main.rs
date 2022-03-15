@@ -68,9 +68,13 @@ impl SphereColider {
             own_transform.rotation,
             self.local_position,
         );
+
+        //own_rb.velocity -= 0.0001*(own_transform.position);
+
         let self_radius = SphereColider::get_radius(self.radius, own_transform.scale);
         match other {
             Collider::SphereColider(s) => {
+                let R = 0.5;
                 let other_position = get_world_position(
                     other_transform.position,
                     other_transform.rotation,
@@ -79,22 +83,120 @@ impl SphereColider {
                 let other_radius = SphereColider::get_radius(s.radius, other_transform.scale);
 
                 let diff = other_position - self_position;
-                let distance = diff.magnitude();
+
+                let distance_squared = diff.magnitude_squared();
                 let total_radius = other_radius + self_radius;
-                if distance <= total_radius {
+                if distance_squared <= total_radius * total_radius {
                     let normal = diff.normalized();
+                    let distance = distance_squared.sqrt() - total_radius;
+                    let pop = normal * distance * 0.51;
+                    own_transform.position += pop;
+                    other_transform.position -= pop;
 
-                    let m1 = own_rb.mass;
-                    let m2 = other_rb.mass;
+                    let m1 = own_rb.mass; //  (mass of ball 1)
+                    let m2 = other_rb.mass; //  (mass of ball 2)
+                    let r1 = self_radius; //  (radius of ball 1)
+                    let r2 = other_radius; //  (radius of ball 2)
+                    let mut b1 = self_position; //  (coordinate of ball 1)
+                    let mut b2 = other_position; //  (coordinate of ball 2)
+                    let mut v1 = own_rb.velocity; //  (velocity of ball 1)
+                    let mut v2 = other_rb.velocity; //  (velocity of ball 2)
 
-                    let v1 = own_rb.velocity;
-                    let v2 = other_rb.velocity;
+                    let r12 = r1 + r2;
+                    let m21 = m2 / m1;
+                    let b21 = b2 - b1;
+                    let v21 = v2 - v1;
 
-                    let u1 = (m1*v1 - m2*v1 + 2.0*m2*v2) / (m1+m2);
-                    let u2 = (2.0*m1*v1-m1*v2+m2*v2) / (m1+m2);
-                    
-                    own_rb.velocity = u1;
-                    other_rb.velocity = u2;
+                    let v_cm = (m1 * v1 + m2 * v2) / (m1 + m2);
+
+                    //     **** calculate relative distance and relative speed ***
+                    let d = b21.magnitude();
+                    let v = v21.magnitude();
+
+                    //     **** shift coordinate system so that ball 1 is at the origin ***
+                    b2 = b21;
+
+                    //     **** boost coordinate system so that ball 2 is resting ***
+                    v1 = -v21;
+
+                    //     **** find the polar coordinates of the location of ball 2 ***
+                    let theta2 = (b2.z / d).acos();
+                    let phi2 = if b2.x == 0.0 && b2.y == 0.0 {
+                        0.0
+                    } else {
+                        b2.y.atan2(b2.x)
+                    };
+                    let st = (theta2).sin();
+                    let ct = (theta2).cos();
+                    let sp = (phi2).sin();
+                    let cp = (phi2).cos();
+
+                    //     **** express the velocity vector of ball 1 in a rotated coordinate
+                    //          system where ball 2 lies on the z-axis ******
+                    let mut vx1r = ct * cp * v1.x + ct * sp * v1.y - st * v1.z;
+                    let mut vy1r = cp * v1.y - sp * v1.x;
+                    let mut vz1r = st * cp * v1.x + st * sp * v1.y + ct * v1.z;
+                    let mut fvz1r = vz1r / v;
+                    if fvz1r > 1.0 {
+                        fvz1r = 1.0;
+                    }
+                    // fix for possible rounding errors
+                    else if fvz1r < -1.0 {
+                        fvz1r = -1.0;
+                    }
+                    let thetav = (fvz1r).acos();
+                    let phiv = if vx1r == 0.0 && vy1r == 0.0 {
+                        0.0
+                    } else {
+                        vy1r.atan2(vx1r)
+                    };
+
+                    //     **** calculate the normalized impact parameter ***
+                    let dr = d * (thetav.sin()) / r12;
+
+                    //     **** calculate impact angles if balls do collide ***
+                    let alpha = (-dr).asin();
+                    let beta = phiv;
+                    let sbeta = beta.sin();
+                    let cbeta = beta.cos();
+
+                    //     **** calculate time to collision ***
+                    let t = (d * (thetav.cos()) - r12 * (1.0 - dr * dr).sqrt()) / v;
+
+                    //     **** update positions and reverse the coordinate shift ***
+                    b2 += v2 * t + b1;
+                    b1 += (v1 + v2) * t;
+
+                    //  ***  update velocities ***
+
+                    let a = (thetav + alpha).tan();
+
+                    let dvz2 = 2.0 * (vz1r + a * (cbeta * vx1r + sbeta * vy1r))
+                        / ((1.0 + a * a) * (1.0 + m21));
+
+                    let vz2r = dvz2;
+                    let vx2r = a * cbeta * dvz2;
+                    let vy2r = a * sbeta * dvz2;
+                    vz1r = vz1r - m21 * vz2r;
+                    vx1r = vx1r - m21 * vx2r;
+                    vy1r = vy1r - m21 * vy2r;
+
+                    //     **** rotate the velocity vectors back and add the initial velocity
+                    //           vector of ball 2 to retrieve the original coordinate system ****
+
+                    v1.x = ct * cp * vx1r - sp * vy1r + st * cp * vz1r + v2.x;
+                    v1.y = ct * sp * vx1r + cp * vy1r + st * sp * vz1r + v2.y;
+                    v1.z = ct * vz1r - st * vx1r + v2.z;
+                    v2.x = ct * cp * vx2r - sp * vy2r + st * cp * vz2r + v2.x;
+                    v2.y = ct * sp * vx2r + cp * vy2r + st * sp * vz2r + v2.y;
+                    v2.z = ct * vz2r - st * vx2r + v2.z;
+
+                    //     ***  velocity correction for inelastic collisions ***
+
+                    v1 = (v1 - v_cm) * R + v_cm;
+                    v2 = (v2 - v_cm) * R + v_cm;
+                    own_rb.velocity = v1;
+                    other_rb.velocity = v2;
                 }
             }
             _ => unimplemented!(),
@@ -257,7 +359,7 @@ fn main() {
             (0..NUM_INSTANCES_PER_ROW).map(move |x| {
                 let x = SPACE_BETWEEN * (x as f32 - NUM_INSTANCES_PER_ROW as f32 / 2.0);
                 let z = SPACE_BETWEEN * (z as f32 - NUM_INSTANCES_PER_ROW as f32 / 2.0);
-
+                let r: f32 = rand::random();
                 let position = Vec3 { x, y: 0.0, z };
 
                 let rotation = if position == Vec3::zero() {
@@ -281,11 +383,11 @@ fn main() {
     };
 
     let obj1 = PhysicsObject::new(
-        RidgidBody::new(Vec3::new(0.5, 0.08, 0.0), Vec3::zero(), 5.0),
+        RidgidBody::new(Vec3::new(0.5, 0.02, 0.0), Vec3::new(0.0, 0.0, 0.0), 5.0),
         Collider::SphereColider(SphereColider::new(1.0, physics_material)),
     );
     let obj2 = PhysicsObject::new(
-        RidgidBody::new(Vec3::new(-0.5, 0.0, 0.0), Vec3::zero(), 5.0),
+        RidgidBody::new(Vec3::new(0.0, 0.02, 0.0), Vec3::zero(), 5.0),
         Collider::SphereColider(SphereColider::new(1.0, physics_material)),
     );
     let obj3 = PhysicsObject::new(
@@ -297,7 +399,7 @@ fn main() {
         Collider::SphereColider(SphereColider::new(1.0, physics_material)),
     );
 
-    let mut physics_objects: Vec<PhysicsObject> = vec![obj1, obj2, obj3, obj4];
+    let mut physics_objects: Vec<PhysicsObject> = vec![obj1, obj2, obj3, obj4]; //vec![obj1.clone(); 16];
 
     let mut allow_camera_update = true;
     let mut last_frame = std::time::Instant::now();
