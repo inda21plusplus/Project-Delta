@@ -36,8 +36,7 @@ impl Entities {
             self.entities.push(MaybeEntity::Alive(gen));
             id
         };
-        let entity = Entity { id, gen };
-        entity
+        Entity { id, gen }
     }
 
     pub fn despawn(&mut self, entity: Entity) -> bool {

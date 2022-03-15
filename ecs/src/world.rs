@@ -70,14 +70,11 @@ impl World {
     pub fn get_mut<T: 'static>(&mut self, entity: Entity) -> Option<&mut T> {
         let comp_id = self.component_registry.id::<T>()?;
 
-        self.entities
-            .id(entity)
-            .map(|id| unsafe {
-                self.component_registry[comp_id]
-                    .storage
-                    .get_mut(id as usize)
-            })
-            .flatten()
+        self.entities.id(entity).and_then(|id| unsafe {
+            self.component_registry[comp_id]
+                .storage
+                .get_mut(id as usize)
+        })
     }
 
     pub fn get<T: 'static>(&self, entity: Entity) -> Option<&T> {
@@ -85,7 +82,6 @@ impl World {
 
         self.entities
             .id(entity)
-            .map(|id| unsafe { self.component_registry[comp_id].storage.get(id as usize) })
-            .flatten()
+            .and_then(|id| unsafe { self.component_registry[comp_id].storage.get(id as usize) })
     }
 }

@@ -3,7 +3,7 @@ use std::{
     alloc::{self, Layout},
     fmt,
     mem::{self, MaybeUninit},
-    ptr::NonNull,
+    ptr::{self, NonNull},
 };
 
 #[derive(Debug)]
@@ -29,17 +29,19 @@ impl Storage {
         }
     }
 
-    // Returns true if `entity` previously had this kind of component.
-    /// `Self` must be a storage for `T`s
+    /// Returns true if `entity` previously had this kind of component.
+    /// # Safety
+    /// `Self` must contain `T`s
     pub unsafe fn set<T>(&mut self, index: usize, mut value: T) -> bool {
         let res = self.set_ptr(index, ((&mut value) as *mut T).cast());
         mem::forget(value);
         res
     }
 
-    // Returns true if `entity` previously had this kind of component.
-    // #SAFETY:
-    // The value pointed to by `ptr` must not be freed by the caller.
+    /// Returns true if `entity` previously had this kind of component.
+    /// # Safety
+    /// The value pointed to by `ptr` must not be a valid value for the type `self` stores.
+    /// It must *not* freed by the caller.
     pub unsafe fn set_ptr(&mut self, index: usize, ptr: *mut u8) -> bool {
         match self {
             Self::VecStorage(s) => s.set(index, ptr),
@@ -52,7 +54,7 @@ impl Storage {
         }
     }
 
-    /// #SAFETY:
+    /// # Safety
     /// `Self` must be a storage for `T`s
     pub unsafe fn remove<T: 'static>(&mut self, index: usize) -> Option<T> {
         match self {
@@ -60,7 +62,7 @@ impl Storage {
         }
     }
 
-    /// #SAFETY:
+    /// # Safety
     /// `Self` must be a storage for `T`s
     pub unsafe fn get<T>(&self, index: usize) -> Option<&T> {
         match self {
@@ -68,7 +70,7 @@ impl Storage {
         }
     }
 
-    /// #SAFETY:
+    /// # Safety
     /// `Self` must be a storage for `T`s
     pub unsafe fn get_mut<T>(&mut self, index: usize) -> Option<&mut T> {
         match self {
@@ -170,7 +172,7 @@ impl VecStorage {
         if self.occupied.get(index) {
             unsafe { (self.ptr.as_ptr() as *const u8).add(index * offset) }
         } else {
-            0 as *const u8
+            ptr::null()
         }
     }
 
