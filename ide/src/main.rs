@@ -27,9 +27,9 @@ fn update(start: std::time::Instant, dt: f32, objects: &mut Vec<Instance>) {
 fn main() {
     env_logger::init();
 
-    let icon_vec: Vec<u8> = vec![0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0];
-    //let icon_vec = im::get_logo("out".to_string());
-    let icon = Icon::from_rgba(icon_vec, 2, 2).unwrap();
+    //let icon_vec: Vec<u8> = vec![0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0];
+    let (img_width,img_height,img_vec) = im::get_logo("icon.ppm".to_string());
+    let icon = Icon::from_rgba(img_vec, img_width, img_height).unwrap();
 
     let event_loop = EventLoop::new();
     let window = WindowBuilder::new()
