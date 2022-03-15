@@ -100,7 +100,7 @@ impl CameraController {
     }
 
     pub fn update_camera(&mut self, camera: &mut game_engine::renderer::Camera) {
-        const MAX_PITCH: f32 = std::f32::consts::FRAC_PI_2;
+        const MAX_PITCH: f32 = 89f32 * (PI / 180.0f32);
         if self.rotation.x < -MAX_PITCH {
             self.rotation.x = -MAX_PITCH;
         }
@@ -109,23 +109,20 @@ impl CameraController {
         }
 
         let forward = Vec3::new(
-            self.rotation.y.sin(),
+            self.rotation.y.sin() * self.rotation.x.cos(),
             self.rotation.x.sin(),
-            self.rotation.y.cos(),
+            self.rotation.y.cos() * self.rotation.x.cos(),
         );
         let forward_norm = forward.normalized();
-        let forward_mag = forward.magnitude();
 
-        // Prevents glitching when camera gets too close to the
-        // center of the scene.
-        if self.is_forward_pressed && forward_mag > self.speed {
+        if self.is_forward_pressed {
             self.position += forward_norm * self.speed;
         }
         if self.is_backward_pressed {
             self.position -= forward_norm * self.speed;
         }
 
-        let right = forward_norm.cross(camera.up);
+        let right = forward_norm.cross(camera.up).normalized();
         let up = camera.up;
 
         if self.is_right_pressed {

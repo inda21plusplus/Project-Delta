@@ -176,7 +176,6 @@ pub struct Renderer {
     #[allow(dead_code)]
     instance_buffers: Vec<wgpu::Buffer>,
     depth_texture: texture::Texture,
-    start: std::time::Instant,
 }
 
 impl Renderer {
@@ -363,7 +362,6 @@ impl Renderer {
             instances: vec![],
             instance_buffers: vec![],
             depth_texture,
-            start: std::time::Instant::now(),
         }
     }
 

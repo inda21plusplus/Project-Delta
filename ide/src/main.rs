@@ -19,7 +19,7 @@ mod im;
 const SPACE_BETWEEN: f32 = 3.0;
 const NUM_INSTANCES_PER_ROW: u32 = 4;
 
-fn update(start: std::time::Instant, objects: &mut Vec<Instance>) {
+fn update(start: std::time::Instant, dt: f32, objects: &mut Vec<Instance>) {
     let offset = start.elapsed().as_secs_f32().sin();
     for obj in objects {}
 }
@@ -53,8 +53,8 @@ fn main() {
     let mut camera_controller = CameraController::new(
         0.2,
         0.01,
-        Vec3::new(-2.0, 0.0, 0.0),
-        Vec3::new(-40.0f32.to_radians(), 275.0f32.to_radians(), 0.0),
+        Vec3::new(-15.0, 10.0, 0.0),
+        Vec3::new(-35.0f32.to_radians(), 90.0f32.to_radians(), 0.0),
     );
 
     let mut instances = (0..NUM_INSTANCES_PER_ROW)
@@ -81,6 +81,7 @@ fn main() {
         .collect::<Vec<_>>();
 
     let mut cursor_in_window = true;
+    let mut last_frame = std::time::Instant::now();
     event_loop.run(move |event, _, control_flow| {
         *control_flow = ControlFlow::Poll;
         match event {
@@ -127,10 +128,15 @@ fn main() {
             }
             Event::MainEventsCleared => window.request_redraw(),
             Event::RedrawRequested(_) => {
-                update(start, &mut instances);
                 if cursor_in_window {
                     camera_controller.update_camera(&mut context.renderer.camera);
                 }
+                let dt = last_frame.elapsed().as_secs_f32();
+                last_frame = std::time::Instant::now();
+                let frame_rate = 1.0 / dt; // TODO render on screen
+
+                update(start, dt, &mut instances);
+
                 context.renderer.update_camera();
 
                 context
@@ -139,7 +145,7 @@ fn main() {
                 context
                     .renderer
                     .render([0.229, 0.507, 0.921, 1.0])
-                    .expect("lol");
+                    .expect("render error");
             }
 
             _ => (),
