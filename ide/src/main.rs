@@ -2,12 +2,12 @@ use camera_controller::CameraController;
 use game_engine::{renderer::Transform, Context};
 
 use winit::{
-    dpi::LogicalPosition,
     event::{Event, KeyboardInput, WindowEvent},
     event_loop::{ControlFlow, EventLoop},
-    window::{Icon, WindowBuilder},
+    window::Icon,
 };
 
+use window::{Window, WindowMode};
 //use image;
 use env_logger;
 use vek::quaternion::repr_c::Quaternion;
@@ -15,6 +15,7 @@ use vek::vec::repr_c::Vec3;
 
 mod camera_controller;
 mod im;
+mod window;
 
 const SPACE_BETWEEN: f32 = 3.0;
 const NUM_INSTANCES_PER_ROW: u32 = 4;
@@ -33,23 +34,15 @@ fn main() {
     let icon = Icon::from_rgba(img_vec, img_width, img_height).unwrap();
 
     let event_loop = EventLoop::new();
-    let window = WindowBuilder::new()
-        .with_window_icon(Some(icon))
-        .build(&event_loop)
-        .unwrap();
+    let mut window = Window::new(&event_loop, Some(icon));
 
-    window.set_cursor_visible(false);
-    match window.set_cursor_grab(true) {
-        Ok(_) => (),
-        Err(e) => eprint!("{:?}", e),
-    }
-
-    let size = window.inner_size();
-
-    let mut context = Context::new(&window, (size.width, size.height));
-    let model = context.renderer.load_model("./res/Cube.obj").unwrap();
-    let model_pawn = context.renderer.load_model("./res/ball.obj").unwrap();
-    let start = std::time::Instant::now();
+    let mut context = Context::new(
+        &window.winit_window,
+        (window.size.width, window.size.height),
+    );
+    let model_cube = context.renderer.load_model("./res/Cube.obj").unwrap();
+    let model_ball = context.renderer.load_model("./res/ball.obj").unwrap();
+    let start_time = std::time::Instant::now();
 
     let mut camera_controller = CameraController::new(
         10.0,
@@ -98,14 +91,16 @@ fn main() {
             Event::WindowEvent {
                 event: WindowEvent::CloseRequested,
                 window_id,
-            } if window_id == window.id() => *control_flow = ControlFlow::Exit,
+            } if window_id == window.winit_window.id() => *control_flow = ControlFlow::Exit,
             Event::WindowEvent {
                 event: WindowEvent::Resized(winit::dpi::PhysicalSize { width, height }),
                 window_id,
-            } if window_id == window.id() => context
-                .renderer
-                .resize(game_engine::renderer::PhysicalSize { width, height }),
-
+            } if window_id == window.winit_window.id() => {
+                context
+                    .renderer
+                    .resize(game_engine::renderer::PhysicalSize { width, height });
+                window.update_size();
+            }
             Event::WindowEvent {
                 window_id: _,
                 event,
@@ -121,34 +116,14 @@ fn main() {
                         ..
                     } => match keycode {
                         winit::event::VirtualKeyCode::Q => {
+                            window.set_window_mode(WindowMode::CursorMode);
+                            window.center_cusor();
                             allow_camera_update = false;
-                            window.set_cursor_visible(true);
-                            match window.set_cursor_grab(false) {
-                                Ok(_) => (),
-                                Err(e) => eprintln!("{:?}", e),
-                            }
-                            match window.set_cursor_position(LogicalPosition::new(
-                                size.width / 2,
-                                size.height / 2,
-                            )) {
-                                Ok(_) => (),
-                                Err(e) => eprintln!("{:?}", e),
-                            }
                         }
                         winit::event::VirtualKeyCode::E => {
-                            match window.set_cursor_position(LogicalPosition::new(
-                                size.width / 2,
-                                size.height / 2,
-                            )) {
-                                Ok(_) => (),
-                                Err(e) => eprintln!("{:?}", e),
-                            }
+                            window.set_window_mode(WindowMode::CameraMode);
+                            window.center_cusor();
                             allow_camera_update = true;
-                            window.set_cursor_visible(false);
-                            match window.set_cursor_grab(true) {
-                                Ok(_) => (),
-                                Err(e) => eprintln!("{:?}", e),
-                            }
                         }
                         _ => (),
                     },
@@ -156,7 +131,7 @@ fn main() {
                 }
             }
 
-            Event::MainEventsCleared => window.request_redraw(),
+            Event::MainEventsCleared => window.winit_window.request_redraw(),
             Event::RedrawRequested(_) => {
                 let dt = last_frame.elapsed().as_secs_f32();
                 last_frame = std::time::Instant::now();
@@ -166,13 +141,14 @@ fn main() {
                     camera_controller.update_camera(dt, &mut context.renderer.camera);
                 }
 
-                update(start, dt, &mut instances);
+                update(start_time, dt, &mut instances);
 
                 context.renderer.update_camera();
 
-                context
-                    .renderer
-                    .update_instances(&[(model, &instances[..8]), (model_pawn, &instances[8..])]);
+                context.renderer.update_instances(&[
+                    (model_cube, &instances[..8]),
+                    (model_ball, &instances[8..]),
+                ]);
                 context
                     .renderer
                     .render([0.229, 0.507, 0.921, 1.0])
