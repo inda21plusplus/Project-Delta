@@ -87,6 +87,9 @@ impl SphereColider {
                 let distance_squared = diff.magnitude_squared();
                 let total_radius = other_radius + self_radius;
                 if distance_squared <= total_radius * total_radius {
+                    //https://www.plasmaphysics.org.uk/collision3d.htm
+                    //https://www.plasmaphysics.org.uk/programs/coll3d_cpp.htm
+
                     let normal = diff.normalized();
                     let distance = distance_squared.sqrt() - total_radius;
                     let pop = normal * distance * 0.51;
@@ -112,7 +115,10 @@ impl SphereColider {
                     //     **** calculate relative distance and relative speed ***
                     let d = b21.magnitude();
                     let v = v21.magnitude();
-
+                    //     **** return if relative speed = 0 ****
+                    if v.abs() < 0.00001f32 {
+                        return;
+                    }
                     //     **** shift coordinate system so that ball 1 is at the origin ***
                     b2 = b21;
 
@@ -126,10 +132,11 @@ impl SphereColider {
                     } else {
                         b2.y.atan2(b2.x)
                     };
-                    let st = (theta2).sin();
-                    let ct = (theta2).cos();
-                    let sp = (phi2).sin();
-                    let cp = (phi2).cos();
+
+                    let st = theta2.sin();
+                    let ct = theta2.cos();
+                    let sp = phi2.sin();
+                    let cp = phi2.cos();
 
                     //     **** express the velocity vector of ball 1 in a rotated coordinate
                     //          system where ball 2 lies on the z-axis ******
@@ -144,7 +151,7 @@ impl SphereColider {
                     else if fvz1r < -1.0 {
                         fvz1r = -1.0;
                     }
-                    let thetav = (fvz1r).acos();
+                    let thetav = fvz1r.acos();
                     let phiv = if vx1r == 0.0 && vy1r == 0.0 {
                         0.0
                     } else {
@@ -161,7 +168,7 @@ impl SphereColider {
                     let cbeta = beta.cos();
 
                     //     **** calculate time to collision ***
-                    let t = (d * (thetav.cos()) - r12 * (1.0 - dr * dr).sqrt()) / v;
+                    let t = (d * thetav.cos() - r12 * (1.0 - dr * dr).sqrt()) / v;
 
                     //     **** update positions and reverse the coordinate shift ***
                     b2 += v2 * t + b1;
@@ -197,7 +204,18 @@ impl SphereColider {
                     v2 = (v2 - v_cm) * R + v_cm;
                     own_rb.velocity = v1;
                     other_rb.velocity = v2;
+
+                    //own_transform.position = b1;
+                    //other_transform.position = b2;
                 }
+            }
+            Collider::BoxColider(b) => {
+                let other_position = get_world_position(
+                    other_transform.position,
+                    other_transform.rotation,
+                    b.local_position,
+                );
+                
             }
             _ => unimplemented!(),
         }
@@ -492,7 +510,7 @@ fn main() {
 
                 context
                     .renderer
-                    .update_instances(&[(model, &instances[1..]), (model_pawn, &instances[..1])]);
+                    .update_instances(&[(model, &instances[8..]), (model_pawn, &instances[..8])]);
                 context
                     .renderer
                     .render([0.229, 0.507, 0.921, 1.0])
