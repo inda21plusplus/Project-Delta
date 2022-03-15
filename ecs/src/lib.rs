@@ -1,15 +1,17 @@
+#![deny(warnings)]
+
 pub mod component;
 mod entity;
-mod world;
+// mod world;
 
 pub use entity::{Entities, Entity};
-pub use world::World;
+// pub use world::World;
 
 #[cfg(test)]
 mod tests {
     use std::{any, collections::HashSet};
 
-    use crate::component::ComponentRegistry;
+    use crate::component::{ComponentRegistry, Storage, StorageType};
 
     use super::*;
 
@@ -23,12 +25,12 @@ mod tests {
         let a_id = reg.register::<A>();
         let b_id = reg.register::<B>();
 
-        assert_eq!(any::type_name::<A>(), reg[a_id].name());
-        assert_eq!(any::type_name::<B>(), reg[b_id].name());
+        assert_eq!(any::type_name::<A>(), reg[a_id].info.name());
+        assert_eq!(any::type_name::<B>(), reg[b_id].info.name());
 
-        assert_eq!(Some(&reg[a_id]), reg.info::<A>());
-        assert_eq!(Some(&reg[b_id]), reg.info::<B>());
-        assert_eq!(None, reg.info::<C>());
+        assert_eq!(Some(&reg[a_id].info), reg.component::<A>().map(|c| &c.info));
+        assert_eq!(Some(&reg[b_id].info), reg.component::<B>().map(|c| &c.info));
+        assert!(reg.component::<C>().is_none());
 
         assert_eq!(Some(a_id), reg.id::<A>());
         assert_eq!(Some(b_id), reg.id::<B>());
@@ -81,5 +83,42 @@ mod tests {
                 assert!((x == y) == (i == j));
             }
         }
+    }
+
+    #[test]
+    fn vec_storage() {
+        use std::{cell::Cell, rc::Rc};
+
+        struct Counter(Rc<Cell<usize>>);
+        impl Counter {
+            fn new(rc: Rc<Cell<usize>>) -> Self {
+                rc.set(rc.get() + 1);
+                Self(rc)
+            }
+        }
+        impl Drop for Counter {
+            fn drop(&mut self) {
+                self.0.set(self.0.get() - 1)
+            }
+        }
+        let counter = Rc::new(Cell::new(0));
+
+        {
+            let mut storage = Storage::new::<Counter>(StorageType::VecStorage);
+            let mut entities = Entities::default();
+            let es: Vec<_> = (0..100).map(|_| entities.spawn()).collect();
+            for i in (0..100).step_by(2) {
+                assert_eq!(i / 2, counter.get());
+                storage.set(es[i], Counter::new(counter.clone()));
+            }
+            assert_eq!(50, counter.get());
+            for &e in &es[0..50] {
+                // NOTE: half of these calls should overwrite (and therefore free) the Counters,
+                // and the other half should put the counters previously unused memory
+                storage.set(e, Counter::new(counter.clone()));
+            }
+            assert_eq!(75, counter.get());
+        }
+        assert_eq!(0, counter.get());
     }
 }
