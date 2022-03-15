@@ -18,9 +18,7 @@ const NUM_INSTANCES_PER_ROW: u32 = 4;
 
 fn update(start: std::time::Instant, objects: &mut Vec<Instance>) {
     let offset = start.elapsed().as_secs_f32().sin();
-    for obj in objects {
-
-    }
+    for obj in objects {}
 }
 
 fn main() {
@@ -35,9 +33,12 @@ fn main() {
     let model_pawn = context.renderer.load_model("./res/ball.obj").unwrap();
     let start = std::time::Instant::now();
 
-    let mut camera_controller = CameraController::new(0.2,0.01,
-        Vec3::new(-2.0, 0.0,0.0),
-        Vec3::new(-40.0f32.to_radians(), 275.0f32.to_radians(),0.0));
+    let mut camera_controller = CameraController::new(
+        0.2,
+        0.01,
+        Vec3::new(-15.0, 10.0, 0.0),
+        Vec3::new(-35.0f32.to_radians(), 90.0f32.to_radians(), 0.0),
+    );
 
     let mut instances = (0..NUM_INSTANCES_PER_ROW)
         .flat_map(|z| {
@@ -61,11 +62,14 @@ fn main() {
             })
         })
         .collect::<Vec<_>>();
-    
+
     event_loop.run(move |event, _, control_flow| {
         *control_flow = ControlFlow::Poll;
         match event {
-            Event::DeviceEvent { device_id: _, event } => {
+            Event::DeviceEvent {
+                device_id: _,
+                event,
+            } => {
                 camera_controller.process_device_events(&event);
             }
             Event::WindowEvent {
@@ -97,7 +101,7 @@ fn main() {
                 context
                     .renderer
                     .render([0.229, 0.507, 0.921, 1.0])
-                    .expect("lol");
+                    .expect("render error");
             }
 
             _ => (),

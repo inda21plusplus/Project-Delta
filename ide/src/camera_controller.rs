@@ -1,7 +1,7 @@
 use std::f32::consts::PI;
 
 use vek::Vec3;
-use winit::event::{WindowEvent, KeyboardInput, VirtualKeyCode, DeviceEvent};
+use winit::event::{DeviceEvent, KeyboardInput, VirtualKeyCode, WindowEvent};
 
 pub struct CameraController {
     pub speed: f32,
@@ -17,7 +17,12 @@ pub struct CameraController {
 }
 
 impl CameraController {
-    pub fn new(speed: f32, mouse_sensitivity : f32, position : Vec3<f32>, rotation : Vec3<f32>) -> Self {
+    pub fn new(
+        speed: f32,
+        mouse_sensitivity: f32,
+        position: Vec3<f32>,
+        rotation: Vec3<f32>,
+    ) -> Self {
         Self {
             speed,
             position,
@@ -27,27 +32,26 @@ impl CameraController {
             is_backward_pressed: false,
             is_left_pressed: false,
             is_right_pressed: false,
-            is_space_pressed : false,
-            is_ctrl_pressed : false,
+            is_space_pressed: false,
+            is_ctrl_pressed: false,
         }
     }
 
-    pub fn process_device_events(&mut self, event : &DeviceEvent) {
+    pub fn process_device_events(&mut self, event: &DeviceEvent) {
         match *event {
-            DeviceEvent::MouseMotion { delta : (dx,dy) } => {
-                self.rotation.x -= self.mouse_sensitivity*dy as f32;
-                self.rotation.y -= self.mouse_sensitivity*dx as f32;
+            DeviceEvent::MouseMotion { delta: (dx, dy) } => {
+                self.rotation.x -= self.mouse_sensitivity * dy as f32;
+                self.rotation.y -= self.mouse_sensitivity * dx as f32;
             }
-            _ => ()
-            /*
-            DeviceEvent::Added => todo!(),
-            DeviceEvent::Removed => todo!(),
-            DeviceEvent::MouseMotion { delta } => todo!(),
-            DeviceEvent::MouseWheel { delta } => todo!(),
-            DeviceEvent::Motion { axis, value } => todo!(),
-            DeviceEvent::Button { button, state } => todo!(),
-            DeviceEvent::Key(_) => todo!(),
-            DeviceEvent::Text { codepoint } => todo!(),*/
+            _ => (), /*
+                     DeviceEvent::Added => todo!(),
+                     DeviceEvent::Removed => todo!(),
+                     DeviceEvent::MouseMotion { delta } => todo!(),
+                     DeviceEvent::MouseWheel { delta } => todo!(),
+                     DeviceEvent::Motion { axis, value } => todo!(),
+                     DeviceEvent::Button { button, state } => todo!(),
+                     DeviceEvent::Key(_) => todo!(),
+                     DeviceEvent::Text { codepoint } => todo!(),*/
         }
     }
 
@@ -93,31 +97,32 @@ impl CameraController {
             }
             _ => false,
         }
-    }    
-    
+    }
+
     pub fn update_camera(&mut self, camera: &mut game_engine::renderer::Camera) {
-        const MAX_PITCH : f32 = 89f32 * (PI / 180.0f32);
+        const MAX_PITCH: f32 = 89f32 * (PI / 180.0f32);
         if self.rotation.x < -MAX_PITCH {
             self.rotation.x = -MAX_PITCH;
         }
         if self.rotation.x > MAX_PITCH {
             self.rotation.x = MAX_PITCH;
         }
-        
-        let forward = Vec3::new(self.rotation.y.sin(),self.rotation.x.sin(),self.rotation.y.cos());
-        let forward_norm = forward.normalized();
-        let forward_mag = forward.magnitude();
 
-        // Prevents glitching when camera gets too close to the
-        // center of the scene.
-        if self.is_forward_pressed && forward_mag > self.speed {
+        let forward = Vec3::new(
+            self.rotation.y.sin() * self.rotation.x.cos(),
+            self.rotation.x.sin(),
+            self.rotation.y.cos() * self.rotation.x.cos(),
+        );
+        let forward_norm = forward.normalized();
+
+        if self.is_forward_pressed {
             self.position += forward_norm * self.speed;
         }
         if self.is_backward_pressed {
             self.position -= forward_norm * self.speed;
         }
 
-        let right = forward_norm.cross(camera.up);
+        let right = forward_norm.cross(camera.up).normalized();
         let up = camera.up;
 
         if self.is_right_pressed {
