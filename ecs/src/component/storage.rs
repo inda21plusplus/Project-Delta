@@ -1,11 +1,10 @@
 use dense_bitset::BitSet;
 use std::{
     alloc::{self, Layout},
-    fmt, mem,
+    fmt,
+    mem::{self, MaybeUninit},
     ptr::NonNull,
 };
-
-use crate::Entity;
 
 #[derive(Debug)]
 pub enum Storage {
@@ -31,8 +30,9 @@ impl Storage {
     }
 
     // Returns true if `entity` previously had this kind of component.
-    pub fn set<T>(&mut self, entity: Entity, mut value: T) -> bool {
-        let res = unsafe { self.set_ptr(entity, ((&mut value) as *mut T).cast()) };
+    /// `Self` must be a storage for `T`s
+    pub unsafe fn set<T>(&mut self, index: usize, mut value: T) -> bool {
+        let res = self.set_ptr(index, ((&mut value) as *mut T).cast());
         mem::forget(value);
         res
     }
@@ -40,35 +40,39 @@ impl Storage {
     // Returns true if `entity` previously had this kind of component.
     // #SAFETY:
     // The value pointed to by `ptr` must not be freed by the caller.
-    pub unsafe fn set_ptr(&mut self, entity: Entity, ptr: *mut u8) -> bool {
-        let index = entity.id as usize;
+    pub unsafe fn set_ptr(&mut self, index: usize, ptr: *mut u8) -> bool {
         match self {
             Self::VecStorage(s) => s.set(index, ptr),
         }
     }
 
-    pub fn remove(&mut self, entity: Entity) -> bool {
-        let index = entity.id as usize;
+    pub fn unset(&mut self, index: usize) -> bool {
+        match self {
+            Self::VecStorage(s) => s.unset(index),
+        }
+    }
+
+    /// #SAFETY:
+    /// `Self` must be a storage for `T`s
+    pub unsafe fn remove<T: 'static>(&mut self, index: usize) -> Option<T> {
         match self {
             Self::VecStorage(s) => s.remove(index),
         }
     }
 
-    pub fn get<T>(&self, entity: Entity) -> Option<&T> {
-        let index = entity.id as usize;
-        unsafe {
-            match self {
-                Self::VecStorage(s) => s.get(index).cast::<T>().as_ref(),
-            }
+    /// #SAFETY:
+    /// `Self` must be a storage for `T`s
+    pub unsafe fn get<T>(&self, index: usize) -> Option<&T> {
+        match self {
+            Self::VecStorage(s) => s.get(index).cast::<T>().as_ref(),
         }
     }
 
-    pub fn get_mut<T>(&mut self, entity: Entity) -> Option<&mut T> {
-        let index = entity.id as usize;
-        unsafe {
-            match self {
-                Self::VecStorage(s) => s.get_mut(index).map(|p| p.cast::<T>().as_mut()),
-            }
+    /// #SAFETY:
+    /// `Self` must be a storage for `T`s
+    pub unsafe fn get_mut<T>(&mut self, index: usize) -> Option<&mut T> {
+        match self {
+            Self::VecStorage(s) => s.get_mut(index).map(|p| p.cast::<T>().as_mut()),
         }
     }
 }
@@ -99,7 +103,7 @@ impl VecStorage {
     unsafe fn set(&mut self, index: usize, value: *mut u8) -> bool {
         self.ensure_capacity(index + 1);
 
-        let res = self.remove(index);
+        let res = self.unset(index);
         self.get_mut_unchecked(index)
             .as_ptr()
             .copy_from_nonoverlapping(value, self.item_layout.size());
@@ -107,16 +111,31 @@ impl VecStorage {
         res
     }
 
-    /// Returns true if the component was removed
-    fn remove(&mut self, index: usize) -> bool {
+    /// Runs the destructor for the component marks it as not occupied.
+    /// Returns true if the component was removed.
+    fn unset(&mut self, index: usize) -> bool {
         if !self.occupied.get(index) {
             return false;
         }
+        self.occupied.remove(index);
         unsafe {
             (self.drop)(self.get_mut_unchecked(index).as_ptr());
         }
-        self.occupied.remove(index);
         true
+    }
+
+    /// Take out the component from `Self`. Does not run its destructor.
+    /// #SAFETY:
+    /// `Self` must contain `T`s
+    unsafe fn remove<T: 'static>(&mut self, index: usize) -> Option<T> {
+        if !self.occupied.get(index) {
+            return None;
+        }
+        self.occupied.remove(index);
+        let ptr = self.get_mut_unchecked(index).as_ptr().cast::<T>();
+        let mut res: MaybeUninit<T> = MaybeUninit::uninit();
+        res.as_mut_ptr().copy_from(ptr, 1);
+        Some(res.assume_init())
     }
 
     fn ensure_capacity(&mut self, cap: usize) {
@@ -141,7 +160,7 @@ impl VecStorage {
         while self.cap > 0 {
             self.cap -= 1;
             let i = self.cap;
-            self.remove(i);
+            self.unset(i);
         }
     }
 

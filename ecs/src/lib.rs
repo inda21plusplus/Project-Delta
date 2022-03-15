@@ -109,15 +109,38 @@ mod tests {
             let es: Vec<_> = (0..100).map(|_| entities.spawn()).collect();
             for i in (0..100).step_by(2) {
                 assert_eq!(i / 2, counter.get());
-                storage.set(es[i], Counter::new(counter.clone()));
+                unsafe {
+                    storage.set(
+                        entities.id(es[i]).unwrap() as usize,
+                        Counter::new(counter.clone()),
+                    );
+                }
             }
             assert_eq!(50, counter.get());
-            for &e in &es[0..50] {
-                // NOTE: half of these calls should overwrite (and therefore free) the Counters,
-                // and the other half should put the counters previously unused memory
-                storage.set(e, Counter::new(counter.clone()));
+            for &e in &es[..50] {
+                let index = entities.id(e).unwrap() as usize;
+                unsafe {
+                    let existed = storage.set(index, Counter::new(counter.clone()));
+                    if index % 2 == 0 {
+                        assert!(existed);
+                    } else {
+                        assert!(!existed);
+                    }
+                }
             }
             assert_eq!(75, counter.get());
+            for &e in &es[50..] {
+                let index = entities.id(e).unwrap() as usize;
+                unsafe {
+                    let c: Option<Counter> = storage.remove(index);
+                    if index % 2 == 0 {
+                        assert!(c.is_some());
+                    } else {
+                        assert!(c.is_none());
+                    }
+                }
+            }
+            assert_eq!(50, counter.get());
         }
         assert_eq!(0, counter.get());
     }
@@ -196,6 +219,8 @@ mod tests {
             world.get::<Position>(player)
         );
 
+        world.despawn(player);
+
         world.get_mut::<Position>(rare_sword).unwrap().x += 1.;
 
         assert_eq!(
@@ -206,5 +231,24 @@ mod tests {
             }),
             world.get::<Position>(rare_sword)
         );
+    }
+
+    #[test]
+    fn world2() {
+        let mut world = World::default();
+
+        #[derive(Debug, PartialEq, Clone, Copy)]
+        struct Health(u8);
+        #[derive(Debug, PartialEq, Clone, Copy)]
+        struct Hunger(u8);
+
+        let player1 = world.spawn().add(Health(100)).add(Hunger(20)).entity();
+        assert_eq!(Some(Hunger(20)), world.remove(player1));
+        assert_eq!(None, world.remove::<Hunger>(player1));
+        world.despawn(player1);
+
+        let player2 = world.spawn().add(Health(50)).entity();
+        assert!(world.get::<Health>(player1).is_none());
+        assert_eq!(Some(Health(50)), world.get::<Health>(player2).copied());
     }
 }

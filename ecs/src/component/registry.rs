@@ -12,6 +12,7 @@ pub struct ComponentId(u16);
 #[derive(Debug, PartialEq, Eq)]
 pub struct ComponentInfo {
     name: String,
+    type_id: Option<TypeId>,
 }
 
 impl ComponentInfo {
@@ -51,6 +52,7 @@ impl ComponentRegistry {
 
         let info = ComponentInfo {
             name: any::type_name::<T>().to_string(),
+            type_id: Some(type_id),
         };
         // TODO: detect which storage type should be used, or *maybe* creating components from rust
         // struct will always want the same kind of storage since they will probably be on most

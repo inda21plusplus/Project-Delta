@@ -5,7 +5,7 @@ type Generation = u32;
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy, Hash)]
 pub struct Entity {
-    pub(crate) id: EntityId,
+    id: EntityId,
     gen: Generation,
 }
 
@@ -58,6 +58,14 @@ impl Entities {
         match self.entities[entity.id as usize] {
             MaybeEntity::Alive(gen) => entity.gen == gen,
             MaybeEntity::Free(_) => false,
+        }
+    }
+
+    pub fn id(&self, entity: Entity) -> Option<EntityId> {
+        if self.exists(entity) {
+            Some(entity.id)
+        } else {
+            None
         }
     }
 

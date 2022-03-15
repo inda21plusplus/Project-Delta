@@ -30,23 +30,36 @@ impl World {
         }
     }
 
-    /// Returns true if the entity already had a component of type T.
-    pub fn add<T: 'static>(&mut self, entity: Entity, component: T) -> bool {
-        let component_id = self
+    pub fn add<T: 'static>(&mut self, entity: Entity, component: T) {
+        let comp_id = self
             .component_registry
             .id::<T>()
             .unwrap_or_else(|| self.component_registry.register::<T>());
 
-        self.component_registry[component_id]
-            .storage
-            .set(entity, component)
+        self.entities.id(entity).map(|id| unsafe {
+            self.component_registry[comp_id]
+                .storage
+                .set(id as usize, component)
+        });
+    }
+
+    pub fn remove<T: 'static>(&mut self, entity: Entity) -> Option<T> {
+        let comp_id = self.component_registry.id::<T>()?;
+
+        let id = self.entities.id(entity)?;
+        unsafe {
+            self.component_registry[comp_id]
+                .storage
+                .remove::<T>(id as usize)
+        }
     }
 
     /// Returns true if the entity existed.
     pub fn despawn(&mut self, entity: Entity) -> bool {
-        if self.entities.despawn(entity) {
+        if let Some(id) = self.entities.id(entity) {
+            self.entities.despawn(entity);
             for component in self.component_registry.entries_mut() {
-                component.storage.remove(entity);
+                component.storage.unset(id as usize);
             }
             true
         } else {
@@ -55,14 +68,24 @@ impl World {
     }
 
     pub fn get_mut<T: 'static>(&mut self, entity: Entity) -> Option<&mut T> {
-        let id = self.component_registry.id::<T>()?;
+        let comp_id = self.component_registry.id::<T>()?;
 
-        self.component_registry[id].storage.get_mut(entity)
+        self.entities
+            .id(entity)
+            .map(|id| unsafe {
+                self.component_registry[comp_id]
+                    .storage
+                    .get_mut(id as usize)
+            })
+            .flatten()
     }
 
     pub fn get<T: 'static>(&self, entity: Entity) -> Option<&T> {
-        let id = self.component_registry.id::<T>()?;
+        let comp_id = self.component_registry.id::<T>()?;
 
-        self.component_registry[id].storage.get(entity)
+        self.entities
+            .id(entity)
+            .map(|id| unsafe { self.component_registry[comp_id].storage.get(id as usize) })
+            .flatten()
     }
 }
