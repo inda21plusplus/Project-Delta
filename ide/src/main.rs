@@ -3,7 +3,7 @@ use game_engine::{renderer::Instance, Context};
 
 use winit::{
     dpi::LogicalPosition,
-    event::{DeviceEvent, Event, KeyboardInput, WindowEvent},
+    event::{Event, KeyboardInput, WindowEvent},
     event_loop::{ControlFlow, EventLoop},
     window::{Icon, WindowBuilder},
 };
@@ -21,14 +21,16 @@ const NUM_INSTANCES_PER_ROW: u32 = 4;
 
 fn update(start: std::time::Instant, dt: f32, objects: &mut Vec<Instance>) {
     let offset = start.elapsed().as_secs_f32().sin();
-    for obj in objects {}
+    for obj in objects {
+        obj.position.y += offset / 50.0
+    }
 }
 
 fn main() {
     env_logger::init();
 
     //let icon_vec: Vec<u8> = vec![0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0];
-    let (img_width,img_height,img_vec) = im::get_logo("icon.ppm".to_string());
+    let (img_width, img_height, img_vec) = im::get_logo("icon.ppm".to_string());
     let icon = Icon::from_rgba(img_vec, img_width, img_height).unwrap();
 
     let event_loop = EventLoop::new();
@@ -81,9 +83,6 @@ fn main() {
         .collect::<Vec<_>>();
 
     let mut allow_camera_update = true;
-    let mut cursor_is_visible = false;
-    let mut window_active = true;
-    let mut cursor_grab = true;
     let mut last_frame = std::time::Instant::now();
     event_loop.run(move |event, _, control_flow| {
         *control_flow = ControlFlow::Poll;
@@ -117,7 +116,6 @@ fn main() {
                     WindowEvent::KeyboardInput {
                         input:
                             KeyboardInput {
-                                state,
                                 virtual_keycode: Some(keycode),
                                 ..
                             },
@@ -126,20 +124,32 @@ fn main() {
                         winit::event::VirtualKeyCode::Q => {
                             allow_camera_update = false;
                             window.set_cursor_visible(true);
-                            window.set_cursor_grab(false);
-                            window.set_cursor_position(LogicalPosition::new(
+                            match window.set_cursor_grab(false) {
+                                Ok(_) => (),
+                                Err(e) => eprintln!("{:?}", e),
+                            }
+                            match window.set_cursor_position(LogicalPosition::new(
                                 size.width / 2,
                                 size.height / 2,
-                            ));
+                            )) {
+                                Ok(_) => (),
+                                Err(e) => eprintln!("{:?}", e),
+                            }
                         }
                         winit::event::VirtualKeyCode::E => {
-                            window.set_cursor_position(LogicalPosition::new(
+                            match window.set_cursor_position(LogicalPosition::new(
                                 size.width / 2,
                                 size.height / 2,
-                            ));
+                            )) {
+                                Ok(_) => (),
+                                Err(e) => eprintln!("{:?}", e),
+                            }
                             allow_camera_update = true;
                             window.set_cursor_visible(false);
-                            window.set_cursor_grab(true);
+                            match window.set_cursor_grab(true) {
+                                Ok(_) => (),
+                                Err(e) => eprintln!("{:?}", e),
+                            }
                         }
                         _ => (),
                     },
@@ -154,7 +164,7 @@ fn main() {
                 }
                 let dt = last_frame.elapsed().as_secs_f32();
                 last_frame = std::time::Instant::now();
-                let frame_rate = 1.0 / dt; // TODO render on screen
+                let _frame_rate = 1.0 / dt; // TODO render on screen
 
                 update(start, dt, &mut instances);
 
