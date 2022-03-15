@@ -7,7 +7,7 @@ outfile = open("icon.ppm", "w")
 height, width = im.size
 
 outfile.write(f"P3\n{width} {height}\n")
-print(f"{pixels.length}")
+
 for y in range(height):
     for x in range(width):
         rbga = pixels[x, y]

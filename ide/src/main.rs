@@ -1,5 +1,5 @@
 use camera_controller::CameraController;
-use game_engine::{renderer::Instance, Context};
+use game_engine::{renderer::Transform, Context};
 
 use winit::{
     dpi::LogicalPosition,
@@ -19,18 +19,17 @@ mod im;
 const SPACE_BETWEEN: f32 = 3.0;
 const NUM_INSTANCES_PER_ROW: u32 = 4;
 
-fn update(start: std::time::Instant, dt: f32, objects: &mut Vec<Instance>) {
+fn update(start: std::time::Instant, dt: f32, objects: &mut Vec<Transform>) {
     let offset = start.elapsed().as_secs_f32().sin();
     for obj in objects {
-        obj.position.y += offset / 50.0
+        obj.position.y += offset * 2.0 * dt
     }
 }
 
 fn main() {
     env_logger::init();
 
-    //let icon_vec: Vec<u8> = vec![0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0, 0, 255, 0, 0];
-    let (img_width, img_height, img_vec) = im::get_logo("icon.ppm".to_string());
+    let (img_width, img_height, img_vec) = im::get_logo("icon.ppm".to_string()).unwrap();
     let icon = Icon::from_rgba(img_vec, img_width, img_height).unwrap();
 
     let event_loop = EventLoop::new();
@@ -73,7 +72,7 @@ fn main() {
                     Quaternion::rotation_3d(std::f32::consts::FRAC_PI_4, position.normalized())
                 };
 
-                Instance {
+                Transform {
                     position,
                     rotation,
                     scale: Vec3::new(1.0, 1.0, 1.0),

@@ -1,32 +1,36 @@
-use std::{
-    fs::{self, File},
-    io::Read,
-};
+use std::{error::Error, fs::File, io::Read};
 
-pub fn get_logo(file_name: String) -> (u32, u32, Vec<u8>) {
+pub fn get_logo(file_name: String) -> Result<(u32, u32, Vec<u8>), Box<dyn Error>> {
     let mut bff = String::new();
 
     let mut file = File::open(&file_name).expect("Unable to open file");
     file.read_to_string(&mut bff).expect("Unable to read");
     let mut lines = bff.lines();
     lines.next();
-    let (width_str, height_str) = lines.next().unwrap().split_once(' ').unwrap();
-    let width: usize = width_str.parse().unwrap();
-    let height: usize = height_str.parse().unwrap();
+
+    // same format as ppm but with an added alpha channel
+    let (width_str, height_str) = lines
+        .next()
+        .ok_or("Failed to read line")?
+        .split_once(' ')
+        .ok_or("failed to split")?;
+    let width: usize = width_str.parse()?;
+    let height: usize = height_str.parse()?;
     let mut content: Vec<u8> = Vec::with_capacity(width * height * 4);
     for _ in 0..height {
         for _ in 0..width {
-            let mut line = lines.next().unwrap().splitn(4, ' ');
-            let r: u8 = line.next().unwrap().parse().unwrap();
-            let g: u8 = line.next().unwrap().parse().unwrap();
-            let b: u8 = line.next().unwrap().parse().unwrap();
-            let a: u8 = line.next().unwrap().parse().unwrap();
-            content.push(g);
-            content.push(b);
-            content.push(r);
-            content.push(a);
+            let items: Vec<u8> = lines
+                .next()
+                .ok_or("Failed to read line")?
+                .splitn(4, ' ')
+                .flat_map(|x| x.parse::<u8>())
+                .collect();
+            content.push(items[1]);
+            content.push(items[2]);
+            content.push(items[0]);
+            content.push(items[3]);
         }
     }
 
-    (width as u32, height as u32, content)
+    Ok((width as u32, height as u32, content))
 }

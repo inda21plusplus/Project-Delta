@@ -1,5 +1,3 @@
-use log::info;
-
 use vek::mat::repr_c::Mat4;
 use vek::quaternion::repr_c::Quaternion;
 use vek::vec::repr_c::Vec3;
@@ -13,8 +11,6 @@ mod model;
 mod texture;
 
 use model::{DrawModel, Vertex};
-
-use image;
 
 use std::iter;
 use std::mem;
@@ -30,8 +26,6 @@ pub fn opengl_to_wgpu_matrix() -> Mat4<f32> {
         0.0, 0.0, 0.5, 1.0,
     )
 }
-
-const NUM_INSTANCES_PER_ROW: u32 = 10;
 
 pub struct Camera {
     pub eye: Vec3<f32>,
@@ -72,35 +66,37 @@ impl CameraUniform {
 }
 
 #[derive(Copy, Clone, Debug)]
-pub struct Instance {
+pub struct Transform {
     pub position: Vec3<f32>,
     pub rotation: Quaternion<f32>,
     pub scale: Vec3<f32>,
 }
 
-impl Instance {
+impl Transform {
     fn to_raw(&self) -> InstanceRaw {
         InstanceRaw {
             model: unsafe {
                 mem::transmute::<Mat4<f32>, _>(
-                    Mat4::<f32>::translation_3d(self.position)* Mat4::from(self.rotation) * Mat4::new(
-                        self.scale.x,
-                        0.0,
-                        0.0,
-                        0.0,
-                        0.0,
-                        self.scale.y,
-                        0.0,
-                        0.0,
-                        0.0,
-                        0.0,
-                        self.scale.z,
-                        0.0,
-                        0.0,
-                        0.0,
-                        0.0,
-                        1.0,
-                    )   
+                    Mat4::<f32>::translation_3d(self.position)
+                        * Mat4::from(self.rotation)
+                        * Mat4::new(
+                            self.scale.x,
+                            0.0,
+                            0.0,
+                            0.0,
+                            0.0,
+                            self.scale.y,
+                            0.0,
+                            0.0,
+                            0.0,
+                            0.0,
+                            self.scale.z,
+                            0.0,
+                            0.0,
+                            0.0,
+                            0.0,
+                            1.0,
+                        ),
                 )
             },
         }
@@ -116,7 +112,6 @@ struct InstanceRaw {
 
 impl InstanceRaw {
     fn desc<'a>() -> wgpu::VertexBufferLayout<'a> {
-        use std::mem;
         wgpu::VertexBufferLayout {
             array_stride: mem::size_of::<InstanceRaw>() as wgpu::BufferAddress,
             // We need to switch from using a step mode of Vertex to Instance
@@ -172,7 +167,7 @@ pub struct Renderer {
     camera_uniform: CameraUniform,
     camera_buffer: wgpu::Buffer,
     camera_bind_group: wgpu::BindGroup,
-    instances: Vec<Vec<Instance>>,
+    instances: Vec<Vec<Transform>>,
     #[allow(dead_code)]
     instance_buffers: Vec<wgpu::Buffer>,
     depth_texture: texture::Texture,
@@ -392,7 +387,9 @@ impl Renderer {
             .push(self.device.create_buffer(&wgpu::BufferDescriptor {
                 label: Some(&format!("Instance buffer {}", self.models.len())),
                 size: 16 * 4 * 4 * mem::size_of::<f32>() as u64,
-                usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::INDEX | wgpu::BufferUsages::VERTEX,
+                usage: wgpu::BufferUsages::COPY_DST
+                    | wgpu::BufferUsages::INDEX
+                    | wgpu::BufferUsages::VERTEX,
                 mapped_at_creation: false,
             }));
         self.instances.push(vec![]);
@@ -409,9 +406,9 @@ impl Renderer {
         );
     }
 
-    pub fn update_instances(&mut self, instances: &[(ModelIndex, &[Instance])]) {
+    pub fn update_instances(&mut self, instances: &[(ModelIndex, &[Transform])]) {
         for (idx, data) in instances {
-            let raw_data = data.iter().map(Instance::to_raw).collect::<Vec<_>>();
+            let raw_data = data.iter().map(Transform::to_raw).collect::<Vec<_>>();
             self.queue.write_buffer(
                 &self.instance_buffers[*idx],
                 0,
