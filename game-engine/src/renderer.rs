@@ -72,13 +72,13 @@ impl CameraUniform {
 }
 
 #[derive(Copy, Clone, Debug)]
-pub struct Instance {
+pub struct Transform {
     pub position: Vec3<f32>,
     pub rotation: Quaternion<f32>,
     pub scale: Vec3<f32>,
 }
 
-impl Instance {
+impl Transform {
     fn to_raw(&self) -> InstanceRaw {
         InstanceRaw {
             model: unsafe {
@@ -172,7 +172,7 @@ pub struct Renderer {
     camera_uniform: CameraUniform,
     camera_buffer: wgpu::Buffer,
     camera_bind_group: wgpu::BindGroup,
-    instances: Vec<Vec<Instance>>,
+    instances: Vec<Vec<Transform>>,
     #[allow(dead_code)]
     instance_buffers: Vec<wgpu::Buffer>,
     depth_texture: texture::Texture,
@@ -409,9 +409,9 @@ impl Renderer {
         );
     }
 
-    pub fn update_instances(&mut self, instances: &[(ModelIndex, &[Instance])]) {
+    pub fn update_instances(&mut self, instances: &[(ModelIndex, &[Transform])]) {
         for (idx, data) in instances {
-            let raw_data = data.iter().map(Instance::to_raw).collect::<Vec<_>>();
+            let raw_data = data.iter().map(Transform::to_raw).collect::<Vec<_>>();
             self.queue.write_buffer(
                 &self.instance_buffers[*idx],
                 0,
