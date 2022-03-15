@@ -99,7 +99,7 @@ impl CameraController {
         }
     }
 
-    pub fn update_camera(&mut self, camera: &mut game_engine::renderer::Camera) {
+    pub fn update_camera(&mut self, dt : f32, camera: &mut game_engine::renderer::Camera) {
         const MAX_PITCH: f32 = 89f32 * (PI / 180.0f32);
         if self.rotation.x < -MAX_PITCH {
             self.rotation.x = -MAX_PITCH;
@@ -107,6 +107,8 @@ impl CameraController {
         if self.rotation.x > MAX_PITCH {
             self.rotation.x = MAX_PITCH;
         }
+
+        let frame_speed = dt * self.speed;
 
         let forward = Vec3::new(
             self.rotation.y.sin() * self.rotation.x.cos(),
@@ -116,27 +118,27 @@ impl CameraController {
         let forward_norm = forward.normalized();
 
         if self.is_forward_pressed {
-            self.position += forward_norm * self.speed;
+            self.position += forward_norm * frame_speed;
         }
         if self.is_backward_pressed {
-            self.position -= forward_norm * self.speed;
+            self.position -= forward_norm * frame_speed;
         }
 
         let right = forward_norm.cross(camera.up).normalized();
         let up = camera.up;
 
         if self.is_right_pressed {
-            self.position += right * self.speed;
+            self.position += right * frame_speed;
         }
         if self.is_left_pressed {
-            self.position -= right * self.speed;
+            self.position -= right * frame_speed;
         }
 
         if self.is_space_pressed {
-            self.position += up * self.speed;
+            self.position += up * frame_speed;
         }
         if self.is_ctrl_pressed {
-            self.position -= up * self.speed;
+            self.position -= up * frame_speed;
         }
 
         camera.eye = self.position;

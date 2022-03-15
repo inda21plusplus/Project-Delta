@@ -52,7 +52,7 @@ fn main() {
     let start = std::time::Instant::now();
 
     let mut camera_controller = CameraController::new(
-        0.2,
+        10.0,
         0.01,
         Vec3::new(-15.0, 10.0, 0.0),
         Vec3::new(-35.0f32.to_radians(), 90.0f32.to_radians(), 0.0),
@@ -158,12 +158,13 @@ fn main() {
 
             Event::MainEventsCleared => window.request_redraw(),
             Event::RedrawRequested(_) => {
-                if allow_camera_update {
-                    camera_controller.update_camera(&mut context.renderer.camera);
-                }
                 let dt = last_frame.elapsed().as_secs_f32();
                 last_frame = std::time::Instant::now();
                 let _frame_rate = 1.0 / dt; // TODO render on screen
+
+                if allow_camera_update {
+                    camera_controller.update_camera(dt, &mut context.renderer.camera);
+                }
 
                 update(start, dt, &mut instances);
 
