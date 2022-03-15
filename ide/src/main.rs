@@ -3,7 +3,7 @@ use game_engine::{renderer::Instance, Context};
 
 use winit::{
     dpi::LogicalPosition,
-    event::{Event, WindowEvent},
+    event::{DeviceEvent, Event, KeyboardInput, WindowEvent},
     event_loop::{ControlFlow, EventLoop},
     window::{Icon, WindowBuilder},
 };
@@ -80,7 +80,10 @@ fn main() {
         })
         .collect::<Vec<_>>();
 
-    let mut cursor_in_window = true;
+    let mut allow_camera_update = true;
+    let mut cursor_is_visible = false;
+    let mut window_active = true;
+    let mut cursor_grab = true;
     let mut last_frame = std::time::Instant::now();
     event_loop.run(move |event, _, control_flow| {
         *control_flow = ControlFlow::Poll;
@@ -89,8 +92,11 @@ fn main() {
                 device_id: _,
                 event,
             } => {
-                camera_controller.process_device_events(&event);
+                if allow_camera_update {
+                    camera_controller.process_device_events(&event);
+                }
             }
+
             Event::WindowEvent {
                 event: WindowEvent::CloseRequested,
                 window_id,
@@ -104,31 +110,46 @@ fn main() {
 
             Event::WindowEvent {
                 window_id: _,
-                event: WindowEvent::CursorLeft { device_id: _ },
-            } => {
-                cursor_in_window = false;
-            }
-
-            Event::WindowEvent {
-                window_id: _,
-                event: WindowEvent::CursorEntered { device_id: _ },
-            } => {
-                cursor_in_window = true;
-                match window.set_cursor_position(LogicalPosition::new(0.0, 0.0)) {
-                    Ok(_) => (),
-                    Err(e) => eprint!("{:?}", e),
-                }
-            }
-
-            Event::WindowEvent {
-                window_id: _,
                 event,
             } => {
                 camera_controller.process_window_events(&event);
+                match event {
+                    WindowEvent::KeyboardInput {
+                        input:
+                            KeyboardInput {
+                                state,
+                                virtual_keycode: Some(keycode),
+                                ..
+                            },
+                        ..
+                    } => match keycode {
+                        winit::event::VirtualKeyCode::Q => {
+                            allow_camera_update = false;
+                            window.set_cursor_visible(true);
+                            window.set_cursor_grab(false);
+                            window.set_cursor_position(LogicalPosition::new(
+                                size.width / 2,
+                                size.height / 2,
+                            ));
+                        }
+                        winit::event::VirtualKeyCode::E => {
+                            window.set_cursor_position(LogicalPosition::new(
+                                size.width / 2,
+                                size.height / 2,
+                            ));
+                            allow_camera_update = true;
+                            window.set_cursor_visible(false);
+                            window.set_cursor_grab(true);
+                        }
+                        _ => (),
+                    },
+                    _ => (),
+                }
             }
+
             Event::MainEventsCleared => window.request_redraw(),
             Event::RedrawRequested(_) => {
-                if cursor_in_window {
+                if allow_camera_update {
                     camera_controller.update_camera(&mut context.renderer.camera);
                 }
                 let dt = last_frame.elapsed().as_secs_f32();
