@@ -251,4 +251,42 @@ mod tests {
         assert!(world.get::<Health>(player1).is_none());
         assert_eq!(Some(Health(50)), world.get::<Health>(player2).copied());
     }
+
+    #[test]
+    fn zero_sized_components() {
+        let mut world = World::default();
+
+        struct Marker;
+
+        let e1 = world.spawn().add(Marker).entity();
+        let e2 = world.spawn().entity();
+        let e3 = world.spawn().add(Marker).entity();
+        let e4 = world.spawn().entity();
+
+        assert!(world.get::<Marker>(e1).is_some());
+        assert!(world.get::<Marker>(e2).is_none());
+        assert!(world.get::<Marker>(e3).is_some());
+        assert!(world.get::<Marker>(e4).is_none());
+
+        world.remove::<Marker>(e1);
+
+        assert!(world.get::<Marker>(e1).is_none());
+        assert!(world.get::<Marker>(e2).is_none());
+        assert!(world.get::<Marker>(e3).is_some());
+        assert!(world.get::<Marker>(e4).is_none());
+
+        world.add::<Marker>(e2, Marker);
+
+        assert!(world.get::<Marker>(e1).is_none());
+        assert!(world.get::<Marker>(e2).is_some());
+        assert!(world.get::<Marker>(e3).is_some());
+        assert!(world.get::<Marker>(e4).is_none());
+
+        world.add::<Marker>(e2, Marker);
+
+        assert!(world.get::<Marker>(e1).is_none());
+        assert!(world.get::<Marker>(e2).is_some());
+        assert!(world.get::<Marker>(e3).is_some());
+        assert!(world.get::<Marker>(e4).is_none());
+    }
 }

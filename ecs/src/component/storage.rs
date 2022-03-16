@@ -84,8 +84,8 @@ pub struct VecStorage {
     item_layout: Layout,
     drop: unsafe fn(*mut u8),
     cap: usize,
-    // Is dangling when `cap` is zero. Points to an allocated buffer of `cap` *
-    // `layout.size()`
+    // Is dangling when `cap * layout.size()` is zero. Points to an allocated buffer of
+    // `cap * layout.size()` bytes otherwise.
     ptr: NonNull<u8>,
 }
 
@@ -127,7 +127,7 @@ impl VecStorage {
     }
 
     /// Take out the component from `Self`. Does not run its destructor.
-    /// #SAFETY:
+    /// # Safety
     /// `Self` must contain `T`s
     unsafe fn remove<T: 'static>(&mut self, index: usize) -> Option<T> {
         if !self.occupied.get(index) {
@@ -141,21 +141,25 @@ impl VecStorage {
     }
 
     fn ensure_capacity(&mut self, cap: usize) {
-        if self.cap >= cap {
+        let old_cap = self.cap;
+        if old_cap >= cap {
             return;
         }
         let cap = cap.next_power_of_two();
-        let curr_layout = self.layout_with_cap(self.cap);
+        self.cap = cap;
+        let curr_layout = self.layout_with_cap(old_cap);
         let new_layout = self.layout_with_cap(cap);
+        if new_layout.size() == 0 {
+            return;
+        }
         let new_data = unsafe {
-            if self.cap == 0 {
+            if old_cap == 0 {
                 alloc::alloc(new_layout)
             } else {
                 alloc::realloc(self.ptr.as_ptr(), curr_layout, new_layout.size())
             }
         };
         self.ptr = NonNull::new(new_data).expect("Failed to allocate component array");
-        self.cap = cap;
     }
 
     fn clear(&mut self) {
