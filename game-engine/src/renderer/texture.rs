@@ -2,6 +2,8 @@ use image;
 use image::GenericImageView;
 use std::{num::NonZeroU32, path::Path};
 
+use crate::error::LoadError;
+
 pub struct Texture {
     pub texture: wgpu::Texture,
     pub view: wgpu::TextureView,
@@ -11,13 +13,13 @@ pub struct Texture {
 impl Texture {
     pub const DEPTH_FORMAT: wgpu::TextureFormat = wgpu::TextureFormat::Depth32Float;
 
-    pub fn load<P: AsRef<Path>>(device: &wgpu::Device, queue: &wgpu::Queue, path: P) -> Self {
+    pub fn load<P: AsRef<Path>>(device: &wgpu::Device, queue: &wgpu::Queue, path: P) -> Result<Self, LoadError> {
         // Needed to appease the borrow checker
         let path_copy = path.as_ref().to_path_buf();
         let label = path_copy.to_str();
 
-        let img = image::open(path).expect("failed to open image");
-        Self::from_image(device, queue, &img, label)
+        let img = image::open(path)?;
+        Ok(Self::from_image(device, queue, &img, label))
     }
 
     pub fn create_depth_texture(
@@ -67,9 +69,9 @@ impl Texture {
         queue: &wgpu::Queue,
         bytes: &[u8],
         label: &str,
-    ) -> Self {
-        let img = image::load_from_memory(bytes).expect("failed to load image");
-        Self::from_image(device, queue, &img, Some(label))
+    ) -> Result<Self, LoadError> {
+        let img = image::load_from_memory(bytes)?;
+        Ok(Self::from_image(device, queue, &img, Some(label)))
     }
 
     pub fn from_image(

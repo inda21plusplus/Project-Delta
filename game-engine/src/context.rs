@@ -6,15 +6,18 @@ pub struct Context {
 }
 
 impl Context {
-    pub fn new<W: HasRawWindowHandle>(w: &W, size: (u32, u32)) -> Self {
-        Self {
+    pub fn new<W: HasRawWindowHandle>(
+        w: &W,
+        size: (u32, u32),
+    ) -> Result<Self, crate::error::RenderingError> {
+        Ok(Self {
             renderer: Renderer::new(
                 w,
                 PhysicalSize {
                     width: size.0,
                     height: size.1,
                 },
-            ),
-        }
+            )?,
+        })
     }
 }

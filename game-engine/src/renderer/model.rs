@@ -3,6 +3,7 @@ use std::path::Path;
 use tobj::LoadOptions;
 use wgpu::util::DeviceExt;
 
+use crate::error::LoadError;
 use super::texture;
 
 pub trait Vertex {
@@ -69,7 +70,7 @@ impl Model {
         queue: &wgpu::Queue,
         layout: &wgpu::BindGroupLayout,
         path: P,
-    ) -> Self {
+    ) -> Result<Self, LoadError> {
         let (obj_models, obj_materials) = tobj::load_obj(
             path.as_ref(),
             &LoadOptions {
@@ -77,19 +78,18 @@ impl Model {
                 single_index: true,
                 ..Default::default()
             },
-        )
-        .unwrap();
+        )?;
 
-        let obj_materials = obj_materials.unwrap();
+        let obj_materials = obj_materials?;
 
         // We're assuming that the texture files are stored with the obj file
-        let containing_folder = path.as_ref().parent().unwrap();
+        let containing_folder = path.as_ref().parent().ok_or_else(|| LoadError::Missing)?;
 
         let mut materials = Vec::new();
         for mat in obj_materials {
             let diffuse_path = mat.diffuse_texture;
             let diffuse_texture =
-                texture::Texture::load(device, queue, containing_folder.join(diffuse_path));
+                texture::Texture::load(device, queue, containing_folder.join(diffuse_path))?;
 
             let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
                 layout,
@@ -152,7 +152,7 @@ impl Model {
             });
         }
 
-        Self { meshes, materials }
+        Ok(Self { meshes, materials })
     }
 }
 

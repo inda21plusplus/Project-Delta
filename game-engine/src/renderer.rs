@@ -1,6 +1,6 @@
 use vek::mat::repr_c::Mat4;
 use vek::quaternion::repr_c::Quaternion;
-use vek::vec::repr_c::Vec3;
+use vek::vec::repr_c::{Vec3, Vec4};
 
 use pollster::FutureExt as _;
 use raw_window_handle::HasRawWindowHandle;
@@ -10,10 +10,12 @@ use wgpu::util::DeviceExt;
 mod model;
 mod texture;
 
+use crate::error::RenderingError;
 use model::{DrawModel, Vertex};
 
 use std::iter;
 use std::mem;
+use std::ops::Range;
 
 type ModelIndex = usize;
 
@@ -74,29 +76,14 @@ pub struct Transform {
 
 impl Transform {
     fn to_raw(&self) -> InstanceRaw {
+        let Vec3 { x, y, z } = self.scale;
+
         InstanceRaw {
             model: unsafe {
                 mem::transmute::<Mat4<f32>, _>(
                     Mat4::<f32>::translation_3d(self.position)
                         * Mat4::from(self.rotation)
-                        * Mat4::new(
-                            self.scale.x,
-                            0.0,
-                            0.0,
-                            0.0,
-                            0.0,
-                            self.scale.y,
-                            0.0,
-                            0.0,
-                            0.0,
-                            0.0,
-                            self.scale.z,
-                            0.0,
-                            0.0,
-                            0.0,
-                            0.0,
-                            1.0,
-                        ),
+                        * Mat4::with_diagonal(Vec4::new(x, y, z, 1.0)),
                 )
             },
         }
@@ -154,6 +141,90 @@ pub struct PhysicalSize {
     pub height: u32,
 }
 
+pub struct ModelManager {
+    models: Vec<model::Model>,
+    instances: Vec<Vec<Transform>>,
+    instance_buffers: Vec<wgpu::Buffer>,
+}
+
+impl ModelManager {
+    pub fn new() -> Self {
+        Self {
+            models: vec![],
+            instances: vec![],
+            instance_buffers: vec![],
+        }
+    }
+
+    pub fn add_model(
+        &mut self,
+        device: &wgpu::Device,
+        model: model::Model,
+        n_instances: u64,
+    ) -> ModelIndex {
+        let idx = self.models.len();
+        self.models.push(model);
+        self.instances.push(vec![]);
+        self.instance_buffers
+            .push(device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some(&format!("Instance buffer {}", self.models.len())),
+                size: n_instances * 4 * 4 * mem::size_of::<f32>() as u64,
+                usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::VERTEX,
+                mapped_at_creation: false,
+            }));
+        idx
+    }
+
+    pub fn get_transforms(&self, model: ModelIndex, range: Range<usize>) -> &[Transform] {
+        &self.instances[model][range]
+    }
+
+    pub fn modify_transforms_with<F>(
+        &mut self,
+        model: ModelIndex,
+        range: Range<usize>,
+        f: F,
+        queue: &wgpu::Queue,
+    ) where
+        F: FnOnce(&mut [Transform]),
+    {
+        // apparently range isn't copy
+        let Range { start, end } = range;
+        f(&mut self.instances[model][start..end]);
+        let raw: Vec<_> = self.instances[model][start..end]
+            .iter()
+            .map(Transform::to_raw)
+            .collect();
+        queue.write_buffer(
+            &self.instance_buffers[model],
+            start as u64 * mem::size_of::<InstanceRaw>() as u64,
+            bytemuck::cast_slice(&raw[..]),
+        );
+    }
+
+    pub fn set_transforms(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        model: ModelIndex,
+        new_transforms: Vec<Transform>,
+    ) {
+        let old_len = self.instances[model].len();
+        let raw: Vec<_> = new_transforms.iter().map(Transform::to_raw).collect();
+        if old_len < self.instances[model].len() {
+            let new_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some(&format!("Instance buffer for model {}", model)),
+                contents: bytemuck::cast_slice(&raw),
+                usage: wgpu::BufferUsages::VERTEX,
+            });
+            self.instance_buffers[model] = new_buffer;
+        } else {
+            queue.write_buffer(&self.instance_buffers[model], 0, bytemuck::cast_slice(&raw));
+        }
+        self.instances[model] = new_transforms;
+    }
+}
+
 pub struct Renderer {
     surface: wgpu::Surface,
     device: wgpu::Device,
@@ -161,20 +232,20 @@ pub struct Renderer {
     config: wgpu::SurfaceConfiguration,
     size: PhysicalSize,
     render_pipeline: wgpu::RenderPipeline,
-    models: Vec<model::Model>,
+    model_manager: ModelManager,
     texture_bind_group_layout: wgpu::BindGroupLayout,
     pub camera: Camera,
     camera_uniform: CameraUniform,
     camera_buffer: wgpu::Buffer,
     camera_bind_group: wgpu::BindGroup,
-    instances: Vec<Vec<Transform>>,
-    #[allow(dead_code)]
-    instance_buffers: Vec<wgpu::Buffer>,
     depth_texture: texture::Texture,
 }
 
 impl Renderer {
-    pub fn new<W: HasRawWindowHandle>(window: &W, size: PhysicalSize) -> Self {
+    pub fn new<W: HasRawWindowHandle>(
+        window: &W,
+        size: PhysicalSize,
+    ) -> Result<Self, RenderingError> {
         // The instance is a handle to our GPU
         // BackendBit::PRIMARY => Vulkan + Metal + DX12 + Browser WebGPU
         let instance = wgpu::Instance::new(wgpu::Backends::all());
@@ -186,20 +257,19 @@ impl Renderer {
                 force_fallback_adapter: false,
             })
             .block_on()
-            .unwrap();
+            .ok_or(RenderingError::NoAdapter)?;
 
         let (device, queue) = adapter
             .request_device(
                 &wgpu::DeviceDescriptor {
                     label: None,
-                    features: wgpu::Features::MAPPABLE_PRIMARY_BUFFERS,
+                    features: wgpu::Features::empty(),
                     limits: wgpu::Limits::default(),
                 },
                 // Some(&std::path::Path::new("trace")), // Trace path
                 None, // Trace path
             )
-            .block_on()
-            .unwrap();
+            .block_on()?;
 
         let config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
@@ -341,23 +411,21 @@ impl Renderer {
             multiview: None,
         });
 
-        Self {
+        Ok(Self {
             surface,
             device,
             queue,
             config,
             size,
             render_pipeline,
-            models: std::vec::Vec::new(),
+            model_manager: ModelManager::new(),
             texture_bind_group_layout,
             camera,
             camera_buffer,
             camera_bind_group,
             camera_uniform,
-            instances: vec![],
-            instance_buffers: vec![],
             depth_texture,
-        }
+        })
     }
 
     pub fn resize(&mut self, new_size: PhysicalSize) {
@@ -372,27 +440,18 @@ impl Renderer {
         }
     }
 
-    pub fn load_model<P: AsRef<std::path::Path>>(&mut self, path: P) -> Result<ModelIndex, ()> {
-        let idx = self.models.len();
-
+    pub fn load_model<P: AsRef<std::path::Path>>(
+        &mut self,
+        path: P,
+    ) -> Result<ModelIndex, RenderingError> {
         let model = model::Model::load(
             &self.device,
             &self.queue,
             &self.texture_bind_group_layout,
             path,
-        );
+        )?;
 
-        self.models.push(model);
-        self.instance_buffers
-            .push(self.device.create_buffer(&wgpu::BufferDescriptor {
-                label: Some(&format!("Instance buffer {}", self.models.len())),
-                size: 16 * 4 * 4 * mem::size_of::<f32>() as u64,
-                usage: wgpu::BufferUsages::COPY_DST
-                    | wgpu::BufferUsages::INDEX
-                    | wgpu::BufferUsages::VERTEX,
-                mapped_at_creation: false,
-            }));
-        self.instances.push(vec![]);
+        let idx = self.model_manager.add_model(&self.device, model, 16);
 
         Ok(idx)
     }
@@ -408,13 +467,8 @@ impl Renderer {
 
     pub fn update_instances(&mut self, instances: &[(ModelIndex, &[Transform])]) {
         for (idx, data) in instances {
-            let raw_data = data.iter().map(Transform::to_raw).collect::<Vec<_>>();
-            self.queue.write_buffer(
-                &self.instance_buffers[*idx],
-                0,
-                bytemuck::cast_slice(&raw_data[..]),
-            );
-            self.instances[*idx] = Vec::from(*data);
+            self.model_manager
+                .set_transforms(&self.device, &self.queue, *idx, data.to_vec());
         }
     }
 
@@ -452,12 +506,12 @@ impl Renderer {
                 }),
             });
 
-            for (c, obj_model) in self.models.iter().enumerate() {
-                render_pass.set_vertex_buffer(1, self.instance_buffers[c].slice(..));
+            for (c, obj_model) in self.model_manager.models.iter().enumerate() {
+                render_pass.set_vertex_buffer(1, self.model_manager.instance_buffers[c].slice(..));
                 render_pass.set_pipeline(&self.render_pipeline);
                 render_pass.draw_model_instanced(
                     &obj_model,
-                    0..self.instances[c].len() as u32,
+                    0..self.model_manager.instances[c].len() as u32,
                     &self.camera_bind_group,
                 );
             }
