@@ -2,9 +2,11 @@
 
 pub mod component;
 mod entity;
+mod query;
 mod world;
 
 pub use entity::{Entities, Entity};
+pub use query::{Query, QueryError, QuerySet};
 pub use world::World;
 
 #[cfg(test)]
@@ -296,5 +298,82 @@ mod tests {
         assert!(world.get::<Marker>(e2).is_some());
         assert!(world.get::<Marker>(e3).is_some());
         assert!(world.get::<Marker>(e4).is_none());
+    }
+
+    #[test]
+    fn validate_empty_query() {
+        assert!(QuerySet::new(vec![]).is_ok());
+    }
+
+    #[test]
+    fn validate_multiple_const_query() {
+        let mut comp_reg = ComponentRegistry::default();
+        struct A;
+        struct B;
+        struct C;
+        let a = comp_reg.register::<A>();
+        let b = comp_reg.register::<B>();
+        let c = comp_reg.register::<C>();
+        assert!(QuerySet::new(vec![
+            Query::Single {
+                id: a,
+                mutable: true,
+                optional: false,
+            },
+            Query::Multiple(vec![
+                Query::Single {
+                    id: b,
+                    mutable: false,
+                    optional: false,
+                },
+                Query::Single {
+                    id: c,
+                    mutable: false,
+                    optional: true,
+                }
+            ]),
+            Query::Single {
+                id: b,
+                mutable: false,
+                optional: false,
+            }
+        ])
+        .is_ok());
+    }
+
+    #[test]
+    fn validate_multiple_mutable_query() {
+        let mut comp_reg = ComponentRegistry::default();
+        struct A;
+        struct B;
+        let a = comp_reg.register::<A>();
+        let b = comp_reg.register::<B>();
+        assert_eq!(
+            Err(QueryError::ConcurrentMutableAccess(b)),
+            QuerySet::new(vec![
+                Query::Single {
+                    id: a,
+                    mutable: true,
+                    optional: false,
+                },
+                Query::Multiple(vec![
+                    Query::Single {
+                        id: a,
+                        mutable: false,
+                        optional: false,
+                    },
+                    Query::Single {
+                        id: b,
+                        mutable: true,
+                        optional: true,
+                    }
+                ]),
+                Query::Single {
+                    id: b,
+                    mutable: true,
+                    optional: true,
+                }
+            ])
+        );
     }
 }

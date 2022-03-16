@@ -6,7 +6,7 @@ use std::{
 
 use super::{Storage, StorageType};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ComponentId(u16);
 
 #[derive(Debug, PartialEq, Eq)]
