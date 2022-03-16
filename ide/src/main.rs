@@ -39,7 +39,8 @@ fn main() {
     let mut context = Context::new(
         &window.winit_window,
         (window.size.width, window.size.height),
-    );
+    )
+    .expect("failed to build context");
     let model_cube = context.renderer.load_model("./res/Cube.obj").unwrap();
     let model_ball = context.renderer.load_model("./res/ball.obj").unwrap();
     let start_time = std::time::Instant::now();
