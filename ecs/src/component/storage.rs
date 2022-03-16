@@ -65,28 +65,40 @@ impl Storage {
     /// # Safety
     /// `Self` must be a storage for `T`s
     pub unsafe fn get<T>(&self, index: usize) -> Option<&T> {
-        match self {
-            Self::VecStorage(s) => s.get(index).cast::<T>().as_ref(),
-        }
+        self.get_ptr(index).cast::<T>().as_ref()
     }
 
     /// # Safety
     /// `Self` must be a storage for `T`s
     pub unsafe fn get_mut<T>(&mut self, index: usize) -> Option<&mut T> {
+        self.get_mut_ptr(index).cast::<T>().as_mut()
+    }
+
+    /// Returns null if nothing exists at `index`
+    pub fn get_ptr(&self, index: usize) -> *const u8 {
         match self {
-            Self::VecStorage(s) => s.get_mut(index).map(|p| p.cast::<T>().as_mut()),
+            Self::VecStorage(s) => s.get(index),
+        }
+    }
+
+    /// Returns null if nothing exists at `index`
+    pub fn get_mut_ptr(&mut self, index: usize) -> *mut u8 {
+        match self {
+            Self::VecStorage(s) => s.get_mut(index),
         }
     }
 }
 
 pub struct VecStorage {
-    occupied: BitSet,
     item_layout: Layout,
     drop: unsafe fn(*mut u8),
     cap: usize,
     // Is dangling when `cap * layout.size()` is zero. Points to an allocated buffer of
     // `cap * layout.size()` bytes otherwise.
     ptr: NonNull<u8>,
+    // # Safety
+    // May never contain any index `>= cap`
+    occupied: BitSet,
 }
 
 impl VecStorage {
@@ -107,7 +119,6 @@ impl VecStorage {
 
         let res = self.unset(index);
         self.get_mut_unchecked(index)
-            .as_ptr()
             .copy_from_nonoverlapping(value, self.item_layout.size());
         self.occupied.insert(index);
         res
@@ -121,7 +132,7 @@ impl VecStorage {
         }
         self.occupied.remove(index);
         unsafe {
-            (self.drop)(self.get_mut_unchecked(index).as_ptr());
+            (self.drop)(self.get_mut_unchecked(index));
         }
         true
     }
@@ -134,12 +145,13 @@ impl VecStorage {
             return None;
         }
         self.occupied.remove(index);
-        let ptr = self.get_mut_unchecked(index).as_ptr().cast::<T>();
+        let ptr = self.get_unchecked(index).cast::<T>();
         let mut res: MaybeUninit<T> = MaybeUninit::uninit();
         res.as_mut_ptr().copy_from(ptr, 1);
         Some(res.assume_init())
     }
 
+    /// Panics on allocation failiure.
     fn ensure_capacity(&mut self, cap: usize) {
         let old_cap = self.cap;
         if old_cap >= cap {
@@ -163,36 +175,39 @@ impl VecStorage {
     }
 
     fn clear(&mut self) {
-        while self.cap > 0 {
-            self.cap -= 1;
-            let i = self.cap;
+        for i in 0..self.cap {
             self.unset(i);
         }
     }
 
+    /// May be dangling but never null
+    /// # Safety
+    /// If `index >= self.cap` the result is undefined behaviour
+    unsafe fn get_unchecked(&self, index: usize) -> *const u8 {
+        (self.ptr.as_ptr() as *const u8).add(index * self.offset())
+    }
+
+    /// May be dangling but never null
+    /// # Safety
+    /// If `index >= self.cap` the result is undefined behaviour
+    unsafe fn get_mut_unchecked(&mut self, index: usize) -> *mut u8 {
+        self.ptr.as_ptr().add(index * self.offset())
+    }
+
     /// Returns a null pointer if nothing exists as `index`
     fn get(&self, index: usize) -> *const u8 {
-        let offset = self.offset();
-        if self.occupied.get(index) {
-            unsafe { (self.ptr.as_ptr() as *const u8).add(index * offset) }
-        } else {
-            ptr::null()
-        }
+        self.occupied
+            .get(index)
+            .then(|| unsafe { self.get_unchecked(index) })
+            .unwrap_or(ptr::null())
     }
 
-    /// May be dangling
-    fn get_mut_unchecked(&mut self, index: usize) -> NonNull<u8> {
-        let offset = self.offset();
-        unsafe { NonNull::new_unchecked(self.ptr.as_ptr().add(index * offset)) }
-    }
-
-    /// Returns `None` if nothing exists at `index`
-    fn get_mut(&mut self, index: usize) -> Option<NonNull<u8>> {
-        if self.occupied.get(index) {
-            Some(self.get_mut_unchecked(index))
-        } else {
-            None
-        }
+    /// Returns a null pointer if nothing exists at `index`
+    fn get_mut(&mut self, index: usize) -> *mut u8 {
+        self.occupied
+            .get(index)
+            .then(|| unsafe { self.get_mut_unchecked(index) })
+            .unwrap_or(ptr::null_mut())
     }
 
     fn layout_with_cap(&self, cap: usize) -> Layout {

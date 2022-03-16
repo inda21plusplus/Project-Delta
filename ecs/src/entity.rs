@@ -29,14 +29,10 @@ impl Entities {
             let gen = self.generations[id as usize];
             Entity { id, gen }
         } else {
-            let id: EntityId = self
-                .generations
-                .len()
-                .try_into()
-                .expect("Max entity count (4 294 967 296) exceeded");
-            let gen = 0;
-            self.generations.push(gen);
-            Entity { id, gen }
+            Entity {
+                id: self.create_new_id(),
+                gen: 0,
+            }
         }
     }
 
@@ -46,22 +42,22 @@ impl Entities {
     /// *O*(1) (ammortized).
     /// The current implementation keeps a `Vec` of currently unused id's which might have to grow.
     pub fn despawn(&mut self, entity: Entity) -> bool {
-        let Entity { id, gen } = entity;
+        self.id(entity)
+            .map(|id| self.despawn_unchecked(id))
+            .is_some()
+    }
 
-        if self.generations[id as usize] != gen {
-            return false;
-        }
-
-        if let Some(new_gen) = self.generations[id as usize].checked_add(1) {
-            self.generations[id as usize] = new_gen;
-            self.unused_ids.push(id);
-        } else {
-            // TODO: if this overflows this entity id should not be used anymore. Perhaps keep track of
-            // which id's have been 'exhausted'.
+    /// Despawns the entity with id `id`. Does not check generation or if `id` is already currently
+    /// despawned.
+    pub fn despawn_unchecked(&mut self, id: EntityId) {
+        let gen = &mut self.generations[id as usize];
+        if *gen == Generation::MAX {
+            // TODO: we're not doomed in this scenario. We can still mark this id as no longer
+            // usable somehow.
             panic!("Generation counter for entity id {} has overflown.", id);
         }
-
-        true
+        *gen += 1;
+        self.unused_ids.push(id);
     }
 
     /// Indicates whether `entity` still is alive.
@@ -76,11 +72,7 @@ impl Entities {
     /// # Time complexity
     /// *O*(1)
     pub fn id(&self, entity: Entity) -> Option<EntityId> {
-        if self.exists(entity) {
-            Some(entity.id)
-        } else {
-            None
-        }
+        self.exists(entity).then(|| entity.id)
     }
 
     /// Creates an iterator over all currently alive entities.
@@ -90,6 +82,18 @@ impl Entities {
     /// Iteration: *O*(1) for every call to next.
     pub fn iter(&self) -> Iter {
         Iter::new(self)
+    }
+
+    fn create_new_id(&mut self) -> EntityId {
+        // The bookkeeping alone for all those entities would require more than 17 GB so this
+        // shouldn'n be an issue.
+        let id = self
+            .generations
+            .len()
+            .try_into()
+            .expect("Max entity count (4 294 967 296) exceeded");
+        self.generations.push(0);
+        id
     }
 }
 

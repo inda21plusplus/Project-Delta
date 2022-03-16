@@ -1,5 +1,6 @@
-use crate::component::ComponentRegistry;
+use crate::component::{ComponentId, ComponentRegistry};
 use crate::{Entities, Entity};
+use std::ptr;
 
 pub struct EntityBuilder<'w> {
     entity: Entity,
@@ -39,7 +40,7 @@ impl World {
         self.entities.id(entity).map(|id| unsafe {
             self.component_registry[comp_id]
                 .storage
-                .set(id as usize, component)
+                .set::<T>(id as usize, component)
         });
     }
 
@@ -56,15 +57,23 @@ impl World {
 
     /// Returns true if the entity existed.
     pub fn despawn(&mut self, entity: Entity) -> bool {
-        if let Some(id) = self.entities.id(entity) {
-            self.entities.despawn(entity);
-            for component in self.component_registry.entries_mut() {
-                component.storage.unset(id as usize);
-            }
-            true
-        } else {
-            false
-        }
+        self.entities
+            .id(entity)
+            .map(|id| {
+                self.entities.despawn_unchecked(id);
+                for component in self.component_registry.entries_mut() {
+                    component.storage.unset(id as usize);
+                }
+            })
+            .is_some()
+    }
+
+    pub fn get<T: 'static>(&self, entity: Entity) -> Option<&T> {
+        let comp_id = self.component_registry.id::<T>()?;
+
+        self.entities
+            .id(entity)
+            .and_then(|id| unsafe { self.component_registry[comp_id].storage.get(id as usize) })
     }
 
     pub fn get_mut<T: 'static>(&mut self, entity: Entity) -> Option<&mut T> {
@@ -77,11 +86,29 @@ impl World {
         })
     }
 
-    pub fn get<T: 'static>(&self, entity: Entity) -> Option<&T> {
-        let comp_id = self.component_registry.id::<T>()?;
-
+    /// Returns null if `entity` no longer exists or if `entity` does not have the requested
+    /// component. `World` keeps ownership of the component
+    pub fn get_ptr(&self, entity: Entity, comp_id: ComponentId) -> *const u8 {
         self.entities
             .id(entity)
-            .and_then(|id| unsafe { self.component_registry[comp_id].storage.get(id as usize) })
+            .map(|id| {
+                self.component_registry[comp_id]
+                    .storage
+                    .get_ptr(id as usize)
+            })
+            .unwrap_or(ptr::null())
+    }
+
+    /// Returns null if `entity` no longer exists or if `entity` does not have the requested
+    /// component. `World` keeps ownership of the component
+    pub fn get_mut_ptr(&mut self, entity: Entity, comp_id: ComponentId) -> *mut u8 {
+        self.entities
+            .id(entity)
+            .map(|id| {
+                self.component_registry[comp_id]
+                    .storage
+                    .get_mut_ptr(id as usize)
+            })
+            .unwrap_or(ptr::null_mut())
     }
 }
