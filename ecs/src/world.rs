@@ -2,21 +2,6 @@ use crate::component::{ComponentId, ComponentRegistry};
 use crate::{Entities, Entity};
 use std::ptr;
 
-pub struct EntityBuilder<'w> {
-    entity: Entity,
-    world: &'w mut World,
-}
-
-impl<'w> EntityBuilder<'w> {
-    pub fn add<T: 'static>(self, component: T) -> Self {
-        self.world.add(self.entity, component);
-        self
-    }
-    pub fn entity(self) -> Entity {
-        self.entity
-    }
-}
-
 #[derive(Debug, Default)]
 pub struct World {
     entities: Entities,
@@ -24,11 +9,8 @@ pub struct World {
 }
 
 impl World {
-    pub fn spawn(&mut self) -> EntityBuilder {
-        EntityBuilder {
-            entity: self.entities.spawn(),
-            world: self,
-        }
+    pub fn spawn(&mut self) -> Entity {
+        self.entities.spawn()
     }
 
     pub fn add<T: 'static>(&mut self, entity: Entity, component: T) {

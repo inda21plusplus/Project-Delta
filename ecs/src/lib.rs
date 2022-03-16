@@ -162,15 +162,16 @@ mod tests {
             Rare,
         }
 
-        let player = world
-            .spawn()
-            .add(Position {
+        let player = world.spawn();
+        world.add(
+            player,
+            Position {
                 x: 0.,
                 y: 0.,
                 z: 0.,
-            })
-            .add(Health(100))
-            .entity();
+            },
+        );
+        world.add(player, Health(100));
 
         assert_eq!(
             Some(&Position {
@@ -183,27 +184,29 @@ mod tests {
 
         assert!(world.get_mut::<Rarity>(player).is_none());
 
-        let common_sword = world
-            .spawn()
-            .add(Position {
+        let common_sword = world.spawn();
+        world.add(
+            common_sword,
+            Position {
                 x: 1.,
                 y: 0.,
                 z: 1.,
-            })
-            .add(Rarity::Common)
-            .entity();
+            },
+        );
+        world.add(common_sword, Rarity::Common);
 
         assert!(world.get_mut::<Rarity>(player).is_none());
 
-        let rare_sword = world
-            .spawn()
-            .add(Position {
+        let rare_sword = world.spawn();
+        world.add(
+            rare_sword,
+            Position {
                 x: 1.,
                 y: 1.,
                 z: 1.,
-            })
-            .add(Rarity::Rare)
-            .entity();
+            },
+        );
+        world.add(rare_sword, Rarity::Rare);
 
         assert!(world.get_mut::<Rarity>(player).is_none());
 
@@ -242,12 +245,15 @@ mod tests {
         #[derive(Debug, PartialEq, Clone, Copy)]
         struct Hunger(u8);
 
-        let player1 = world.spawn().add(Health(100)).add(Hunger(20)).entity();
+        let player1 = world.spawn();
+        world.add(player1, Health(100));
+        world.add(player1, Hunger(20));
         assert_eq!(Some(Hunger(20)), world.remove(player1));
         assert_eq!(None, world.remove::<Hunger>(player1));
         world.despawn(player1);
 
-        let player2 = world.spawn().add(Health(50)).entity();
+        let player2 = world.spawn();
+        world.add(player2, Health(50));
         assert!(world.get::<Health>(player1).is_none());
         assert_eq!(Some(Health(50)), world.get::<Health>(player2).copied());
     }
@@ -258,10 +264,12 @@ mod tests {
 
         struct Marker;
 
-        let e1 = world.spawn().add(Marker).entity();
-        let e2 = world.spawn().entity();
-        let e3 = world.spawn().add(Marker).entity();
-        let e4 = world.spawn().entity();
+        let e1 = world.spawn();
+        world.add(e1, Marker);
+        let e2 = world.spawn();
+        let e3 = world.spawn();
+        world.add(e3, Marker);
+        let e4 = world.spawn();
 
         assert!(world.get::<Marker>(e1).is_some());
         assert!(world.get::<Marker>(e2).is_none());
