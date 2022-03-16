@@ -11,5 +11,5 @@ outfile.write(f"P3\n{width} {height}\n")
 for y in range(height):
     for x in range(width):
         rbga = pixels[x, y]
-        
+
         outfile.write(f"{rbga[2]} {rbga[0]} {rbga[1]} {rbga[3]}\n")

@@ -1,6 +1,6 @@
-pub mod renderer;
 pub mod context;
 pub mod error;
+pub mod renderer;
 pub use context::Context;
 
 #[cfg(test)]

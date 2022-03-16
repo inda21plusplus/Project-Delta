@@ -1,5 +1,3 @@
-use std::f64::MIN_POSITIVE;
-
 use winit::{
     self,
     dpi::{LogicalPosition, PhysicalSize},

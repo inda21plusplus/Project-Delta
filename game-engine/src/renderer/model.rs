@@ -3,8 +3,8 @@ use std::path::Path;
 use tobj::LoadOptions;
 use wgpu::util::DeviceExt;
 
-use crate::error::LoadError;
 use super::texture;
+use crate::error::LoadError;
 
 pub trait Vertex {
     fn desc<'a>() -> wgpu::VertexBufferLayout<'a>;
@@ -45,12 +45,14 @@ impl Vertex for ModelVertex {
     }
 }
 
+#[derive(Debug)]
 pub struct Material {
     pub name: String,
     pub diffuse_texture: texture::Texture,
     pub bind_group: wgpu::BindGroup,
 }
 
+#[derive(Debug)]
 pub struct Mesh {
     pub name: String,
     pub vertex_buffer: wgpu::Buffer,
@@ -59,6 +61,7 @@ pub struct Mesh {
     pub material: usize,
 }
 
+#[derive(Debug)]
 pub struct Model {
     pub meshes: Vec<Mesh>,
     pub materials: Vec<Material>,
@@ -83,7 +86,7 @@ impl Model {
         let obj_materials = obj_materials?;
 
         // We're assuming that the texture files are stored with the obj file
-        let containing_folder = path.as_ref().parent().ok_or_else(|| LoadError::Missing)?;
+        let containing_folder = path.as_ref().parent().ok_or(LoadError::Missing)?;
 
         let mut materials = Vec::new();
         for mat in obj_materials {
@@ -123,7 +126,10 @@ impl Model {
                         m.mesh.positions[i * 3 + 1],
                         m.mesh.positions[i * 3 + 2],
                     ],
-                    tex_coords: [*m.mesh.texcoords.get(i * 2).unwrap_or(&0.0f32), *m.mesh.texcoords.get(i * 2 + 1).unwrap_or(&0.0f32)],
+                    tex_coords: [
+                        *m.mesh.texcoords.get(i * 2).unwrap_or(&0.0f32),
+                        *m.mesh.texcoords.get(i * 2 + 1).unwrap_or(&0.0f32),
+                    ],
                     normal: [
                         m.mesh.normals[i * 3],
                         m.mesh.normals[i * 3 + 1],

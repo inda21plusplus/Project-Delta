@@ -99,7 +99,7 @@ impl CameraController {
         }
     }
 
-    pub fn update_camera(&mut self, dt : f32, camera: &mut game_engine::renderer::Camera) {
+    pub fn update_camera(&mut self, dt: f32, camera: &mut game_engine::renderer::Camera) {
         const MAX_PITCH: f32 = 89f32 * (PI / 180.0f32);
         if self.rotation.x < -MAX_PITCH {
             self.rotation.x = -MAX_PITCH;

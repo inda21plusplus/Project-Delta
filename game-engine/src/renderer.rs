@@ -75,7 +75,7 @@ pub struct Transform {
 }
 
 impl Transform {
-    fn to_raw(&self) -> InstanceRaw {
+    fn as_raw(&self) -> InstanceRaw {
         let Vec3 { x, y, z } = self.scale;
 
         InstanceRaw {
@@ -93,7 +93,6 @@ impl Transform {
 #[repr(C)]
 #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 struct InstanceRaw {
-    #[allow(dead_code)]
     model: [[f32; 4]; 4],
 }
 
@@ -141,6 +140,7 @@ pub struct PhysicalSize {
     pub height: u32,
 }
 
+#[derive(Debug, Default)]
 pub struct ModelManager {
     models: Vec<model::Model>,
     instances: Vec<Vec<Transform>>,
@@ -193,7 +193,7 @@ impl ModelManager {
         f(&mut self.instances[model][start..end]);
         let raw: Vec<_> = self.instances[model][start..end]
             .iter()
-            .map(Transform::to_raw)
+            .map(Transform::as_raw)
             .collect();
         queue.write_buffer(
             &self.instance_buffers[model],
@@ -210,7 +210,7 @@ impl ModelManager {
         new_transforms: Vec<Transform>,
     ) {
         let old_len = self.instances[model].len();
-        let raw: Vec<_> = new_transforms.iter().map(Transform::to_raw).collect();
+        let raw: Vec<_> = new_transforms.iter().map(Transform::as_raw).collect();
         if old_len < self.instances[model].len() {
             let new_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
                 label: Some(&format!("Instance buffer for model {}", model)),
@@ -472,7 +472,7 @@ impl Renderer {
         }
     }
 
-    pub fn render(&mut self, clear_color: [f64; 4]) -> Result<(), wgpu::SurfaceError> {
+    pub fn render(&mut self, clear_color: [f64; 4]) -> Result<(), RenderingError> {
         let output = self.surface.get_current_texture()?;
         let view = output
             .texture
@@ -510,7 +510,7 @@ impl Renderer {
                 render_pass.set_vertex_buffer(1, self.model_manager.instance_buffers[c].slice(..));
                 render_pass.set_pipeline(&self.render_pipeline);
                 render_pass.draw_model_instanced(
-                    &obj_model,
+                    obj_model,
                     0..self.model_manager.instances[c].len() as u32,
                     &self.camera_bind_group,
                 );
