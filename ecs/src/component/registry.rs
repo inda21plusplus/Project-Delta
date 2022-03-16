@@ -9,10 +9,13 @@ use super::{Storage, StorageType};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ComponentId(u16);
 
+/// Basic metadata about a kind of component.
 #[derive(Debug, PartialEq, Eq)]
 pub struct ComponentInfo {
     name: String,
     type_id: Option<TypeId>,
+    // TODO: maybe add some sort of is_thread_safe bool or require `Send + Sync` for all
+    // components.
 }
 
 impl ComponentInfo {
@@ -21,6 +24,8 @@ impl ComponentInfo {
     }
 }
 
+/// A kind of components registered in a `ComponentRegistry`. Includes both metadata about the kind
+/// of component and all the components of this kind.
 #[derive(Debug)]
 pub struct ComponentEntry {
     pub info: ComponentInfo,
@@ -33,6 +38,8 @@ impl ComponentEntry {
     }
 }
 
+/// A registry for different kinds of components. Includes both metadata about the kinds of
+/// components and all components themselves.
 #[derive(Debug, Default)]
 pub struct ComponentRegistry {
     // Indexed by ComponentId's
@@ -41,6 +48,8 @@ pub struct ComponentRegistry {
 }
 
 impl ComponentRegistry {
+    /// Registeres a rust type as a component kind. A rust type must *not* be registered twice in
+    /// the same registry.
     pub fn register<T>(&mut self) -> ComponentId
     where
         T: 'static,
@@ -76,7 +85,6 @@ impl ComponentRegistry {
         self.id::<T>().map(|id| &self[id])
     }
 
-    /// Get a mutable reference to the component registry's entries.
     pub fn entries_mut(&mut self) -> &mut [ComponentEntry] {
         &mut self.entries
     }

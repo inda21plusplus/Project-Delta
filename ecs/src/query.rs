@@ -49,8 +49,7 @@ impl QuerySet {
             } if !mutable_acces_to.insert(id) => Err(QueryError::ConcurrentMutableAccess(id)),
             Query::Multiple(qs) => qs
                 .iter()
-                .map(|q| Self::validate(mutable_acces_to, q))
-                .collect(),
+                .try_for_each(|q| Self::validate(mutable_acces_to, q)),
             _ => Ok(()),
         }
     }

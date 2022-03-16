@@ -6,6 +6,13 @@ use std::{
     ptr::{self, NonNull},
 };
 
+/// A storage container for all instances of a certain kind of component.
+/// This is where the actual component data is stored. There is currently only one implementation
+/// which stores all components contiguously in memory in an array and with a bit set indicating
+/// which entities have the given component.
+///
+/// For components that only a few entities have this would waste a lot of space, but it is
+/// probably the best solution for common components e.g. position.
 #[derive(Debug)]
 pub enum Storage {
     VecStorage(VecStorage),
