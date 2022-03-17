@@ -1,13 +1,15 @@
 use std::f32::consts::PI;
 
-use vek::Vec3;
+use game_engine::{Vec2, Vec3};
 use winit::event::{DeviceEvent, KeyboardInput, VirtualKeyCode, WindowEvent};
 
 pub struct CameraController {
-    pub speed: f32,
+    pub movement_speed: f32,
+    /// Degrees per pixel
     pub mouse_sensitivity: f32,
-    pub position: Vec3<f32>,
-    pub rotation: Vec3<f32>, // pitch, yaw, roll
+    pub position: Vec3,
+    /// Pitch, Yaw
+    pub rotation: Vec2,
     pub is_forward_pressed: bool,
     pub is_backward_pressed: bool,
     pub is_left_pressed: bool,
@@ -17,14 +19,9 @@ pub struct CameraController {
 }
 
 impl CameraController {
-    pub fn new(
-        speed: f32,
-        mouse_sensitivity: f32,
-        position: Vec3<f32>,
-        rotation: Vec3<f32>,
-    ) -> Self {
+    pub fn new(speed: f32, mouse_sensitivity: f32, position: Vec3, rotation: Vec2) -> Self {
         Self {
-            speed,
+            movement_speed: speed,
             position,
             rotation,
             mouse_sensitivity,
@@ -40,8 +37,9 @@ impl CameraController {
     pub fn process_device_events(&mut self, event: &DeviceEvent) {
         match *event {
             DeviceEvent::MouseMotion { delta: (dx, dy) } => {
-                self.rotation.x -= self.mouse_sensitivity * dy as f32;
-                self.rotation.y -= self.mouse_sensitivity * dx as f32;
+                self.rotation.x -= (self.mouse_sensitivity * dy as f32).to_radians();
+                self.rotation.y -= (self.mouse_sensitivity * dx as f32).to_radians();
+                log::info!("Camera rotation {}", self.rotation);
             }
             _ => (), /*
                      DeviceEvent::Added => todo!(),
@@ -102,9 +100,8 @@ impl CameraController {
             self.rotation.x = MAX_PITCH;
         }
 
-        let frame_speed = dt * self.speed;
+        let frame_speed = dt * self.movement_speed;
 
-        // Pitch, Yaw, Roll
         let forward = Vec3::new(
             self.rotation.y.sin() * self.rotation.x.cos(),
             self.rotation.x.sin(),

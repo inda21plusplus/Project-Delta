@@ -116,7 +116,7 @@ impl Model {
             });
         }
 
-        let mut meshes = Vec::new();
+        let mut meshes = Vec::with_capacity(obj_models.len());
         for m in obj_models {
             let mut vertices = Vec::new();
             for i in 0..m.mesh.positions.len() / 3 {

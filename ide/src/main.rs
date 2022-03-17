@@ -3,7 +3,7 @@ use std::{f32, time::Instant};
 use camera_controller::CameraController;
 use game_engine::{
     renderer::{Renderer, Transform},
-    Context,
+    Context, Quaternion, Vec2, Vec3,
 };
 
 use winit::{
@@ -12,23 +12,20 @@ use winit::{
     window::Icon,
 };
 
-use vek::quaternion::repr_c::Quaternion;
-use vek::vec::repr_c::Vec3;
 use window::{Window, WindowMode};
 
 mod camera_controller;
-mod im;
 mod window;
 
 const SPACE_BETWEEN: f32 = 3.0;
-const NUM_INSTANCES_PER_ROW: u32 = 4;
+const INSTANCES_PER_ROW: u32 = 4;
 
 fn create_instances() -> Vec<Transform> {
-    (0..NUM_INSTANCES_PER_ROW)
+    (0..INSTANCES_PER_ROW)
         .flat_map(|z| {
-            (0..NUM_INSTANCES_PER_ROW).map(move |x| {
-                let x = SPACE_BETWEEN * (x as f32 - NUM_INSTANCES_PER_ROW as f32);
-                let z = SPACE_BETWEEN * (z as f32 - NUM_INSTANCES_PER_ROW as f32);
+            (0..INSTANCES_PER_ROW).map(move |x| {
+                let x = SPACE_BETWEEN * (x as f32 - INSTANCES_PER_ROW as f32);
+                let z = SPACE_BETWEEN * (z as f32 - INSTANCES_PER_ROW as f32);
 
                 let position = Vec3 { x, y: 0.0, z };
 
@@ -51,8 +48,9 @@ fn create_instances() -> Vec<Transform> {
 fn main() {
     env_logger::init();
 
-    let (img_width, img_height, img_vec) = im::get_logo("icon.png").unwrap();
-    let icon = Icon::from_rgba(img_vec, img_width, img_height).unwrap();
+    let icon = image::open("res/icon.png").unwrap().into_rgba8();
+    let (icon_width, icon_height) = icon.dimensions();
+    let icon = Icon::from_rgba(icon.into_raw(), icon_width, icon_height).unwrap();
 
     let event_loop = EventLoop::new();
 
@@ -67,14 +65,14 @@ fn main() {
         .unwrap(),
     };
 
-    let model_cube = context.renderer.load_model("./res/cube.obj").unwrap();
-    let model_ball = context.renderer.load_model("./res/ball.obj").unwrap();
+    let model_cube = context.renderer.load_model("res/cube.obj").unwrap();
+    let model_ball = context.renderer.load_model("res/ball.obj").unwrap();
 
     let mut camera_controller = CameraController::new(
         10.0,
-        0.01,
-        Vec3::new(-15.0, 10.0, 0.0),
-        Vec3::new(-35.0f32.to_radians(), 90.0f32.to_radians(), 0.0),
+        0.1,
+        Vec3::new(-15.0, 3.0, 0.0),
+        Vec2::new(-0.3, 135f32.to_radians()),
     );
 
     let mut instances = create_instances();
@@ -133,10 +131,6 @@ fn main() {
                 let dt = now.duration_since(last_frame).as_secs_f32();
                 last_frame = now;
 
-                if window.window_mode() == WindowMode::CameraMode {
-                    camera_controller.update_camera(dt, &mut context.renderer.camera);
-                }
-
                 let offset = start_time.elapsed().as_secs_f32().sin();
                 for obj in &mut instances {
                     obj.position.y = offset;
@@ -147,6 +141,7 @@ fn main() {
                     (model_ball, &instances[9..]),
                 ]);
 
+                camera_controller.update_camera(dt, &mut context.renderer.camera);
                 context.renderer.update_camera();
 
                 context

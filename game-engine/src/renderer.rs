@@ -1,26 +1,22 @@
-use vek::mat::repr_c::Mat4;
-use vek::quaternion::repr_c::Quaternion;
-use vek::vec::repr_c::{Vec3, Vec4};
+use std::iter;
+use std::mem;
+use std::ops::Range;
 
-use pollster::FutureExt as _;
+use pollster::FutureExt;
 use raw_window_handle::HasRawWindowHandle;
-
 use wgpu::util::DeviceExt;
 
 mod model;
 mod texture;
 
 use crate::error::RenderingError;
+use crate::{Mat4, Quaternion, Vec3, Vec4};
 use model::{DrawModel, Vertex};
-
-use std::iter;
-use std::mem;
-use std::ops::Range;
 
 type ModelIndex = usize;
 
 #[rustfmt::skip]
-pub fn opengl_to_wgpu_matrix() -> Mat4<f32> {
+pub fn opengl_to_wgpu_matrix() -> Mat4 {
     Mat4::new(
         1.0, 0.0, 0.0, 0.0,
         0.0, 1.0, 0.0, 0.0,
@@ -30,9 +26,9 @@ pub fn opengl_to_wgpu_matrix() -> Mat4<f32> {
 }
 
 pub struct Camera {
-    pub eye: Vec3<f32>,
-    pub target: Vec3<f32>,
-    pub up: Vec3<f32>,
+    pub eye: Vec3,
+    pub target: Vec3,
+    pub up: Vec3,
     pub aspect: f32,
     pub fovy: f32,
     pub znear: f32,
@@ -40,7 +36,7 @@ pub struct Camera {
 }
 
 impl Camera {
-    fn build_view_projection_matrix(&self) -> Mat4<f32> {
+    fn build_view_projection_matrix(&self) -> Mat4 {
         let view = Mat4::look_at_rh(self.eye, self.target, self.up);
         let proj = Mat4::perspective_fov_rh_zo(self.fovy, 1.6, 0.9, self.znear, self.zfar);
         proj * view
@@ -56,7 +52,7 @@ struct CameraUniform {
 impl CameraUniform {
     fn new() -> Self {
         Self {
-            view_proj: unsafe { mem::transmute(Mat4::<f32>::identity()) },
+            view_proj: unsafe { mem::transmute(Mat4::identity()) },
         }
     }
 
@@ -69,9 +65,9 @@ impl CameraUniform {
 
 #[derive(Copy, Clone, Debug)]
 pub struct Transform {
-    pub position: Vec3<f32>,
-    pub rotation: Quaternion<f32>,
-    pub scale: Vec3<f32>,
+    pub position: Vec3,
+    pub rotation: Quaternion,
+    pub scale: Vec3,
 }
 
 impl Transform {
@@ -80,8 +76,8 @@ impl Transform {
 
         InstanceRaw {
             model: unsafe {
-                mem::transmute::<Mat4<f32>, _>(
-                    Mat4::<f32>::translation_3d(self.position)
+                mem::transmute::<Mat4, _>(
+                    Mat4::translation_3d(self.position)
                         * Mat4::from(self.rotation)
                         * Mat4::with_diagonal(Vec4::new(x, y, z, 1.0)),
                 )
@@ -100,32 +96,25 @@ impl InstanceRaw {
     fn desc<'a>() -> wgpu::VertexBufferLayout<'a> {
         wgpu::VertexBufferLayout {
             array_stride: mem::size_of::<InstanceRaw>() as wgpu::BufferAddress,
-            // We need to switch from using a step mode of Vertex to Instance
-            // This means that our shaders will only change to use the next
-            // instance when the shader starts processing a new instance
             step_mode: wgpu::VertexStepMode::Instance,
             attributes: &[
                 wgpu::VertexAttribute {
-                    offset: 0,
-                    // While our vertex shader only uses locations 0, and 1 now, in later tutorials we'll
-                    // be using 2, 3, and 4, for Vertex. We'll start at slot 5 not conflict with them later
+                    offset: 0 * 4 * 4,
                     shader_location: 5,
                     format: wgpu::VertexFormat::Float32x4,
                 },
-                // A mat4 takes up 4 vertex slots as it is technically 4 vec4s. We need to define a slot
-                // for each vec4. We don't have to do this in code though.
                 wgpu::VertexAttribute {
-                    offset: mem::size_of::<[f32; 4]>() as wgpu::BufferAddress,
+                    offset: 1 * 4 * 4,
                     shader_location: 6,
                     format: wgpu::VertexFormat::Float32x4,
                 },
                 wgpu::VertexAttribute {
-                    offset: mem::size_of::<[f32; 8]>() as wgpu::BufferAddress,
+                    offset: 2 * 4 * 4,
                     shader_location: 7,
                     format: wgpu::VertexFormat::Float32x4,
                 },
                 wgpu::VertexAttribute {
-                    offset: mem::size_of::<[f32; 12]>() as wgpu::BufferAddress,
+                    offset: 3 * 4 * 4,
                     shader_location: 8,
                     format: wgpu::VertexFormat::Float32x4,
                 },
@@ -182,16 +171,14 @@ impl ModelManager {
     ) where
         F: FnOnce(&mut [Transform]),
     {
-        // apparently range isn't copy
-        let Range { start, end } = range;
-        f(&mut self.instances[model][start..end]);
-        let raw: Vec<_> = self.instances[model][start..end]
+        f(&mut self.instances[model][range.clone()]);
+        let raw: Vec<_> = self.instances[model][range.clone()]
             .iter()
             .map(Transform::as_raw)
             .collect();
         queue.write_buffer(
             &self.instance_buffers[model],
-            start as u64 * mem::size_of::<InstanceRaw>() as u64,
+            range.start as u64 * mem::size_of::<InstanceRaw>() as u64,
             bytemuck::cast_slice(&raw[..]),
         );
     }
@@ -220,6 +207,8 @@ impl ModelManager {
 }
 
 pub struct Renderer {
+    pub camera: Camera,
+
     surface: wgpu::Surface,
     device: wgpu::Device,
     queue: wgpu::Queue,
@@ -228,7 +217,6 @@ pub struct Renderer {
     render_pipeline: wgpu::RenderPipeline,
     model_manager: ModelManager,
     texture_bind_group_layout: wgpu::BindGroupLayout,
-    pub camera: Camera,
     camera_uniform: CameraUniform,
     camera_buffer: wgpu::Buffer,
     camera_bind_group: wgpu::BindGroup,
@@ -242,7 +230,6 @@ impl Renderer {
         size: (u32, u32),
         clear_color: [f64; 3],
     ) -> Result<Self, RenderingError> {
-        // The instance is a handle to our GPU
         // BackendBit::PRIMARY => Vulkan + Metal + DX12 + Browser WebGPU
         let instance = wgpu::Instance::new(wgpu::Backends::all());
         let surface = unsafe { instance.create_surface(window) };
@@ -262,8 +249,7 @@ impl Renderer {
                     features: wgpu::Features::empty(),
                     limits: wgpu::Limits::default(),
                 },
-                // Some(&std::path::Path::new("trace")), // Trace path
-                None, // Trace path
+                None,
             )
             .block_on()?;
 
@@ -348,8 +334,7 @@ impl Renderer {
             source: wgpu::ShaderSource::Wgsl(include_str!("shader.wgsl").into()),
         });
 
-        let depth_texture =
-            texture::Texture::create_depth_texture(&device, &config, "depth_texture");
+        let depth_texture = texture::Texture::new_depth_texture(&device, &config);
 
         let render_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -432,8 +417,7 @@ impl Renderer {
             self.config.width = width;
             self.config.height = height;
             self.surface.configure(&self.device, &self.config);
-            self.depth_texture =
-                texture::Texture::create_depth_texture(&self.device, &self.config, "depth_texture");
+            self.depth_texture = texture::Texture::new_depth_texture(&self.device, &self.config);
         }
     }
 
