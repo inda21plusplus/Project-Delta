@@ -1,5 +1,6 @@
 use crate::component::{ComponentId, ComponentRegistry};
-use crate::{Entities, Entity};
+use crate::query::{MaybeMut, QueryResponse};
+use crate::{Entities, Entity, Query};
 use std::ptr;
 
 #[derive(Debug, Default)]
@@ -48,6 +49,11 @@ impl World {
                 }
             })
             .is_some()
+    }
+
+    pub fn query<'s, 'q>(&'s self, query: &'q Query) -> QueryResponse<'s, 'q> {
+        assert!(query.is_immutable());
+        QueryResponse::new_const(self, query)
     }
 
     pub fn get<T: 'static>(&self, entity: Entity) -> Option<&T> {

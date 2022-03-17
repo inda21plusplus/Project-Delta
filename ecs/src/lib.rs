@@ -6,7 +6,7 @@ mod query;
 mod world;
 
 pub use entity::{Entities, Entity};
-pub use query::{Query, QueryError, QuerySet};
+pub use query::{ComponentQuery, Query, QueryError};
 pub use world::World;
 
 #[cfg(test)]
@@ -302,7 +302,7 @@ mod tests {
 
     #[test]
     fn validate_empty_query() {
-        assert!(QuerySet::new(vec![]).is_ok());
+        assert!(Query::new(vec![]).is_ok());
     }
 
     #[test]
@@ -310,35 +310,23 @@ mod tests {
         let mut comp_reg = ComponentRegistry::default();
         struct A;
         struct B;
-        struct C;
         let a = comp_reg.register::<A>();
         let b = comp_reg.register::<B>();
-        let c = comp_reg.register::<C>();
-        assert!(QuerySet::new(vec![
-            Query::Single {
+        let q = Query::new(vec![
+            ComponentQuery {
                 id: a,
                 mutable: true,
-                optional: false,
             },
-            Query::Multiple(vec![
-                Query::Single {
-                    id: b,
-                    mutable: false,
-                    optional: false,
-                },
-                Query::Single {
-                    id: c,
-                    mutable: false,
-                    optional: true,
-                }
-            ]),
-            Query::Single {
+            ComponentQuery {
                 id: b,
                 mutable: false,
-                optional: false,
-            }
-        ])
-        .is_ok());
+            },
+            ComponentQuery {
+                id: b,
+                mutable: false,
+            },
+        ]);
+        assert!(q.is_ok(), "{:?}; a={:?}, b={:?}", q, a, b);
     }
 
     #[test]
@@ -350,28 +338,18 @@ mod tests {
         let b = comp_reg.register::<B>();
         assert_eq!(
             Err(QueryError::ConcurrentMutableAccess(b)),
-            QuerySet::new(vec![
-                Query::Single {
+            Query::new(vec![
+                ComponentQuery {
                     id: a,
-                    mutable: true,
-                    optional: false,
+                    mutable: false,
                 },
-                Query::Multiple(vec![
-                    Query::Single {
-                        id: a,
-                        mutable: false,
-                        optional: false,
-                    },
-                    Query::Single {
-                        id: b,
-                        mutable: true,
-                        optional: true,
-                    }
-                ]),
-                Query::Single {
+                ComponentQuery {
                     id: b,
                     mutable: true,
-                    optional: true,
+                },
+                ComponentQuery {
+                    id: b,
+                    mutable: false,
                 }
             ])
         );
