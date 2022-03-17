@@ -27,31 +27,7 @@ fn update(start: Instant, dt: f32, objects: &mut Vec<Transform>) {
     }
 }
 
-fn main() {
-    env_logger::init();
-
-    let (img_width, img_height, img_vec) = im::get_logo("icon.ppm").unwrap();
-    let icon = Icon::from_rgba(img_vec, img_width, img_height).unwrap();
-
-    let event_loop = EventLoop::new();
-    let mut window = Window::new(&event_loop, Some(icon));
-
-    let mut context = Context::new(
-        &window.winit_window,
-        (window.size.width, window.size.height),
-    )
-    .expect("failed to build context");
-    let model_cube = context.renderer.load_model("./res/cube.obj").unwrap();
-    let model_ball = context.renderer.load_model("./res/ball.obj").unwrap();
-    let start_time = Instant::now();
-
-    let mut camera_controller = CameraController::new(
-        10.0,
-        0.01,
-        Vec3::new(-15.0, 10.0, 0.0),
-        Vec3::new(-35.0f32.to_radians(), 90.0f32.to_radians(), 0.0),
-    );
-
+fn create_instances() -> Vec<Transform> {
     let mut instances = (0..NUM_INSTANCES_PER_ROW)
         .flat_map(|z| {
             (0..NUM_INSTANCES_PER_ROW).map(move |x| {
@@ -74,6 +50,35 @@ fn main() {
             })
         })
         .collect::<Vec<_>>();
+    instances
+}
+
+fn main() {
+    env_logger::init();
+
+    let (img_width, img_height, img_vec) = im::get_logo("icon.png").unwrap();
+    let icon = Icon::from_rgba(img_vec, img_width, img_height).unwrap();
+
+    let event_loop = EventLoop::new();
+    let mut window = Window::new(&event_loop, Some(icon));
+
+    let mut context = Context::new(
+        &window.winit_window,
+        (window.size.width, window.size.height),
+    )
+    .expect("failed to build context");
+    let model_cube = context.renderer.load_model("./res/cube.obj").unwrap();
+    let model_ball = context.renderer.load_model("./res/ball.obj").unwrap();
+    let start_time = Instant::now();
+
+    let mut camera_controller = CameraController::new(
+        10.0,
+        0.01,
+        Vec3::new(-15.0, 10.0, 0.0),
+        Vec3::new(-35.0f32.to_radians(), 90.0f32.to_radians(), 0.0),
+    );
+
+    let mut instances = create_instances();
 
     let mut allow_camera_update = true;
     let mut last_frame = Instant::now();
