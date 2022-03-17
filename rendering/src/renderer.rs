@@ -1,84 +1,31 @@
 use std::iter;
 use std::mem;
-use std::ops::Range;
 
 use pollster::FutureExt;
 use raw_window_handle::HasRawWindowHandle;
 use wgpu::util::DeviceExt;
 
-mod model;
-mod texture;
-
-use crate::error::RenderingError;
-use crate::{Mat4, Quaternion, Vec3, Vec4};
-use model::{DrawModel, Vertex};
-
-type ModelIndex = usize;
-
-#[rustfmt::skip]
-pub fn opengl_to_wgpu_matrix() -> Mat4 {
-    Mat4::new(
-        1.0, 0.0, 0.0, 0.0,
-        0.0, 1.0, 0.0, 0.0,
-        0.0, 0.0, 0.5, 0.0,
-        0.0, 0.0, 0.5, 1.0,
-    )
-}
-
-pub struct Camera {
-    pub eye: Vec3,
-    pub target: Vec3,
-    pub up: Vec3,
-    pub aspect: f32,
-    pub fovy: f32,
-    pub znear: f32,
-    pub zfar: f32,
-}
-
-impl Camera {
-    fn build_view_projection_matrix(&self) -> Mat4 {
-        let view = Mat4::look_at_rh(self.eye, self.target, self.up);
-        let proj = Mat4::perspective_fov_rh_zo(self.fovy, 1.6, 0.9, self.znear, self.zfar);
-        proj * view
-    }
-}
+use crate::model::ModelIndex;
+use crate::model::ModelManager;
+use crate::model::{self, DrawModel, Vertex};
+use crate::{camera, texture, Camera, RenderingError};
+use common::{Mat4, Transform, Vec3, Vec4};
 
 #[repr(C)]
-#[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
-struct CameraUniform {
-    view_proj: [[f32; 4]; 4],
+#[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct RawTranslationMatrix {
+    model: [[f32; 4]; 4],
 }
 
-impl CameraUniform {
-    fn new() -> Self {
+impl RawTranslationMatrix {
+    pub fn new(transform: Transform) -> Self {
+        let Vec3 { x, y, z } = transform.scale;
+
         Self {
-            view_proj: unsafe { mem::transmute(Mat4::identity()) },
-        }
-    }
-
-    fn update_view_proj(&mut self, camera: &Camera) {
-        self.view_proj = unsafe {
-            mem::transmute(opengl_to_wgpu_matrix() * camera.build_view_projection_matrix())
-        };
-    }
-}
-
-#[derive(Copy, Clone, Debug)]
-pub struct Transform {
-    pub position: Vec3,
-    pub rotation: Quaternion,
-    pub scale: Vec3,
-}
-
-impl Transform {
-    fn as_raw(&self) -> InstanceRaw {
-        let Vec3 { x, y, z } = self.scale;
-
-        InstanceRaw {
             model: unsafe {
                 mem::transmute::<Mat4, _>(
-                    Mat4::translation_3d(self.position)
-                        * Mat4::from(self.rotation)
+                    Mat4::translation_3d(transform.position)
+                        * Mat4::from(transform.rotation)
                         * Mat4::with_diagonal(Vec4::new(x, y, z, 1.0)),
                 )
             },
@@ -86,25 +33,19 @@ impl Transform {
     }
 }
 
-#[repr(C)]
-#[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
-struct InstanceRaw {
-    model: [[f32; 4]; 4],
-}
-
-impl InstanceRaw {
+impl RawTranslationMatrix {
     fn desc<'a>() -> wgpu::VertexBufferLayout<'a> {
         wgpu::VertexBufferLayout {
-            array_stride: mem::size_of::<InstanceRaw>() as wgpu::BufferAddress,
+            array_stride: mem::size_of::<RawTranslationMatrix>() as wgpu::BufferAddress,
             step_mode: wgpu::VertexStepMode::Instance,
             attributes: &[
                 wgpu::VertexAttribute {
-                    offset: 0 * 4 * 4,
+                    offset: 0,
                     shader_location: 5,
                     format: wgpu::VertexFormat::Float32x4,
                 },
                 wgpu::VertexAttribute {
-                    offset: 1 * 4 * 4,
+                    offset: 4 * 4,
                     shader_location: 6,
                     format: wgpu::VertexFormat::Float32x4,
                 },
@@ -123,89 +64,6 @@ impl InstanceRaw {
     }
 }
 
-#[derive(Debug, Default)]
-pub struct ModelManager {
-    models: Vec<model::Model>,
-    instances: Vec<Vec<Transform>>,
-    instance_buffers: Vec<wgpu::Buffer>,
-}
-
-impl ModelManager {
-    pub fn new() -> Self {
-        Self {
-            models: vec![],
-            instances: vec![],
-            instance_buffers: vec![],
-        }
-    }
-
-    pub fn add_model(
-        &mut self,
-        device: &wgpu::Device,
-        model: model::Model,
-        n_instances: u64,
-    ) -> ModelIndex {
-        let idx = self.models.len();
-        self.models.push(model);
-        self.instances.push(vec![]);
-        self.instance_buffers
-            .push(device.create_buffer(&wgpu::BufferDescriptor {
-                label: Some(&format!("Instance buffer {}", self.models.len())),
-                size: n_instances * 4 * 4 * mem::size_of::<f32>() as u64,
-                usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::VERTEX,
-                mapped_at_creation: false,
-            }));
-        idx
-    }
-
-    pub fn get_transforms(&self, model: ModelIndex, range: Range<usize>) -> &[Transform] {
-        &self.instances[model][range]
-    }
-
-    pub fn modify_transforms_with<F>(
-        &mut self,
-        model: ModelIndex,
-        range: Range<usize>,
-        f: F,
-        queue: &wgpu::Queue,
-    ) where
-        F: FnOnce(&mut [Transform]),
-    {
-        f(&mut self.instances[model][range.clone()]);
-        let raw: Vec<_> = self.instances[model][range.clone()]
-            .iter()
-            .map(Transform::as_raw)
-            .collect();
-        queue.write_buffer(
-            &self.instance_buffers[model],
-            range.start as u64 * mem::size_of::<InstanceRaw>() as u64,
-            bytemuck::cast_slice(&raw[..]),
-        );
-    }
-
-    pub fn set_transforms(
-        &mut self,
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
-        model: ModelIndex,
-        new_transforms: Vec<Transform>,
-    ) {
-        let old_len = self.instances[model].len();
-        let raw: Vec<_> = new_transforms.iter().map(Transform::as_raw).collect();
-        if old_len < self.instances[model].len() {
-            let new_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some(&format!("Instance buffer for model {}", model)),
-                contents: bytemuck::cast_slice(&raw),
-                usage: wgpu::BufferUsages::VERTEX,
-            });
-            self.instance_buffers[model] = new_buffer;
-        } else {
-            queue.write_buffer(&self.instance_buffers[model], 0, bytemuck::cast_slice(&raw));
-        }
-        self.instances[model] = new_transforms;
-    }
-}
-
 pub struct Renderer {
     pub camera: Camera,
 
@@ -217,7 +75,7 @@ pub struct Renderer {
     render_pipeline: wgpu::RenderPipeline,
     model_manager: ModelManager,
     texture_bind_group_layout: wgpu::BindGroupLayout,
-    camera_uniform: CameraUniform,
+    camera_uniform: camera::CameraUniform,
     camera_buffer: wgpu::Buffer,
     camera_bind_group: wgpu::BindGroup,
     depth_texture: texture::Texture,
@@ -296,8 +154,7 @@ impl Renderer {
             zfar: 100.0,
         };
 
-        let mut camera_uniform = CameraUniform::new();
-        camera_uniform.update_view_proj(&camera);
+        let camera_uniform = camera::CameraUniform::new(&camera);
 
         let camera_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Camera Buffer"),
@@ -331,7 +188,7 @@ impl Renderer {
 
         let shader = device.create_shader_module(&wgpu::ShaderModuleDescriptor {
             label: Some("shader.wgsl"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("shader.wgsl").into()),
+            source: wgpu::ShaderSource::Wgsl(include_str!("../shader.wgsl").into()),
         });
 
         let depth_texture = texture::Texture::new_depth_texture(&device, &config);
@@ -349,7 +206,7 @@ impl Renderer {
             vertex: wgpu::VertexState {
                 module: &shader,
                 entry_point: "vs_main",
-                buffers: &[model::ModelVertex::desc(), InstanceRaw::desc()],
+                buffers: &[model::ModelVertex::desc(), RawTranslationMatrix::desc()],
             },
             fragment: Some(wgpu::FragmentState {
                 module: &shader,
@@ -487,12 +344,13 @@ impl Renderer {
                 }),
             });
 
-            for (c, obj_model) in self.model_manager.models.iter().enumerate() {
-                render_pass.set_vertex_buffer(1, self.model_manager.instance_buffers[c].slice(..));
+            for (c, obj_model) in self.model_manager.models().iter().enumerate() {
+                render_pass
+                    .set_vertex_buffer(1, self.model_manager.instance_buffers()[c].slice(..));
                 render_pass.set_pipeline(&self.render_pipeline);
                 render_pass.draw_model_instanced(
                     obj_model,
-                    0..self.model_manager.instances[c].len() as u32,
+                    0..self.model_manager.instances()[c].len() as u32,
                     &self.camera_bind_group,
                 );
             }

@@ -1,3 +1,4 @@
+use std::mem;
 use std::ops::Range;
 use std::path::Path;
 use tobj::LoadOptions;
@@ -5,6 +6,11 @@ use wgpu::util::DeviceExt;
 
 use super::texture;
 use crate::error::LoadError;
+use crate::renderer::RawTranslationMatrix;
+
+use common::Transform;
+
+pub type ModelIndex = usize;
 
 pub trait Vertex {
     fn desc<'a>() -> wgpu::VertexBufferLayout<'a>;
@@ -20,7 +26,6 @@ pub struct ModelVertex {
 
 impl Vertex for ModelVertex {
     fn desc<'a>() -> wgpu::VertexBufferLayout<'a> {
-        use std::mem;
         wgpu::VertexBufferLayout {
             array_stride: mem::size_of::<ModelVertex>() as wgpu::BufferAddress,
             step_mode: wgpu::VertexStepMode::Vertex,
@@ -227,5 +232,105 @@ where
             let material = &model.materials[mesh.material];
             self.draw_mesh_instanced(mesh, material, instances.clone(), camera_bind_group);
         }
+    }
+}
+
+#[derive(Debug, Default)]
+pub struct ModelManager {
+    models: Vec<Model>,
+    instances: Vec<Vec<Transform>>,
+    instance_buffers: Vec<wgpu::Buffer>,
+}
+
+impl ModelManager {
+    pub fn new() -> Self {
+        Self {
+            models: vec![],
+            instances: vec![],
+            instance_buffers: vec![],
+        }
+    }
+
+    pub fn add_model(
+        &mut self,
+        device: &wgpu::Device,
+        model: Model,
+        n_instances: u64,
+    ) -> ModelIndex {
+        let idx = self.models.len();
+        self.models.push(model);
+        self.instances.push(vec![]);
+        self.instance_buffers
+            .push(device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some(&format!("Instance buffer {}", self.models.len())),
+                size: n_instances * 4 * 4 * mem::size_of::<f32>() as u64,
+                usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::VERTEX,
+                mapped_at_creation: false,
+            }));
+        idx
+    }
+
+    pub fn get_transforms(&self, model: ModelIndex, range: Range<usize>) -> &[Transform] {
+        &self.instances[model][range]
+    }
+
+    pub fn modify_transforms_with<F>(
+        &mut self,
+        model: ModelIndex,
+        range: Range<usize>,
+        f: F,
+        queue: &wgpu::Queue,
+    ) where
+        F: FnOnce(&mut [Transform]),
+    {
+        f(&mut self.instances[model][range.clone()]);
+        let raw: Vec<_> = self.instances[model][range.clone()]
+            .iter()
+            .copied()
+            .map(RawTranslationMatrix::new)
+            .collect();
+        queue.write_buffer(
+            &self.instance_buffers[model],
+            range.start as u64 * mem::size_of::<RawTranslationMatrix>() as u64,
+            bytemuck::cast_slice(&raw[..]),
+        );
+    }
+
+    pub fn set_transforms(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        model: ModelIndex,
+        new_transforms: Vec<Transform>,
+    ) {
+        let old_len = self.instances[model].len();
+        let raw: Vec<_> = new_transforms
+            .iter()
+            .copied()
+            .map(RawTranslationMatrix::new)
+            .collect();
+        if old_len < self.instances[model].len() {
+            let new_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some(&format!("Instance buffer for model {}", model)),
+                contents: bytemuck::cast_slice(&raw),
+                usage: wgpu::BufferUsages::VERTEX,
+            });
+            self.instance_buffers[model] = new_buffer;
+        } else {
+            queue.write_buffer(&self.instance_buffers[model], 0, bytemuck::cast_slice(&raw));
+        }
+        self.instances[model] = new_transforms;
+    }
+
+    pub fn models(&self) -> &[Model] {
+        self.models.as_ref()
+    }
+
+    pub fn instances(&self) -> &[Vec<Transform>] {
+        self.instances.as_ref()
+    }
+
+    pub fn instance_buffers(&self) -> &[wgpu::Buffer] {
+        self.instance_buffers.as_ref()
     }
 }

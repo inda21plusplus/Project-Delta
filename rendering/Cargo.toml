@@ -1,20 +1,16 @@
 [package]
-name = "ide"
+name = "rendering"
 version = "0.1.0"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-game-engine = { path = "../game-engine" }
 common = { path = "../common" }
-env_logger = "0.9.0"
-image = "0.24.1"
-log = "0.4.14"
-thiserror = "1.0"
 raw-window-handle = "0.4"
-
-[dependencies.winit]
-version = "0.26"
-default-features = false
-features = ["x11"]
+wgpu = "0.12"
+pollster = "0.2"
+tobj = "3.2"
+image = "0.24"
+bytemuck = { version = "1.4", features = ["derive"] }
+thiserror = "1.0"

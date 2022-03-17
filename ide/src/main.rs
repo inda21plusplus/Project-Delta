@@ -1,10 +1,8 @@
 use std::{f32, time::Instant};
 
 use camera_controller::CameraController;
-use game_engine::{
-    renderer::{Renderer, Transform},
-    Context, Quaternion, Vec2, Vec3,
-};
+use common::{Quaternion, Transform, Vec2, Vec3};
+use game_engine::{rendering::Renderer, Context};
 
 use winit::{
     event::{Event, KeyboardInput, VirtualKeyCode, WindowEvent},
@@ -59,7 +57,7 @@ fn main() {
     let mut context = Context {
         renderer: Renderer::new(
             window.raw_window_handle(),
-            window.inner_size().into(),
+            window.inner_size(),
             [0.229, 0.507, 0.921],
         )
         .unwrap(),
@@ -82,10 +80,7 @@ fn main() {
     event_loop.run(move |event, _, control_flow| {
         *control_flow = ControlFlow::Poll;
         match event {
-            Event::DeviceEvent {
-                device_id: _,
-                event,
-            } if window.window_mode() == WindowMode::CameraMode => {
+            Event::DeviceEvent { event, .. } if window.window_mode() == WindowMode::CameraMode => {
                 camera_controller.process_device_events(&event);
             }
             Event::WindowEvent {
@@ -101,28 +96,28 @@ fn main() {
             }
             Event::WindowEvent { event, .. } => {
                 camera_controller.process_window_events(&event);
-                match event {
-                    WindowEvent::KeyboardInput {
-                        input:
-                            KeyboardInput {
-                                virtual_keycode: Some(keycode),
-                                ..
-                            },
-                        ..
-                    } => match keycode {
+                if let WindowEvent::KeyboardInput {
+                    input:
+                        KeyboardInput {
+                            virtual_keycode: Some(keycode),
+                            ..
+                        },
+                    ..
+                } = event
+                {
+                    match keycode {
                         VirtualKeyCode::Q => {
                             window
                                 .set_window_mode(WindowMode::CursorMode)
-                                .unwrap_or_else(|_| log::error!("Failed to unlock cursor"));
+                                .unwrap_or_else(|_| log::error!("Could not unlock cursor"));
                         }
                         VirtualKeyCode::E => {
                             window
                                 .set_window_mode(WindowMode::CameraMode)
-                                .unwrap_or_else(|_| log::error!("Failed to lock cursor"));
+                                .unwrap_or_else(|_| log::error!("Could not lock cursor"));
                         }
-                        _ => (),
-                    },
-                    _ => (),
+                        _ => {}
+                    }
                 }
             }
             Event::MainEventsCleared => window.winit_window().request_redraw(),
@@ -131,14 +126,16 @@ fn main() {
                 let dt = now.duration_since(last_frame).as_secs_f32();
                 last_frame = now;
 
-                let offset = start_time.elapsed().as_secs_f32().sin();
+                let total_elapsed = start_time.elapsed().as_secs_f32();
                 for obj in &mut instances {
-                    obj.position.y = offset;
+                    obj.position.y =
+                        (total_elapsed - obj.position.x * 0.2 + obj.position.z * 0.3).sin() / 2.;
+                    obj.rotation.rotate_y(obj.position.x * 0.03 * dt);
                 }
 
                 context.renderer.update_instances(&[
-                    (model_cube, &instances[..9]),
-                    (model_ball, &instances[9..]),
+                    (model_cube, &instances[..8]),
+                    (model_ball, &instances[8..]),
                 ]);
 
                 camera_controller.update_camera(dt, &mut context.renderer.camera);
@@ -149,8 +146,7 @@ fn main() {
                     .render()
                     .unwrap_or_else(|err| log::error!("Failed to render: {}", err))
             }
-
-            _ => (),
+            _ => {}
         }
     });
 }

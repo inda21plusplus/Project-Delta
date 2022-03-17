@@ -1,7 +1,8 @@
 use std::f32::consts::PI;
 
-use game_engine::{Vec2, Vec3};
-use winit::event::{DeviceEvent, KeyboardInput, VirtualKeyCode, WindowEvent};
+use common::{Vec2, Vec3};
+use game_engine::rendering::Camera;
+use winit::event::{DeviceEvent, KeyboardInput, MouseScrollDelta, VirtualKeyCode, WindowEvent};
 
 pub struct CameraController {
     pub movement_speed: f32,
@@ -39,59 +40,54 @@ impl CameraController {
             DeviceEvent::MouseMotion { delta: (dx, dy) } => {
                 self.rotation.x -= (self.mouse_sensitivity * dy as f32).to_radians();
                 self.rotation.y -= (self.mouse_sensitivity * dx as f32).to_radians();
-                log::info!("Camera rotation {}", self.rotation);
             }
-            _ => (), /*
-                     DeviceEvent::Added => todo!(),
-                     DeviceEvent::Removed => todo!(),
-                     DeviceEvent::MouseMotion { delta } => todo!(),
-                     DeviceEvent::MouseWheel { delta } => todo!(),
-                     DeviceEvent::Motion { axis, value } => todo!(),
-                     DeviceEvent::Button { button, state } => todo!(),
-                     DeviceEvent::Key(_) => todo!(),
-                     DeviceEvent::Text { codepoint } => todo!(),*/
+            DeviceEvent::MouseWheel {
+                delta: MouseScrollDelta::LineDelta(_, dy),
+            } => self.movement_speed *= (-dy as f32 / 1000.).exp(),
+            DeviceEvent::MouseWheel {
+                delta: MouseScrollDelta::PixelDelta(d),
+            } => self.movement_speed *= (-d.y as f32 / 1000.).exp(),
+            _ => {}
         }
     }
 
     pub fn process_window_events(&mut self, event: &WindowEvent) {
-        match event {
-            &WindowEvent::KeyboardInput {
-                input:
-                    KeyboardInput {
-                        state,
-                        virtual_keycode: Some(keycode),
-                        ..
-                    },
-                ..
-            } => {
-                let is_pressed = state == winit::event::ElementState::Pressed;
-                match keycode {
-                    VirtualKeyCode::W | VirtualKeyCode::Up => {
-                        self.is_forward_pressed = is_pressed;
-                    }
-                    VirtualKeyCode::A | VirtualKeyCode::Left => {
-                        self.is_left_pressed = is_pressed;
-                    }
-                    VirtualKeyCode::S | VirtualKeyCode::Down => {
-                        self.is_backward_pressed = is_pressed;
-                    }
-                    VirtualKeyCode::D | VirtualKeyCode::Right => {
-                        self.is_right_pressed = is_pressed;
-                    }
-                    VirtualKeyCode::Space | VirtualKeyCode::PageUp => {
-                        self.is_up_pressed = is_pressed;
-                    }
-                    VirtualKeyCode::LControl | VirtualKeyCode::PageDown => {
-                        self.is_down_pressed = is_pressed;
-                    }
-                    _ => (),
+        if let &WindowEvent::KeyboardInput {
+            input:
+                KeyboardInput {
+                    state,
+                    virtual_keycode: Some(keycode),
+                    ..
+                },
+            ..
+        } = event
+        {
+            let is_pressed = state == winit::event::ElementState::Pressed;
+            match keycode {
+                VirtualKeyCode::W | VirtualKeyCode::Up => {
+                    self.is_forward_pressed = is_pressed;
                 }
+                VirtualKeyCode::A | VirtualKeyCode::Left => {
+                    self.is_left_pressed = is_pressed;
+                }
+                VirtualKeyCode::S | VirtualKeyCode::Down => {
+                    self.is_backward_pressed = is_pressed;
+                }
+                VirtualKeyCode::D | VirtualKeyCode::Right => {
+                    self.is_right_pressed = is_pressed;
+                }
+                VirtualKeyCode::Space | VirtualKeyCode::PageUp => {
+                    self.is_up_pressed = is_pressed;
+                }
+                VirtualKeyCode::LControl | VirtualKeyCode::PageDown => {
+                    self.is_down_pressed = is_pressed;
+                }
+                _ => {}
             }
-            _ => (),
         }
     }
 
-    pub fn update_camera(&mut self, dt: f32, camera: &mut game_engine::renderer::Camera) {
+    pub fn update_camera(&mut self, dt: f32, camera: &mut Camera) {
         const MAX_PITCH: f32 = 89f32 * (PI / 180.0f32);
         if self.rotation.x < -MAX_PITCH {
             self.rotation.x = -MAX_PITCH;

@@ -2,4 +2,4 @@
 
 resolver = "2"
 
-members = ["ide", "game-engine"]
+members = ["ide", "game-engine", "rendering", "common"]

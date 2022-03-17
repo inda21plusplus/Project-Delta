@@ -1,4 +1,4 @@
-use crate::renderer::Renderer;
+use rendering::Renderer;
 
 pub struct Context {
     pub renderer: Renderer,
