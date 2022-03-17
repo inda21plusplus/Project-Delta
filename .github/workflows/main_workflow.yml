@@ -85,19 +85,39 @@ jobs:
           profile: minimal
           toolchain: stable
           override: true
+          components: clippy
 
       - name: Clippy IDE
         working-directory: ./ide
         run: |
-          rustup component add clippy
           cargo clippy
         # cargo clippy -- -D warnings # This line will interpet Warnings as errors
 
       - name: Clippy Engine
         working-directory: ./game-engine
         run: |
-          rustup component add clippy
           cargo clippy
         # cargo clippy -- -D warnings # This line will interpet Warnings as errors
 
+  format:
+    name: Check code formatting
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v2
 
+      - name: Install Stable Toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          override: true
+          components: rustfmt
+
+      - name: Check IDE formatting
+        working-directory: ./ide
+        run: cargo fmt --check
+
+      - name: Check Engine formatting
+        working-directory: ./game-engine
+        run: cargo fmt --check
