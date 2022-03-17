@@ -1,5 +1,3 @@
-use std::f32::consts::PI;
-
 use common::{Vec2, Vec3};
 use game_engine::rendering::Camera;
 use winit::event::{DeviceEvent, KeyboardInput, MouseScrollDelta, VirtualKeyCode, WindowEvent};
@@ -88,48 +86,41 @@ impl CameraController {
     }
 
     pub fn update_camera(&mut self, dt: f32, camera: &mut Camera) {
-        const MAX_PITCH: f32 = 89f32 * (PI / 180.0f32);
-        if self.rotation.x < -MAX_PITCH {
-            self.rotation.x = -MAX_PITCH;
-        }
-        if self.rotation.x > MAX_PITCH {
-            self.rotation.x = MAX_PITCH;
-        }
+        let max_pitch: f32 = 89f32.to_radians();
+        self.rotation.x = self.rotation.x.clamp(-max_pitch, max_pitch);
 
-        let frame_speed = dt * self.movement_speed;
+        let delta_pos = dt * self.movement_speed;
 
         let forward = Vec3::new(
             self.rotation.y.sin() * self.rotation.x.cos(),
             self.rotation.x.sin(),
             self.rotation.y.cos() * self.rotation.x.cos(),
-        );
-
-        let forward_norm = forward.normalized();
+        )
+        .normalized();
 
         if self.is_forward_pressed {
-            self.position += forward_norm * frame_speed;
+            self.position += forward * delta_pos;
         }
         if self.is_backward_pressed {
-            self.position -= forward_norm * frame_speed;
+            self.position -= forward * delta_pos;
         }
 
-        let right = forward_norm.cross(camera.up).normalized();
-        let up = camera.up;
+        let right = forward.cross(camera.up).normalized();
 
         if self.is_right_pressed {
-            self.position += right * frame_speed;
+            self.position += right * delta_pos;
         }
 
         if self.is_left_pressed {
-            self.position -= right * frame_speed;
+            self.position -= right * delta_pos;
         }
 
         if self.is_up_pressed {
-            self.position += up * frame_speed;
+            self.position += camera.up * delta_pos;
         }
 
         if self.is_down_pressed {
-            self.position -= up * frame_speed;
+            self.position -= camera.up * delta_pos;
         }
 
         camera.eye = self.position;
