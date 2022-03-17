@@ -12,8 +12,8 @@ pub struct CameraController {
     pub is_backward_pressed: bool,
     pub is_left_pressed: bool,
     pub is_right_pressed: bool,
-    pub is_space_pressed: bool,
-    pub is_ctrl_pressed: bool,
+    pub is_up_pressed: bool,
+    pub is_down_pressed: bool,
 }
 
 impl CameraController {
@@ -32,8 +32,8 @@ impl CameraController {
             is_backward_pressed: false,
             is_left_pressed: false,
             is_right_pressed: false,
-            is_space_pressed: false,
-            is_ctrl_pressed: false,
+            is_up_pressed: false,
+            is_down_pressed: false,
         }
     }
 
@@ -57,7 +57,7 @@ impl CameraController {
 
     pub fn process_window_events(&mut self, event: &WindowEvent) {
         match event {
-            WindowEvent::KeyboardInput {
+            &WindowEvent::KeyboardInput {
                 input:
                     KeyboardInput {
                         state,
@@ -66,7 +66,7 @@ impl CameraController {
                     },
                 ..
             } => {
-                let is_pressed = *state == winit::event::ElementState::Pressed;
+                let is_pressed = state == winit::event::ElementState::Pressed;
                 match keycode {
                     VirtualKeyCode::W | VirtualKeyCode::Up => {
                         self.is_forward_pressed = is_pressed;
@@ -81,10 +81,10 @@ impl CameraController {
                         self.is_right_pressed = is_pressed;
                     }
                     VirtualKeyCode::Space | VirtualKeyCode::PageUp => {
-                        self.is_space_pressed = is_pressed;
+                        self.is_up_pressed = is_pressed;
                     }
                     VirtualKeyCode::LControl | VirtualKeyCode::PageDown => {
-                        self.is_ctrl_pressed = is_pressed;
+                        self.is_down_pressed = is_pressed;
                     }
                     _ => (),
                 }
@@ -131,11 +131,11 @@ impl CameraController {
             self.position -= right * frame_speed;
         }
 
-        if self.is_space_pressed {
+        if self.is_up_pressed {
             self.position += up * frame_speed;
         }
 
-        if self.is_ctrl_pressed {
+        if self.is_down_pressed {
             self.position -= up * frame_speed;
         }
 

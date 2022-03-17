@@ -654,6 +654,8 @@ dependencies = [
  "game-engine",
  "image",
  "log",
+ "raw-window-handle",
+ "thiserror",
  "vek",
  "winit",
 ]

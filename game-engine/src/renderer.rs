@@ -134,12 +134,6 @@ impl InstanceRaw {
     }
 }
 
-#[derive(Debug, Copy, Clone)]
-pub struct PhysicalSize {
-    pub width: u32,
-    pub height: u32,
-}
-
 #[derive(Debug, Default)]
 pub struct ModelManager {
     models: Vec<model::Model>,
@@ -230,7 +224,7 @@ pub struct Renderer {
     device: wgpu::Device,
     queue: wgpu::Queue,
     config: wgpu::SurfaceConfiguration,
-    size: PhysicalSize,
+    size: (u32, u32),
     render_pipeline: wgpu::RenderPipeline,
     model_manager: ModelManager,
     texture_bind_group_layout: wgpu::BindGroupLayout,
@@ -239,12 +233,14 @@ pub struct Renderer {
     camera_buffer: wgpu::Buffer,
     camera_bind_group: wgpu::BindGroup,
     depth_texture: texture::Texture,
+    clear_color: [f64; 3],
 }
 
 impl Renderer {
     pub fn new<W: HasRawWindowHandle>(
         window: &W,
-        size: PhysicalSize,
+        size: (u32, u32),
+        clear_color: [f64; 3],
     ) -> Result<Self, RenderingError> {
         // The instance is a handle to our GPU
         // BackendBit::PRIMARY => Vulkan + Metal + DX12 + Browser WebGPU
@@ -274,8 +270,8 @@ impl Renderer {
         let config = wgpu::SurfaceConfiguration {
             usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
             format: surface.get_preferred_format(&adapter).unwrap(),
-            width: size.width,
-            height: size.height,
+            width: size.0,
+            height: size.1,
             present_mode: wgpu::PresentMode::Fifo,
         };
 
@@ -425,15 +421,16 @@ impl Renderer {
             camera_bind_group,
             camera_uniform,
             depth_texture,
+            clear_color,
         })
     }
 
-    pub fn resize(&mut self, new_size: PhysicalSize) {
-        if new_size.width > 0 && new_size.height > 0 {
+    pub fn resize(&mut self, (width, height): (u32, u32)) {
+        if width > 0 && height > 0 {
             self.camera.aspect = self.config.width as f32 / self.config.height as f32;
-            self.size = new_size;
-            self.config.width = new_size.width;
-            self.config.height = new_size.height;
+            self.size = (width, height);
+            self.config.width = width;
+            self.config.height = height;
             self.surface.configure(&self.device, &self.config);
             self.depth_texture =
                 texture::Texture::create_depth_texture(&self.device, &self.config, "depth_texture");
@@ -472,7 +469,7 @@ impl Renderer {
         }
     }
 
-    pub fn render(&mut self, clear_color: [f64; 4]) -> Result<(), RenderingError> {
+    pub fn render(&mut self) -> Result<(), RenderingError> {
         let output = self.surface.get_current_texture()?;
         let view = output
             .texture
@@ -485,14 +482,14 @@ impl Renderer {
             });
 
         {
-            let [r, g, b, a] = clear_color;
+            let [r, g, b] = self.clear_color;
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Render Pass"),
                 color_attachments: &[wgpu::RenderPassColorAttachment {
                     view: &view,
                     resolve_target: None,
                     ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color { r, g, b, a }),
+                        load: wgpu::LoadOp::Clear(wgpu::Color { r, g, b, a: 1.0 }),
                         store: true,
                     },
                 }],
