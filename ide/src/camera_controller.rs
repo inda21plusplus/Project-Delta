@@ -55,7 +55,7 @@ impl CameraController {
         }
     }
 
-    pub fn process_window_events(&mut self, event: &WindowEvent) -> bool {
+    pub fn process_window_events(&mut self, event: &WindowEvent) {
         match event {
             WindowEvent::KeyboardInput {
                 input:
@@ -70,32 +70,26 @@ impl CameraController {
                 match keycode {
                     VirtualKeyCode::W | VirtualKeyCode::Up => {
                         self.is_forward_pressed = is_pressed;
-                        true
                     }
                     VirtualKeyCode::A | VirtualKeyCode::Left => {
                         self.is_left_pressed = is_pressed;
-                        true
                     }
                     VirtualKeyCode::S | VirtualKeyCode::Down => {
                         self.is_backward_pressed = is_pressed;
-                        true
                     }
                     VirtualKeyCode::D | VirtualKeyCode::Right => {
                         self.is_right_pressed = is_pressed;
-                        true
                     }
                     VirtualKeyCode::Space | VirtualKeyCode::PageUp => {
                         self.is_space_pressed = is_pressed;
-                        true
                     }
                     VirtualKeyCode::LControl | VirtualKeyCode::PageDown => {
                         self.is_ctrl_pressed = is_pressed;
-                        true
                     }
-                    _ => false,
+                    _ => (),
                 }
             }
-            _ => false,
+            _ => (),
         }
     }
 
@@ -110,11 +104,13 @@ impl CameraController {
 
         let frame_speed = dt * self.speed;
 
+        // Pitch, Yaw, Roll
         let forward = Vec3::new(
             self.rotation.y.sin() * self.rotation.x.cos(),
             self.rotation.x.sin(),
             self.rotation.y.cos() * self.rotation.x.cos(),
         );
+
         let forward_norm = forward.normalized();
 
         if self.is_forward_pressed {
@@ -130,6 +126,7 @@ impl CameraController {
         if self.is_right_pressed {
             self.position += right * frame_speed;
         }
+
         if self.is_left_pressed {
             self.position -= right * frame_speed;
         }
@@ -137,6 +134,7 @@ impl CameraController {
         if self.is_space_pressed {
             self.position += up * frame_speed;
         }
+
         if self.is_ctrl_pressed {
             self.position -= up * frame_speed;
         }

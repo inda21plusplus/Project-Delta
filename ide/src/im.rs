@@ -1,8 +1,8 @@
 use std::path::Path;
 
-use game_engine::error::LoadError;
+use image::ImageError;
 
-pub fn get_logo<P: AsRef<Path>>(file_name: P) -> Result<(u32, u32, Vec<u8>), LoadError> {
+pub fn get_logo<P: AsRef<Path>>(file_name: P) -> Result<(u32, u32, Vec<u8>), ImageError> {
     let img = image::open(file_name)?;
     let rgba = img.into_rgba8();
     let (w, h) = rgba.dimensions();
