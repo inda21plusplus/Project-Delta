@@ -15,7 +15,9 @@ pub struct Camera {
 impl Camera {
     fn build_view_projection_matrix(&self) -> Mat4 {
         let view = Mat4::look_at_rh(self.eye, self.target, self.up);
-        let proj = Mat4::perspective_fov_rh_zo(self.fovy, 1.6, 0.9, self.znear, self.zfar);
+        // This function just uses `width / height` to calculate the aspect ratio, so `aspect, 1.`
+        // should effectively do what we want.
+        let proj = Mat4::perspective_fov_rh_zo(self.fovy, self.aspect, 1., self.znear, self.zfar);
         proj * view
     }
 }

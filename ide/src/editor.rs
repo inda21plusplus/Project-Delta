@@ -51,7 +51,7 @@ impl Editor {
         let camera_controller = CameraController::new(
             10.0,
             0.1,
-            Vec3::new(-15.0, 3.0, 0.0),
+            Vec3::new(-16.0, 4.0, 1.0),
             Vec2::new(-0.3, 135f32.to_radians()),
         );
 

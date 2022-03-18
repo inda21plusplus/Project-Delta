@@ -149,7 +149,7 @@ impl Renderer {
             target: (0.0, 0.0, 0.0).into(),
             up: Vec3::unit_y(),
             aspect: config.width as f32 / config.height as f32,
-            fovy: std::f32::consts::FRAC_PI_4,
+            fovy: 45f32.to_radians(),
             znear: 0.1,
             zfar: 100.0,
         };
@@ -269,10 +269,10 @@ impl Renderer {
 
     pub fn resize(&mut self, (width, height): (u32, u32)) {
         if width > 0 && height > 0 {
-            self.camera.aspect = self.config.width as f32 / self.config.height as f32;
-            self.size = (width, height);
             self.config.width = width;
             self.config.height = height;
+            self.camera.aspect = width as f32 / height as f32;
+            self.size = (width, height);
             self.surface.configure(&self.device, &self.config);
             self.depth_texture = texture::Texture::new_depth_texture(&self.device, &self.config);
         }
