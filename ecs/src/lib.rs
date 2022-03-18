@@ -11,7 +11,7 @@ pub use world::World;
 
 #[cfg(test)]
 mod tests {
-    use std::{any, collections::HashSet};
+    use std::{any, collections::HashSet, mem};
 
     use crate::component::{ComponentRegistry, Storage, StorageType};
 
@@ -353,5 +353,155 @@ mod tests {
                 }
             ])
         );
+    }
+
+    #[test]
+    fn read_and_write_using_query() {
+        let mut world = World::default();
+        let a = world.spawn();
+        world.add(a, 0usize);
+        let b = world.spawn();
+        world.add(b, 1usize);
+        world.add(b, 2f32);
+        let usize_id = world.component_id::<usize>().unwrap();
+        let f32_id = world.component_id::<f32>().unwrap();
+
+        let usize_query = Query::new(vec![ComponentQuery {
+            id: usize_id,
+            mutable: false,
+        }])
+        .unwrap();
+        let both_query = Query::new(vec![
+            ComponentQuery {
+                id: usize_id,
+                mutable: true,
+            },
+            ComponentQuery {
+                id: f32_id,
+                mutable: false,
+            },
+        ])
+        .unwrap();
+        {
+            let mut res = world.query(&usize_query);
+            assert_eq!(*unsafe { res.get(a)[0].cast::<usize>().as_ref() }, 0);
+            assert_eq!(*unsafe { res.get(b)[0].cast::<usize>().as_ref() }, 1);
+        }
+        {
+            let mut res = world.query(&both_query);
+            assert!(unsafe { res.try_get(a) }.is_none());
+            let (int, float) = unsafe {
+                if let [int, float] = res.get(b) {
+                    (int.cast::<usize>().as_mut(), float.cast::<f32>().as_ref())
+                } else {
+                    panic!()
+                }
+            };
+            *int += 2;
+            assert_eq!(2., *float);
+        }
+        {
+            let mut res = world.query(&usize_query);
+            assert_eq!(*unsafe { res.get(a)[0].cast::<usize>().as_ref() }, 0);
+            assert_eq!(*unsafe { res.get(b)[0].cast::<usize>().as_ref() }, 3);
+        }
+    }
+
+    #[test]
+    fn multiple_queries_at_the_same_time() {
+        let mut world = World::default();
+        struct Name(String);
+        struct Health(u8);
+        let chungus = world.spawn();
+        world.add(chungus, Name("Big chungus".into()));
+        world.add(chungus, Health(200));
+        let ant = world.spawn();
+        world.add(ant, Name("Mr. Ant".into()));
+        world.add(ant, Health(8));
+
+        let name_query = Query::new(vec![ComponentQuery {
+            id: world.component_id::<Name>().unwrap(),
+            mutable: false,
+        }])
+        .unwrap();
+        let mut_name_query = Query::new(vec![ComponentQuery {
+            id: world.component_id::<Name>().unwrap(),
+            mutable: true,
+        }])
+        .unwrap();
+        let health_query = Query::new(vec![ComponentQuery {
+            id: world.component_id::<Health>().unwrap(),
+            mutable: true,
+        }])
+        .unwrap();
+        let r1 = world.query(&name_query);
+        let r2 = world.query(&name_query);
+        let r3 = world.query(&health_query);
+        mem::drop(r1);
+        mem::drop(r2);
+        let r4 = world.query(&mut_name_query);
+        mem::drop(r3);
+        mem::drop(r4);
+
+        let r5 = world.query(&name_query);
+        let r6 = world.query(&name_query);
+        assert_eq!(
+            QueryError::ConcurrentMutableAccess(world.component_id::<Name>().unwrap()),
+            world.try_query(&mut_name_query).unwrap_err()
+        );
+        mem::drop(r6);
+        assert_eq!(
+            QueryError::ConcurrentMutableAccess(world.component_id::<Name>().unwrap()),
+            world.try_query(&mut_name_query).unwrap_err()
+        );
+        mem::drop(r5);
+        assert!(world.try_query(&mut_name_query).is_ok());
+    }
+
+    #[test]
+    fn mutable_queries_must_be_exclusive() {
+        let mut world = World::default();
+        struct Name(String);
+        struct Health(u8);
+        let name_id = world.register_component::<Name>();
+        let health_id = world.register_component::<Health>();
+
+        let q1 = Query::new(vec![
+            ComponentQuery {
+                id: name_id,
+                mutable: true,
+            },
+            ComponentQuery {
+                id: health_id,
+                mutable: false,
+            },
+        ])
+        .unwrap();
+        let q2 = Query::new(vec![ComponentQuery {
+            id: health_id,
+            mutable: true,
+        }])
+        .unwrap();
+
+        let r = world.query(&q1);
+        assert_eq!(
+            QueryError::ConcurrentMutableAccess(name_id),
+            world.try_query(&q1).unwrap_err(),
+        );
+        mem::drop(r);
+
+        let r = world.query(&q2);
+        assert_eq!(
+            QueryError::ConcurrentMutableAccess(health_id),
+            world.try_query(&q1).unwrap_err(),
+        );
+        mem::drop(r);
+
+        let r = world.query(&q1);
+        assert_eq!(
+            QueryError::ConcurrentMutableAccess(health_id),
+            world.try_query(&q2).unwrap_err(),
+        );
+        mem::drop(r);
     }
 }

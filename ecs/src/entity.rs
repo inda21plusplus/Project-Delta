@@ -9,6 +9,14 @@ pub struct Entity {
     gen: Generation,
 }
 
+impl Entity {
+    /// Retrieves the id of `self` without checking if `self` is still alive. Most callers should
+    /// use `Entities::id` instead.
+    pub fn get_id_unchecked(self) -> EntityId {
+        self.id
+    }
+}
+
 /// Currently there can be at most `u32::MAX + 1` entities alive at a time and for every one of
 /// those 'slots' there can exist at most `u32::MAX + 1` different entities at a time. If any of
 /// these are exceeded there will be a panic.

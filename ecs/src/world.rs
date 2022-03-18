@@ -1,6 +1,6 @@
 use crate::component::{ComponentId, ComponentRegistry};
-use crate::query::{MaybeMut, QueryResponse};
-use crate::{Entities, Entity, Query};
+use crate::query::QueryResponse;
+use crate::{Entities, Entity, Query, QueryError};
 use std::ptr;
 
 #[derive(Debug, Default)]
@@ -12,6 +12,14 @@ pub struct World {
 impl World {
     pub fn spawn(&mut self) -> Entity {
         self.entities.spawn()
+    }
+
+    pub fn register_component<T: 'static>(&mut self) -> ComponentId {
+        self.component_registry.register::<T>()
+    }
+
+    pub fn component_id<T: 'static>(&self) -> Option<ComponentId> {
+        self.component_registry.id::<T>()
     }
 
     pub fn add<T: 'static>(&mut self, entity: Entity, component: T) {
@@ -51,10 +59,32 @@ impl World {
             .is_some()
     }
 
-    pub fn query<'s, 'q>(&'s self, query: &'q Query) -> QueryResponse<'s, 'q> {
-        assert!(query.is_immutable());
-        QueryResponse::new_const(self, query)
+    /// Tries to query for a set of components. If this tries to borrow access to a component which
+    /// has already been handed out (unless every borrow is immutable), a `QueryError` indicating
+    /// one (of the possible many) components which was already inaccessible.
+    pub fn try_query<'a, 'q>(
+        &'a self,
+        query: &'q Query,
+    ) -> Result<QueryResponse<'a, 'q>, QueryError> {
+        let mut entries = Vec::with_capacity(query.components().len());
+        for c in query.components() {
+            match self.component_registry.try_borrow(c.id, c.mutable) {
+                Some(entry) => entries.push(entry),
+                None => return Err(QueryError::ConcurrentMutableAccess(c.id)),
+            }
+        }
+        Ok(QueryResponse::new(&self.component_registry, query, entries))
     }
+
+    /// Tries to query for a set of components. If thats not possible (see `try_query`) this
+    /// function panics.
+    pub fn query<'a, 'q>(&'a self, query: &'q Query) -> QueryResponse<'a, 'q> {
+        self.try_query(query).unwrap()
+    }
+
+    // NOTE: pub unsafe fn try_query_unsafe<'q>(&self, ...) -> ...QueryResponse<'static, 'q> ...
+    // can be added if it's not possible to know at compile time that the response wont outlive the
+    // world
 
     pub fn get<T: 'static>(&self, entity: Entity) -> Option<&T> {
         let comp_id = self.component_registry.id::<T>()?;
