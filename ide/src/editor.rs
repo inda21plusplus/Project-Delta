@@ -35,7 +35,7 @@ impl Editor {
     pub fn new() -> anyhow::Result<(EventLoop<()>, Self)> {
         let event_loop = EventLoop::new();
 
-        let icon = image::open("res/icon.png").unwrap().into_rgba8();
+        let icon = image::open("res/icon.png")?.into_rgba8();
         let (icon_width, icon_height) = icon.dimensions();
         let icon = winit::window::Icon::from_rgba(icon.into_raw(), icon_width, icon_height)?;
 
