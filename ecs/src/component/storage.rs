@@ -36,7 +36,7 @@ impl Storage {
         }
     }
 
-    /// Returns true if `entity` previously had this kind of component.
+    /// Returns `true` if `entity` did previously not have this kind of component.
     /// # Safety
     /// `Self` must contain `T`s
     pub unsafe fn set<T>(&mut self, index: usize, mut value: T) -> bool {
@@ -45,7 +45,7 @@ impl Storage {
         res
     }
 
-    /// Returns true if `entity` previously had this kind of component.
+    /// Returns `true` if `entity` did previously not have this kind of component.
     /// # Safety
     /// The value pointed to by `ptr` must not be a valid value for the type `self` stores.
     /// It must *not* freed by the caller.
@@ -120,11 +120,11 @@ impl VecStorage {
     }
 
     /// `self` effectively takes ownership over the value pointed to by `value` and should not be
-    /// freed by the caller. Returns true if there was a component at `index` before.
+    /// freed by the caller. Returns `true` if the there was nothing at `index` before.
     unsafe fn set(&mut self, index: usize, value: *mut u8) -> bool {
         self.ensure_capacity(index + 1);
 
-        let res = self.unset(index);
+        let res = !self.unset(index);
         self.get_mut_unchecked(index)
             .copy_from_nonoverlapping(value, self.item_layout.size());
         self.occupied.insert(index);

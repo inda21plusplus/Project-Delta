@@ -2,11 +2,13 @@
 
 pub mod component;
 mod entity;
+mod error;
 mod query;
 mod world;
 
 pub use entity::{Entities, Entity};
-pub use query::{ComponentQuery, Query, QueryError};
+pub use error::BorrowMutError;
+pub use query::{ComponentQuery, Query};
 pub use world::World;
 
 #[cfg(test)]
@@ -121,14 +123,10 @@ mod tests {
             assert_eq!(50, counter.get());
             for &e in &es[..50] {
                 let index = entities.id(e).unwrap() as usize;
-                unsafe {
-                    let existed = storage.set(index, Counter::new(counter.clone()));
-                    if index % 2 == 0 {
-                        assert!(existed);
-                    } else {
-                        assert!(!existed);
-                    }
-                }
+                assert!(
+                    unsafe { storage.set(index, Counter::new(counter.clone())) }
+                        == (index % 2 == 1)
+                );
             }
             assert_eq!(75, counter.get());
             for &e in &es[50..] {
@@ -337,7 +335,7 @@ mod tests {
         let a = comp_reg.register::<A>();
         let b = comp_reg.register::<B>();
         assert_eq!(
-            Err(QueryError::ConcurrentMutableAccess(b)),
+            Err(BorrowMutError::new(b)),
             Query::new(vec![
                 ComponentQuery {
                     id: a,
@@ -446,12 +444,12 @@ mod tests {
         let r5 = world.query(&name_query);
         let r6 = world.query(&name_query);
         assert_eq!(
-            QueryError::ConcurrentMutableAccess(world.component_id::<Name>().unwrap()),
+            BorrowMutError::new(world.component_id::<Name>().unwrap()),
             world.try_query(&mut_name_query).unwrap_err()
         );
         mem::drop(r6);
         assert_eq!(
-            QueryError::ConcurrentMutableAccess(world.component_id::<Name>().unwrap()),
+            BorrowMutError::new(world.component_id::<Name>().unwrap()),
             world.try_query(&mut_name_query).unwrap_err()
         );
         mem::drop(r5);
@@ -485,21 +483,21 @@ mod tests {
 
         let r = world.query(&q1);
         assert_eq!(
-            QueryError::ConcurrentMutableAccess(name_id),
+            BorrowMutError::new(name_id),
             world.try_query(&q1).unwrap_err(),
         );
         mem::drop(r);
 
         let r = world.query(&q2);
         assert_eq!(
-            QueryError::ConcurrentMutableAccess(health_id),
+            BorrowMutError::new(health_id),
             world.try_query(&q1).unwrap_err(),
         );
         mem::drop(r);
 
         let r = world.query(&q1);
         assert_eq!(
-            QueryError::ConcurrentMutableAccess(health_id),
+            BorrowMutError::new(health_id),
             world.try_query(&q2).unwrap_err(),
         );
         mem::drop(r);

@@ -2,14 +2,8 @@ use std::{collections::HashSet, marker::PhantomData, ptr::NonNull};
 
 use crate::{
     component::{ComponentEntryRef, ComponentId, ComponentRegistry},
-    Entity,
+    BorrowMutError, Entity,
 };
-
-// TODO: make this an actual `std::error::Error`
-#[derive(Debug, PartialEq, Eq)]
-pub enum QueryError {
-    ConcurrentMutableAccess(ComponentId),
-}
 
 /// Represents a valid query for components without multiple mutable access to the same type of
 /// component.
@@ -29,16 +23,16 @@ pub struct ComponentQuery {
 }
 
 impl Query {
-    pub fn new(components: Vec<ComponentQuery>) -> Result<Self, QueryError> {
+    pub fn new(components: Vec<ComponentQuery>) -> Result<Self, BorrowMutError> {
         let mut mutable_acces_to = HashSet::new();
         for c in components.iter().filter(|c| c.mutable) {
             if !mutable_acces_to.insert(c.id) {
-                return Err(QueryError::ConcurrentMutableAccess(c.id));
+                return Err(BorrowMutError::new(c.id));
             }
         }
         for c in components.iter().filter(|c| !c.mutable) {
             if mutable_acces_to.contains(&c.id) {
-                return Err(QueryError::ConcurrentMutableAccess(c.id));
+                return Err(BorrowMutError::new(c.id));
             }
         }
         Ok(Self { components })
@@ -64,7 +58,7 @@ pub struct QueryResponse<'r, 'q> {
 }
 
 impl<'r, 'q> QueryResponse<'r, 'q> {
-    pub fn new(
+    pub(crate) fn new(
         _registry: &'r ComponentRegistry,
         query: &'q Query,
         entries: Vec<ComponentEntryRef>,

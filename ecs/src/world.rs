@@ -1,7 +1,6 @@
 use crate::component::{ComponentId, ComponentRegistry};
 use crate::query::QueryResponse;
-use crate::{Entities, Entity, Query, QueryError};
-use std::ptr;
+use crate::{BorrowMutError, Entities, Entity, Query};
 
 #[derive(Debug, Default)]
 pub struct World {
@@ -22,19 +21,27 @@ impl World {
         self.component_registry.id::<T>()
     }
 
-    pub fn add<T: 'static>(&mut self, entity: Entity, component: T) {
+    /// Adds a component to an entity. If the type is not registered as a component, it gets
+    /// registered automatically. Returns `true` if `entity` did not have this kind of component
+    /// before and `entity` exists.
+    pub fn add<T: 'static>(&mut self, entity: Entity, component: T) -> bool {
         let comp_id = self
             .component_registry
             .id::<T>()
             .unwrap_or_else(|| self.component_registry.register::<T>());
 
-        self.entities.id(entity).map(|id| unsafe {
-            self.component_registry[comp_id]
-                .storage
-                .set::<T>(id as usize, component)
-        });
+        self.entities
+            .id(entity)
+            .map(|id| unsafe {
+                self.component_registry[comp_id]
+                    .storage
+                    .set::<T>(id as usize, component)
+            })
+            .unwrap_or(false)
     }
 
+    /// Removes a component from an entity, returning it or `None` if the entity did not exist or
+    /// did not have a component of the specified type.
     pub fn remove<T: 'static>(&mut self, entity: Entity) -> Option<T> {
         let comp_id = self.component_registry.id::<T>()?;
 
@@ -46,7 +53,7 @@ impl World {
         }
     }
 
-    /// Returns true if the entity existed.
+    /// Returns `true` if the entity existed.
     pub fn despawn(&mut self, entity: Entity) -> bool {
         self.entities
             .id(entity)
@@ -65,12 +72,12 @@ impl World {
     pub fn try_query<'a, 'q>(
         &'a self,
         query: &'q Query,
-    ) -> Result<QueryResponse<'a, 'q>, QueryError> {
+    ) -> Result<QueryResponse<'a, 'q>, BorrowMutError> {
         let mut entries = Vec::with_capacity(query.components().len());
         for c in query.components() {
             match self.component_registry.try_borrow(c.id, c.mutable) {
                 Some(entry) => entries.push(entry),
-                None => return Err(QueryError::ConcurrentMutableAccess(c.id)),
+                None => return Err(BorrowMutError::new(c.id)),
             }
         }
         Ok(QueryResponse::new(&self.component_registry, query, entries))
@@ -102,31 +109,5 @@ impl World {
                 .storage
                 .get_mut(id as usize)
         })
-    }
-
-    /// Returns null if `entity` no longer exists or if `entity` does not have the requested
-    /// component. `World` keeps ownership of the component
-    pub fn get_ptr(&self, entity: Entity, comp_id: ComponentId) -> *const u8 {
-        self.entities
-            .id(entity)
-            .map(|id| {
-                self.component_registry[comp_id]
-                    .storage
-                    .get_ptr(id as usize)
-            })
-            .unwrap_or(ptr::null())
-    }
-
-    /// Returns null if `entity` no longer exists or if `entity` does not have the requested
-    /// component. `World` keeps ownership of the component
-    pub fn get_mut_ptr(&mut self, entity: Entity, comp_id: ComponentId) -> *mut u8 {
-        self.entities
-            .id(entity)
-            .map(|id| {
-                self.component_registry[comp_id]
-                    .storage
-                    .get_mut_ptr(id as usize)
-            })
-            .unwrap_or(ptr::null_mut())
     }
 }

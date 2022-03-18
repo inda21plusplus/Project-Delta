@@ -93,12 +93,12 @@ impl Entities {
     }
 
     fn create_new_id(&mut self) -> EntityId {
-        // The bookkeeping alone for all those entities would require more than 17 GB so this
-        // shouldn'n be an issue.
         let id = self
             .generations
             .len()
             .try_into()
+            // The bookkeeping alone for all those entities would require more than 17 GB so this
+            // shouldn'n be an issue.
             .expect("Max entity count (4 294 967 296) exceeded");
         self.generations.push(0);
         id

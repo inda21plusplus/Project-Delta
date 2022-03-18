@@ -25,6 +25,14 @@ impl ComponentInfo {
     pub fn name(&self) -> &str {
         self.name.as_ref()
     }
+
+    pub fn type_id(&self) -> Option<TypeId> {
+        self.type_id
+    }
+
+    pub fn id(&self) -> ComponentId {
+        self.id
+    }
 }
 
 /// A kind of components registered in a `ComponentRegistry`. Includes both metadata about the kind
@@ -109,6 +117,7 @@ impl ComponentRegistry {
     {
         let type_id = TypeId::of::<T>();
         let id = ComponentId(self.entries.len().try_into().unwrap());
+
         debug_assert!(self.rust_types.insert(type_id, id).is_none());
         assert!(self.check_exclusive_access());
 
@@ -117,12 +126,11 @@ impl ComponentRegistry {
             type_id: Some(type_id),
             id,
         };
-        // TODO: detect which storage type should be used, or *maybe* creating components from rust
-        // struct will always want the same kind of storage since they will probably be on most
-        // components?
         let storage = Storage::new::<T>(StorageType::VecStorage);
+
         self.entries.push(ComponentEntry::new(info, storage));
         self.borrowed.borrow_mut().push(BorrowStatus::default());
+
         id
     }
 
