@@ -94,6 +94,13 @@ impl Storage {
             Self::VecStorage(s) => s.get_mut(index),
         }
     }
+
+    /// Returns the last index where an (initialized) component lives
+    pub fn last_set_index(&self) -> Option<usize> {
+        match self {
+            Self::VecStorage(s) => s.last_set_index(),
+        }
+    }
 }
 
 pub struct VecStorage {
@@ -123,6 +130,8 @@ impl VecStorage {
     /// freed by the caller. Returns `true` if the there was nothing at `index` before.
     unsafe fn set(&mut self, index: usize, value: *mut u8) -> bool {
         self.ensure_capacity(index + 1);
+
+        self.occupied.highest_bit();
 
         let res = !self.unset(index);
         self.get_mut_unchecked(index)
@@ -156,6 +165,10 @@ impl VecStorage {
         let mut res: MaybeUninit<T> = MaybeUninit::uninit();
         res.as_mut_ptr().copy_from(ptr, 1);
         Some(res.assume_init())
+    }
+
+    fn last_set_index(&self) -> Option<usize> {
+        self.occupied.highest_bit()
     }
 
     /// Panics on allocation failiure.

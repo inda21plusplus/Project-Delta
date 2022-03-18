@@ -389,7 +389,7 @@ mod tests {
             let mut res = world.query(&both_query);
             assert!(unsafe { res.try_get(a) }.is_none());
             let (int, float) = unsafe {
-                if let [int, float] = res.get(b) {
+                if let [int, float] = res.get(b)[..] {
                     (int.cast::<usize>().as_mut(), float.cast::<f32>().as_ref())
                 } else {
                     panic!()
@@ -501,5 +501,68 @@ mod tests {
             world.try_query(&q2).unwrap_err(),
         );
         mem::drop(r);
+    }
+
+    #[test]
+    fn iterate_over_query() {
+        let mut world = World::default();
+        struct Position(f32);
+        struct Velocity(f32);
+        let pos_id = world.register_component::<Position>();
+        let vel_id = world.register_component::<Velocity>();
+
+        for i in 0..1000 {
+            let entity = world.spawn();
+            world.add(entity, Position(i as f32));
+            world.add(entity, Velocity(1.5));
+        }
+
+        let q = Query::new(vec![
+            ComponentQuery {
+                id: pos_id,
+                mutable: true,
+            },
+            ComponentQuery {
+                id: vel_id,
+                mutable: false,
+            },
+        ])
+        .unwrap();
+        let mut q = world.query(&q);
+        for (pos, vel) in unsafe {
+            q.iter().map(|comps| {
+                if let [pos, vel] = comps[..] {
+                    (
+                        pos.cast::<Position>().as_mut(),
+                        vel.cast::<Velocity>().as_ref(),
+                    )
+                } else {
+                    panic!();
+                }
+            })
+        } {
+            pos.0 += vel.0;
+        }
+        mem::drop(q);
+
+        let q = Query::new(vec![ComponentQuery {
+            id: pos_id,
+            mutable: false,
+        }])
+        .unwrap();
+        let mut q = world.query(&q);
+        for (i, pos) in unsafe {
+            q.iter()
+                .map(|comps| {
+                    if let [pos] = comps[..] {
+                        pos.cast::<Position>().as_ref()
+                    } else {
+                        panic!();
+                    }
+                })
+                .enumerate()
+        } {
+            assert_eq!(i as f32 + 1.5, pos.0);
+        }
     }
 }

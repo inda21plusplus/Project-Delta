@@ -54,7 +54,6 @@ pub struct QueryResponse<'r, 'q> {
     _world_marker: PhantomData<&'r ComponentRegistry>,
     entries: Vec<ComponentEntryRef>,
     query: &'q Query,
-    current_res: Vec<NonNull<u8>>,
 }
 
 impl<'r, 'q> QueryResponse<'r, 'q> {
@@ -64,13 +63,19 @@ impl<'r, 'q> QueryResponse<'r, 'q> {
         entries: Vec<ComponentEntryRef>,
     ) -> Self {
         debug_assert!(query.components().len() == entries.len());
-        let len = entries.len();
         Self {
             _world_marker: PhantomData,
             entries,
             query,
-            current_res: vec![NonNull::dangling(); len],
         }
+    }
+
+    /// Same as `try_get` but panics if `None` would be returned.
+    /// # Safety
+    /// See documentation for `try_get`
+    pub unsafe fn get(&mut self, entity: Entity) -> Vec<NonNull<u8>> {
+        self.try_get(entity)
+            .expect("The given entity does not match the query or has been despawned")
     }
 
     /// Returns a slice of pointers to the components requsted if `entity` matches the query.
@@ -80,31 +85,67 @@ impl<'r, 'q> QueryResponse<'r, 'q> {
     /// All pointers returned are technically mutable **BUT** modifying the pointers to components
     /// not marked as mutable in the query is undefined behaviour.
     /// The pointers must not outlive this `QueryResponse`
-    pub unsafe fn try_get(&mut self, entity: Entity) -> Option<&[NonNull<u8>]> {
-        for (i, (e, cq)) in self
-            .entries
-            .iter_mut()
-            .zip(self.query.components().iter())
-            .enumerate()
-        {
-            self.current_res[i] = if cq.mutable {
-                NonNull::new(
-                    e.get_mut()
-                        .storage
-                        .get_mut_ptr(entity.get_id_unchecked() as usize),
-                )?
-            } else {
-                NonNull::new(e.get().storage.get_ptr(entity.get_id_unchecked() as usize) as *mut _)?
-            }
-        }
-        Some(&self.current_res)
+    pub unsafe fn try_get(&mut self, entity: Entity) -> Option<Vec<NonNull<u8>>> {
+        self.try_get_by_index(entity.get_id_unchecked())
     }
 
-    /// Same as `try_get` but panics if `None` would be returned.
-    /// # Safety
-    /// See documentation for `try_get`
-    pub unsafe fn get(&mut self, entity: Entity) -> &[NonNull<u8>] {
-        self.try_get(entity)
-            .expect("The given entity does not match the query or has been despawned")
+    unsafe fn try_get_by_index(&mut self, index: u32) -> Option<Vec<NonNull<u8>>> {
+        let mut res = Vec::with_capacity(self.entries.len());
+        for (e, cq) in self.entries.iter_mut().zip(self.query.components().iter()) {
+            res.push(if cq.mutable {
+                NonNull::new(e.get_mut().storage.get_mut_ptr(index as usize))?
+            } else {
+                NonNull::new(e.get().storage.get_ptr(index as usize) as *mut _)?
+            });
+        }
+        Some(res)
+    }
+
+    /// Returns the last index of an entity that has at least one component in the query. There
+    /// might not actually be a hit for this query at this index, but there is definitly no hits
+    /// after this index.
+    fn last_index_worth_checking(&self) -> Option<u32> {
+        self.entries
+            .iter()
+            .flat_map(|e| e.get().storage.last_set_index())
+            .max()
+            .map(|max| max as u32)
+    }
+
+    pub unsafe fn iter<'a>(&'a mut self) -> Iter<'a, 'r, 'q> {
+        Iter::new(self, self.last_index_worth_checking())
+    }
+}
+
+pub struct Iter<'a, 'r, 'q> {
+    index: u32,
+    last: Option<u32>,
+    res: &'a mut QueryResponse<'r, 'q>,
+}
+
+impl<'a, 'r, 'q> Iter<'a, 'r, 'q> {
+    pub fn new(res: &'a mut QueryResponse<'r, 'q>, last: Option<u32>) -> Self {
+        Self {
+            index: 0,
+            last,
+            res,
+        }
+    }
+}
+
+// TODO: for sparse components this should be optimized
+impl<'a, 'r, 'q> Iterator for Iter<'a, 'r, 'q> {
+    type Item = Vec<NonNull<u8>>;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        while self.index < self.last? {
+            let index = self.index;
+            self.index += 1;
+            let res = unsafe { self.res.try_get_by_index(index) };
+            if res.is_some() {
+                return res;
+            }
+        }
+        None
     }
 }
