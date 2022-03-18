@@ -1,4 +1,4 @@
-use std::time::Instant;
+use std::{ops::ControlFlow, time::Instant};
 
 use common::{Quaternion, Transform, Vec2, Vec3};
 use game_engine::{
@@ -7,7 +7,7 @@ use game_engine::{
 };
 use winit::{
     event::{ElementState, Event, KeyboardInput, VirtualKeyCode, WindowEvent},
-    event_loop::{ControlFlow, EventLoop},
+    event_loop::EventLoop,
 };
 
 use crate::{
@@ -17,10 +17,10 @@ use crate::{
 
 pub struct Editor {
     window: Window,
-    event_loop: Option<EventLoop<()>>,
     context: Context,
     camera_controller: CameraController,
     scene: ExampleScene,
+    last_frame: Instant,
 }
 
 // TODO: Things in here should exist in the ECS
@@ -32,7 +32,7 @@ pub struct ExampleScene {
 }
 
 impl Editor {
-    pub fn new() -> anyhow::Result<Self> {
+    pub fn new() -> anyhow::Result<(EventLoop<()>, Self)> {
         let event_loop = EventLoop::new();
 
         let icon = image::open("res/icon.png").unwrap().into_rgba8();
@@ -56,63 +56,61 @@ impl Editor {
         );
 
         let scene = ExampleScene::new(&mut context)?;
-        Ok(Self {
-            window,
-            event_loop: Some(event_loop),
-            context,
-            camera_controller,
-            scene,
-        })
+        Ok((
+            event_loop,
+            Self {
+                window,
+                context,
+                camera_controller,
+                scene,
+                last_frame: Instant::now(),
+            },
+        ))
     }
 
-    pub fn run(mut self) -> ! {
-        let mut last_frame = Instant::now();
-        self.event_loop
-            .take()
-            .unwrap()
-            .run(move |event, _, control_flow| match event {
-                Event::DeviceEvent { event, .. }
-                    if self.window.window_mode() == WindowMode::CameraMode =>
+    pub fn handle_event(&mut self, event: Event<()>) -> ControlFlow<()> {
+        match event {
+            Event::DeviceEvent { event, .. }
+                if self.window.window_mode() == WindowMode::CameraMode =>
+            {
+                self.camera_controller.process_device_events(&event);
+            }
+            Event::WindowEvent {
+                event: WindowEvent::CloseRequested,
+                window_id,
+            } if window_id == self.window.winit_window().id() => return ControlFlow::Break(()),
+            Event::WindowEvent {
+                event: WindowEvent::Resized(winit::dpi::PhysicalSize { width, height }),
+                window_id,
+            } if window_id == self.window.winit_window().id() => {
+                self.context.renderer.resize((width, height));
+                self.window.update_size();
+            }
+            Event::WindowEvent { event, .. } => {
+                self.camera_controller.process_window_events(&event);
+                if let WindowEvent::KeyboardInput {
+                    input:
+                        KeyboardInput {
+                            virtual_keycode: Some(keycode),
+                            state,
+                            ..
+                        },
+                    ..
+                } = event
                 {
-                    self.camera_controller.process_device_events(&event);
+                    self.handle_keyboard_input(keycode, state);
                 }
-                Event::WindowEvent {
-                    event: WindowEvent::CloseRequested,
-                    window_id,
-                } if window_id == self.window.winit_window().id() => {
-                    *control_flow = ControlFlow::Exit
-                }
-                Event::WindowEvent {
-                    event: WindowEvent::Resized(winit::dpi::PhysicalSize { width, height }),
-                    window_id,
-                } if window_id == self.window.winit_window().id() => {
-                    self.context.renderer.resize((width, height));
-                    self.window.update_size();
-                }
-                Event::WindowEvent { event, .. } => {
-                    self.camera_controller.process_window_events(&event);
-                    if let WindowEvent::KeyboardInput {
-                        input:
-                            KeyboardInput {
-                                virtual_keycode: Some(keycode),
-                                state,
-                                ..
-                            },
-                        ..
-                    } = event
-                    {
-                        self.handle_keyboard_input(keycode, state);
-                    }
-                }
-                Event::MainEventsCleared => self.window.winit_window().request_redraw(),
-                Event::RedrawRequested(_) => {
-                    let now = Instant::now();
-                    let dt = now.duration_since(last_frame).as_secs_f32();
-                    last_frame = now;
-                    self.update(dt);
-                }
-                _ => {}
-            });
+            }
+            Event::MainEventsCleared => self.window.winit_window().request_redraw(),
+            Event::RedrawRequested(_) => {
+                let now = Instant::now();
+                let dt = now.duration_since(self.last_frame).as_secs_f32();
+                self.last_frame = now;
+                self.update(dt);
+            }
+            _ => {}
+        }
+        ControlFlow::Continue(())
     }
 
     fn handle_keyboard_input(&mut self, keycode: VirtualKeyCode, state: ElementState) {
