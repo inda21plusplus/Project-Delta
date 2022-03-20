@@ -133,7 +133,7 @@ impl<'a, 'r, 'q> Iter<'a, 'r, 'q> {
     }
 }
 
-// TODO: for sparse components this should be optimized
+// TODO: for sparse components this could be optimized
 impl<'a, 'r, 'q> Iterator for Iter<'a, 'r, 'q> {
     type Item = Vec<NonNull<u8>>;
 

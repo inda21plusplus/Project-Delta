@@ -13,7 +13,12 @@ pub use world::World;
 
 #[cfg(test)]
 mod tests {
-    use std::{any, collections::HashSet, mem};
+    use std::{
+        any,
+        collections::HashSet,
+        mem,
+        time::{Duration, Instant},
+    };
 
     use crate::component::{ComponentRegistry, Storage, StorageType};
 
@@ -564,5 +569,54 @@ mod tests {
         } {
             assert_eq!(i as f32 + 1.5, pos.0);
         }
+    }
+
+    #[test]
+    fn resources() {
+        let mut world = World::default();
+        struct Time {
+            now: Instant,
+            dt: Duration,
+        }
+        struct Gravity {
+            accel_x: f32,
+            accel_y: f32,
+        }
+        world.add_resource(Time {
+            now: Instant::now(),
+            dt: Duration::from_millis(16),
+        });
+        world.add_resource(Gravity {
+            accel_x: 0.,
+            accel_y: -9.818,
+        });
+
+        assert_eq!(16_000, world.resource::<Time>().unwrap().dt.as_micros());
+        assert_eq!(0., world.resource::<Gravity>().unwrap().accel_x);
+        assert_eq!(-9.818, world.resource::<Gravity>().unwrap().accel_y);
+
+        let time = world.resource_mut::<Time>().unwrap();
+        let now = Instant::now();
+        time.dt = Duration::from_millis(15);
+        time.now = now;
+
+        let dt = world.resource::<Time>().unwrap().dt.as_micros();
+        assert_eq!(15_000, dt);
+    }
+
+    #[test]
+    #[should_panic]
+    fn borrowing_borrowed_component_panics() {
+        let mut world = World::default();
+        let id = world.register_component::<usize>();
+        let entity = world.spawn();
+
+        let q = Query::new(vec![ComponentQuery { id, mutable: true }]).unwrap();
+        // This creates a mutable borrow on `usize`s
+        let q = world.query(&q);
+        // And this another one
+        world.get::<usize>(entity);
+        // While the first borrow still exists
+        mem::drop(q);
     }
 }

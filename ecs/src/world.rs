@@ -2,10 +2,30 @@ use crate::component::{ComponentId, ComponentRegistry};
 use crate::query::QueryResponse;
 use crate::{BorrowMutError, Entities, Entity, Query};
 
-#[derive(Debug, Default)]
+pub struct ResourceId(ComponentId);
+
+#[derive(Debug)]
 pub struct World {
     entities: Entities,
     component_registry: ComponentRegistry,
+    // The current storage implementation for components waste very little if the only component
+    // that's added to is is the first created entity, so we can simply have one entity that holds
+    // all entities. You could see it as a bit of a hack and there are better ways to implement
+    // resources, but this is at least very simple. NOTE however that iterating through all
+    // entities would also yield this one which is not desirable.
+    resource_holder: Entity,
+}
+
+impl Default for World {
+    fn default() -> Self {
+        let mut entities = Entities::default();
+        let resource_holder = entities.spawn();
+        Self {
+            entities,
+            component_registry: Default::default(),
+            resource_holder,
+        }
+    }
 }
 
 impl World {
@@ -15,6 +35,20 @@ impl World {
 
     pub fn register_component<T: 'static>(&mut self) -> ComponentId {
         self.component_registry.register::<T>()
+    }
+
+    pub fn add_resource<T: 'static>(&mut self, resource: T) -> ResourceId {
+        let resource_id = self.register_component::<T>();
+        self.add(self.resource_holder, resource);
+        ResourceId(resource_id)
+    }
+
+    pub fn resource<T: 'static>(&self) -> Option<&T> {
+        self.get(self.resource_holder)
+    }
+
+    pub fn resource_mut<T: 'static>(&mut self) -> Option<&mut T> {
+        self.get_mut(self.resource_holder)
     }
 
     pub fn component_id<T: 'static>(&self) -> Option<ComponentId> {
@@ -55,6 +89,11 @@ impl World {
 
     /// Returns `true` if the entity existed.
     pub fn despawn(&mut self, entity: Entity) -> bool {
+        if entity == self.resource_holder {
+            // This could happen if someone were to query for a resource (they're currently just
+            // components), get the entity, and try to delete it.
+            return false;
+        }
         self.entities
             .id(entity)
             .map(|id| {
@@ -89,10 +128,7 @@ impl World {
         self.try_query(query).unwrap()
     }
 
-    // NOTE: pub unsafe fn try_query_unsafe<'q>(&self, ...) -> ...QueryResponse<'static, 'q> ...
-    // can be added if it's not possible to know at compile time that the response wont outlive the
-    // world
-
+    /// Panics if the component currently is mutably borrowed in a query
     pub fn get<T: 'static>(&self, entity: Entity) -> Option<&T> {
         let comp_id = self.component_registry.id::<T>()?;
 
@@ -101,6 +137,7 @@ impl World {
             .and_then(|id| unsafe { self.component_registry[comp_id].storage.get(id as usize) })
     }
 
+    /// Panics if the component currently is borrowed in a query
     pub fn get_mut<T: 'static>(&mut self, entity: Entity) -> Option<&mut T> {
         let comp_id = self.component_registry.id::<T>()?;
 
