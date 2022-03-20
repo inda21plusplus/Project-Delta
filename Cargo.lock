@@ -35,6 +35,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "anyhow"
+version = "1.0.56"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4361135be9122e0870de935d7c439aef945b9f9ddd4199a553b5270b49c82a27"
+
+[[package]]
 name = "approx"
 version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -210,6 +216,13 @@ name = "color_quant"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3d7b894f5411737b7867f4827955924d7c254fc9f4d91a6aad6b097804b1018b"
+
+[[package]]
+name = "common"
+version = "0.1.0"
+dependencies = [
+ "vek",
+]
 
 [[package]]
 name = "copyless"
@@ -525,15 +538,9 @@ dependencies = [
 name = "game-engine"
 version = "0.1.0"
 dependencies = [
- "bytemuck",
- "image",
  "log",
- "pollster",
- "raw-window-handle",
+ "rendering",
  "thiserror",
- "tobj",
- "vek",
- "wgpu",
 ]
 
 [[package]]
@@ -650,11 +657,14 @@ checksum = "9a3a5bfb195931eeb336b2a7b4d761daec841b97f947d34394601737a7bba5e4"
 name = "ide"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
+ "common",
  "env_logger",
  "game-engine",
  "image",
  "log",
- "vek",
+ "raw-window-handle",
+ "thiserror",
  "winit",
 ]
 
@@ -1253,6 +1263,20 @@ name = "renderdoc-sys"
 version = "0.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f1382d1f0a252c4bf97dc20d979a2fdd05b024acd7c2ed0f7595d7817666a157"
+
+[[package]]
+name = "rendering"
+version = "0.1.0"
+dependencies = [
+ "bytemuck",
+ "common",
+ "image",
+ "pollster",
+ "raw-window-handle",
+ "thiserror",
+ "tobj",
+ "wgpu",
+]
 
 [[package]]
 name = "rustc-hash"
