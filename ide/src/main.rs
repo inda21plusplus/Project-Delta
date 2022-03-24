@@ -78,9 +78,28 @@ pub fn is_colliding(c1: &Collider, t1: &mut Transform, c2: &Collider, t2: &mut T
 
                 w1.distance_squared(w2) <= total_radius * total_radius
             }
-            Collider::BoxColider(_) => todo!(), // https://github.com/DarkflameUniverse/DarkflameServer/blob/a49f9dc586f4a3e0ea34d8fe0a1d21f2fd4856e6/dPhysics/dpCollisionChecks.cpp#L81
+            Collider::BoxColider(b2) => {
+                let r1 = b1.get_radius(t1.scale);
+                let r2 = b2.get_radius(t2, w1-w2);
+
+                debug_assert!(r1 > 0.0, "r1 = {}",r1);
+                debug_assert!(r2 > 0.0, "r2 = {}",r2);
+                println!("{:?}",r2);
+
+                let total_radius = r1 + r2;
+
+                w1.distance_squared(w2) <= total_radius * total_radius
+            }, 
+            // https://github.com/DarkflameUniverse/DarkflameServer/blob/a49f9dc586f4a3e0ea34d8fe0a1d21f2fd4856e6/dPhysics/dpCollisionChecks.cpp#L81
         },
-        Collider::BoxColider(_) => todo!(),
+        Collider::BoxColider(b1) => match c2 {
+            Collider::BoxColider(b2) => {
+                todo!("box vs box")
+            },
+            Collider::SphereColider(b2) =>  {
+                is_colliding(c2,t2,c1,t1)
+            },
+        },
     }
 }
 
@@ -100,19 +119,27 @@ pub fn solve_colliding(
             Collider::SphereColider(b2) => {
                 collide_sphere_vs_sphere(b1, rb1, t1, w1, b2, rb2, t2, w2)
             }
-            Collider::BoxColider(_) => todo!(),
+            Collider::BoxColider(b2) => {
+                collide_sphere_vs_box(b1, rb1, t1, w1, b2, rb2, t2, w2)
+            },
         },
-        Collider::BoxColider(_) => todo!(),
+        Collider::BoxColider(b1) => match c2 {
+            Collider::SphereColider(b2) => {
+                collide_sphere_vs_box(b2, rb2, t2, w2,b1, rb1, t1, w1)
+            },
+            Collider::BoxColider(_b2) => {
+                todo!("box vs box")
+            }
+        },
     }
 }
 
 #[inline]
 /// using https://en.wikipedia.org/wiki/Elastic_collision on a 1d plane where m is mass and v is velocity
 fn standard_elastic_collision(m1: f32, v1: f32, m2: f32, v2: f32) -> (f32, f32) {
-    
     let u1: f32 = (m1 * v1 - m2 * v1 + 2.0 * m2 * v2) / (m1 + m2);
     let u2: f32 = (2.0 * m1 * v1 - m1 * v2 + m2 * v2) / (m1 + m2);
-    
+
     //todo https://en.wikipedia.org/wiki/Inelastic_collision
     //todo https://en.wikipedia.org/wiki/Coefficient_of_restitution
     (u1, u2)
@@ -128,6 +155,62 @@ fn standard_elastic_collision_3(m1: f32, v1: &Vec3, m2: f32, v2: &Vec3) -> (Vec3
 #[inline]
 fn proj(on: Vec3, vec: Vec3) -> Vec3 {
     vec.dot(on) * on / on.magnitude_squared()
+}
+
+pub fn collide_sphere_vs_box(
+    c1: &SphereColider,
+    rb1: &mut RidgidBody,
+    t1: &mut Transform,
+    mut w1: Vec3, // world position
+    c2: &BoxColider,
+    rb2: &mut RidgidBody,
+    t2: &mut Transform,
+    mut w2: Vec3, // world position
+) {
+    let re1 = c1.material.restfullness;
+    let re2 = c2.material.restfullness;
+
+    let r1 = c1.get_radius(t1.scale);
+    let r2 = c2.get_radius(t2, w1 - w2);
+
+    // pop
+    if !rb1.is_static && !rb2.is_static {
+        let diff = w2 - w1;
+        let distance_pop = diff.magnitude() - r1 - r2;
+        let normal = diff.normalized();
+
+        const POP_SIZE: f32 = 1.10;
+        let pop = normal * distance_pop * POP_SIZE;
+        if rb1.is_static {
+            t2.position -= pop;
+        } else if rb2.is_static {
+            t1.position += pop;
+        } else {
+            t2.position -= pop * 0.5;
+            t1.position += pop * 0.5;
+        }
+    }
+
+    let m1 = rb1.mass;
+    let m2 = rb2.mass;
+
+    println!("General collision!");
+    let v1 = rb1.velocity;
+    let v2 = rb2.velocity;
+
+    let normal = c2.get_side(t2, w1-w2);
+
+    // proj the velocities on the normal, this way you can move the frame of
+    // refrence and think of the two objects are coliding head on
+    let real_v1 = proj(normal, v1);
+    let real_v2 = proj(normal, v2);
+
+    // using a perfectly elastic collision on each axis
+    let (new_v1, new_v2) = standard_elastic_collision_3(m1, &real_v1, m2, &real_v2);
+
+    // inital velocity - velocity used to colide "head on" + velocity after coliding "head on"
+    rb1.velocity = v1 - real_v1 + new_v1;
+    rb2.velocity = v2 - real_v2 + new_v2;
 }
 
 pub fn collide_sphere_vs_sphere(
@@ -177,11 +260,11 @@ pub fn collide_sphere_vs_sphere(
         let diff = w2 - w1;
         let normal = diff.normalized();
 
-        // proj the velocities on the normal, this way you can move the frame of  
-        // refrence and think of the two objects are coliding head on 
+        // proj the velocities on the normal, this way you can move the frame of
+        // refrence and think of the two objects are coliding head on
         let real_v1 = proj(normal, v1);
         let real_v2 = proj(normal, v2);
-        
+
         // using a perfectly elastic collision on each axis
         let (new_v1, new_v2) = standard_elastic_collision_3(m1, &real_v1, m2, &real_v2);
 
@@ -302,6 +385,46 @@ impl SphereColider {
     }
 }
 
+impl BoxColider {
+    /// gets the distance from the box center acording to its bounds
+    pub fn get_radius(&self, t: &Transform, direction: Vec3) -> f32 {
+        let real_direction =  t.rotation*direction;
+        let scale = self.scale * t.scale;
+        
+        let mut x = proj(real_direction, Vec3::new(scale.x, 0.0, 0.0))
+            .magnitude()
+            .abs();
+        let mut y = proj(real_direction, Vec3::new(0.0, scale.y, 0.0))
+            .magnitude()
+            .abs();
+        let mut z = proj(real_direction, Vec3::new(0.0, 0.0, scale.z))
+            .magnitude()
+            .abs();
+            println!("{} {} {}",x,y,z);
+
+        if x.is_nan() { x = f32::INFINITY }
+        if y.is_nan() { y = f32::INFINITY }
+        if z.is_nan() { z = f32::INFINITY }
+        x.min(y).min(z)
+    }
+
+    pub fn get_side(&self, t: &Transform, direction: Vec3) -> Vec3 {
+        let real_direction = direction * t.rotation;
+        let scale = self.scale * t.scale;
+        let dir = real_direction.normalized() / scale;
+        let x = dir.x.abs();
+        let y = dir.y.abs();
+        let z = dir.z.abs();
+        if x > y && x > z {
+            Vec3::new(dir.x / x, 0.0, 0.0)
+        } else if y > x && y > z {
+            Vec3::new(0.0, dir.y / y, 0.0)
+        } else {
+            Vec3::new(0.0, 0.0, dir.z / z)
+        }
+    }
+}
+
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub enum Collider {
     SphereColider(SphereColider),
@@ -314,6 +437,17 @@ pub struct BoxColider {
     pub local_rotation: Quaternion,
     pub scale: Vec3,
     pub material: PhysicsMaterial,
+}
+
+impl BoxColider {
+    fn new(scale : Vec3, material: PhysicsMaterial) -> Self {
+        Self {
+            local_position : Vec3::zero(),
+            local_rotation : Quaternion::identity(),
+            scale,
+            material,
+        }
+    }
 }
 
 #[derive(Debug, PartialEq, Clone, Copy)]
@@ -462,9 +596,9 @@ fn main() {
                 let position = Vec3 { x, y: 0.0, z };
 
                 let rotation = if position == Vec3::zero() {
-                    Quaternion::rotation_3d(0.0, Vec3::unit_z())
+                   Quaternion::identity()//  Quaternion::rotation_3d(0.0, Vec3::unit_z())
                 } else {
-                    Quaternion::rotation_3d(std::f32::consts::FRAC_PI_4, position.normalized())
+                    Quaternion::identity()//Quaternion::rotation_3d(std::f32::consts::FRAC_PI_4, position.normalized())
                 };
 
                 Transform {
@@ -485,20 +619,25 @@ fn main() {
         RidgidBody::new(Vec3::new(0.5, 0.01, 0.002), Vec3::new(0.0, 0.0, 0.0), 10.0),
         Collider::SphereColider(SphereColider::new(1.0, physics_material)),
     );
+    //let obj2 = PhysicsObject::new(
+    //    RidgidBody::new(Vec3::new(0.0, 0.01, 0.0), Vec3::zero(), 5.0),
+    //    Collider::SphereColider(SphereColider::new(1.0, physics_material)),
+    //);
+
     let obj2 = PhysicsObject::new(
         RidgidBody::new(Vec3::new(0.0, 0.01, 0.0), Vec3::zero(), 5.0),
-        Collider::SphereColider(SphereColider::new(1.0, physics_material)),
+        Collider::BoxColider(BoxColider::new(Vec3::new(1.0,1.0,1.0), physics_material)),
     );
-    let obj3 = PhysicsObject::new(
+    /*let obj3 = PhysicsObject::new(
         RidgidBody::new(Vec3::new(0.0, 0.0, 0.0), Vec3::zero(), 5.0),
         Collider::SphereColider(SphereColider::new(1.0, physics_material)),
     );
     let obj4 = PhysicsObject::new(
         RidgidBody::new(Vec3::new(0.0, 0.0, 0.0), Vec3::zero(), 5.0),
         Collider::SphereColider(SphereColider::new(1.0, physics_material)),
-    );
+    );*/
 
-    let mut physics_objects: Vec<PhysicsObject> = vec![obj1, obj2, obj3, obj4]; //vec![obj1.clone(); 16];
+    let mut physics_objects: Vec<PhysicsObject> = vec![obj1, obj2 ]; //obj3, obj4 vec![obj1.clone(); 16];
 
     let mut allow_camera_update = true;
     let mut last_frame = std::time::Instant::now();
@@ -591,7 +730,7 @@ fn main() {
 
                 context
                     .renderer
-                    .update_instances(&[(model, &instances[8..]), (model_pawn, &instances[..8])]);
+                    .update_instances(&[(model, &instances[1..]), (model_pawn, &instances[..1])]);
                 context
                     .renderer
                     .render([0.229, 0.507, 0.921, 1.0])
