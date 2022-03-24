@@ -78,7 +78,7 @@ pub fn is_colliding(c1: &Collider, t1: &mut Transform, c2: &Collider, t2: &mut T
 
                 w1.distance_squared(w2) <= total_radius * total_radius
             }
-            Collider::BoxColider(_) => todo!(),
+            Collider::BoxColider(_) => todo!(), // https://github.com/DarkflameUniverse/DarkflameServer/blob/a49f9dc586f4a3e0ea34d8fe0a1d21f2fd4856e6/dPhysics/dpCollisionChecks.cpp#L81
         },
         Collider::BoxColider(_) => todo!(),
     }
@@ -106,6 +106,30 @@ pub fn solve_colliding(
     }
 }
 
+#[inline]
+/// using https://en.wikipedia.org/wiki/Elastic_collision on a 1d plane where m is mass and v is velocity
+fn standard_elastic_collision(m1: f32, v1: f32, m2: f32, v2: f32) -> (f32, f32) {
+    
+    let u1: f32 = (m1 * v1 - m2 * v1 + 2.0 * m2 * v2) / (m1 + m2);
+    let u2: f32 = (2.0 * m1 * v1 - m1 * v2 + m2 * v2) / (m1 + m2);
+    
+    //todo https://en.wikipedia.org/wiki/Inelastic_collision
+    //todo https://en.wikipedia.org/wiki/Coefficient_of_restitution
+    (u1, u2)
+}
+
+fn standard_elastic_collision_3(m1: f32, v1: &Vec3, m2: f32, v2: &Vec3) -> (Vec3, Vec3) {
+    let (v1x, v2x) = standard_elastic_collision(m1, v1.x, m2, v2.x);
+    let (v1y, v2y) = standard_elastic_collision(m1, v1.y, m2, v2.y);
+    let (v1z, v2z) = standard_elastic_collision(m1, v1.z, m2, v2.z);
+    (Vec3::new(v1x, v1y, v1z), Vec3::new(v2x, v2y, v2z))
+}
+
+#[inline]
+fn proj(on: Vec3, vec: Vec3) -> Vec3 {
+    vec.dot(on) * on / on.magnitude_squared()
+}
+
 pub fn collide_sphere_vs_sphere(
     c1: &SphereColider,
     rb1: &mut RidgidBody,
@@ -125,9 +149,6 @@ pub fn collide_sphere_vs_sphere(
     let m1 = rb1.mass;
     let m2 = rb2.mass;
 
-    let mut v1 = rb1.velocity;
-    let mut v2 = rb2.velocity;
-
     // pop
     if !rb1.is_static && !rb2.is_static {
         let diff = w2 - w1;
@@ -146,104 +167,132 @@ pub fn collide_sphere_vs_sphere(
         }
     }
 
-    //https://www.plasmaphysics.org.uk/collision3d.htm
-    //https://www.plasmaphysics.org.uk/programs/coll3d_cpp.htm
+    // these both colision methods should return the exact same result
+    if true {
+        // this is used because it can be used for non-sphere colisions
+        println!("General collision!");
+        let v1 = rb1.velocity;
+        let v2 = rb2.velocity;
 
-    let r12 = r1 + r2;
-    let m21 = m2 / m1;
-    let b21 = w2 - w1;
-    let v21 = v2 - v1;
+        let diff = w2 - w1;
+        let normal = diff.normalized();
 
-    let v_cm = (m1 * v1 + m2 * v2) / (m1 + m2);
+        // proj the velocities on the normal, this way you can move the frame of  
+        // refrence and think of the two objects are coliding head on 
+        let real_v1 = proj(normal, v1);
+        let real_v2 = proj(normal, v2);
+        
+        // using a perfectly elastic collision on each axis
+        let (new_v1, new_v2) = standard_elastic_collision_3(m1, &real_v1, m2, &real_v2);
 
-    //     **** calculate relative distance and relative speed ***
-    let d = b21.magnitude();
-    let v = v21.magnitude();
-    //     **** return if relative speed = 0 ****
-    if v.abs() < 0.00001f32 {
-        return;
-    }
-    //     **** shift coordinate system so that ball 1 is at the origin ***
-    w2 = b21;
-
-    //     **** boost coordinate system so that ball 2 is resting ***
-    v1 = -v21;
-
-    //     **** find the polar coordinates of the location of ball 2 ***
-    let theta2 = (w2.z / d).acos();
-    let phi2 = if w2.x == 0.0 && w2.y == 0.0 {
-        0.0
+        // inital velocity - velocity used to colide "head on" + velocity after coliding "head on"
+        rb1.velocity = v1 - real_v1 + new_v1;
+        rb2.velocity = v2 - real_v2 + new_v2;
     } else {
-        w2.y.atan2(w2.x)
-    };
+        println!("Sphere collision!");
 
-    let st = theta2.sin();
-    let ct = theta2.cos();
-    let sp = phi2.sin();
-    let cp = phi2.cos();
+        let mut v1 = rb1.velocity;
+        let mut v2 = rb2.velocity;
 
-    //     **** express the velocity vector of ball 1 in a rotated coordinate
-    //          system where ball 2 lies on the z-axis ******
-    let mut vx1r = ct * cp * v1.x + ct * sp * v1.y - st * v1.z;
-    let mut vy1r = cp * v1.y - sp * v1.x;
-    let mut vz1r = st * cp * v1.x + st * sp * v1.y + ct * v1.z;
-    let mut fvz1r = vz1r / v;
-    if fvz1r > 1.0 {
-        fvz1r = 1.0;
+        //https://www.plasmaphysics.org.uk/collision3d.htm
+        //https://www.plasmaphysics.org.uk/programs/coll3d_cpp.htm
+
+        let r12 = r1 + r2;
+        let m21 = m2 / m1;
+        let b21 = w2 - w1;
+        let v21 = v2 - v1;
+
+        let v_cm = (m1 * v1 + m2 * v2) / (m1 + m2);
+
+        //     **** calculate relative distance and relative speed ***
+        let d = b21.magnitude();
+        let v = v21.magnitude();
+        //     **** return if relative speed = 0 ****
+        if v.abs() < 0.00001f32 {
+            return;
+        }
+        //     **** shift coordinate system so that ball 1 is at the origin ***
+        w2 = b21;
+
+        //     **** boost coordinate system so that ball 2 is resting ***
+        v1 = -v21;
+
+        //     **** find the polar coordinates of the location of ball 2 ***
+        let theta2 = (w2.z / d).acos();
+        let phi2 = if w2.x == 0.0 && w2.y == 0.0 {
+            0.0
+        } else {
+            w2.y.atan2(w2.x)
+        };
+
+        let st = theta2.sin();
+        let ct = theta2.cos();
+        let sp = phi2.sin();
+        let cp = phi2.cos();
+
+        //     **** express the velocity vector of ball 1 in a rotated coordinate
+        //          system where ball 2 lies on the z-axis ******
+        let mut vx1r = ct * cp * v1.x + ct * sp * v1.y - st * v1.z;
+        let mut vy1r = cp * v1.y - sp * v1.x;
+        let mut vz1r = st * cp * v1.x + st * sp * v1.y + ct * v1.z;
+        let mut fvz1r = vz1r / v;
+        if fvz1r > 1.0 {
+            fvz1r = 1.0;
+        }
+        // fix for possible rounding errors
+        else if fvz1r < -1.0 {
+            fvz1r = -1.0;
+        }
+        let thetav = fvz1r.acos();
+        let phiv = if vx1r == 0.0 && vy1r == 0.0 {
+            0.0
+        } else {
+            vy1r.atan2(vx1r)
+        };
+
+        //     **** calculate the normalized impact parameter ***
+        let dr = d * (thetav.sin()) / r12;
+
+        //     **** calculate impact angles if balls do collide ***
+        let alpha = (-dr).asin();
+        let beta = phiv;
+        let sbeta = beta.sin();
+        let cbeta = beta.cos();
+
+        //     **** calculate time to collision ***
+        let t = (d * thetav.cos() - r12 * (1.0 - dr * dr).sqrt()) / v;
+
+        //     **** update positions and reverse the coordinate shift ***
+        w2 += v2 * t + w1;
+        w1 += (v1 + v2) * t;
+
+        //  ***  update velocities ***
+
+        let a = (thetav + alpha).tan();
+
+        let dvz2 = 2.0 * (vz1r + a * (cbeta * vx1r + sbeta * vy1r)) / ((1.0 + a * a) * (1.0 + m21));
+
+        let vz2r = dvz2;
+        let vx2r = a * cbeta * dvz2;
+        let vy2r = a * sbeta * dvz2;
+        vz1r = vz1r - m21 * vz2r;
+        vx1r = vx1r - m21 * vx2r;
+        vy1r = vy1r - m21 * vy2r;
+
+        //     **** rotate the velocity vectors back and add the initial velocity
+        //           vector of ball 2 to retrieve the original coordinate system ****
+
+        v1.x = ct * cp * vx1r - sp * vy1r + st * cp * vz1r + v2.x;
+        v1.y = ct * sp * vx1r + cp * vy1r + st * sp * vz1r + v2.y;
+        v1.z = ct * vz1r - st * vx1r + v2.z;
+        v2.x = ct * cp * vx2r - sp * vy2r + st * cp * vz2r + v2.x;
+        v2.y = ct * sp * vx2r + cp * vy2r + st * sp * vz2r + v2.y;
+        v2.z = ct * vz2r - st * vx2r + v2.z;
+
+        //     ***  velocity correction for inelastic collisions ***
+        rb1.velocity = (v1 - v_cm) * re1 + v_cm;
+        rb2.velocity = (v2 - v_cm) * re2 + v_cm;
     }
-    // fix for possible rounding errors
-    else if fvz1r < -1.0 {
-        fvz1r = -1.0;
-    }
-    let thetav = fvz1r.acos();
-    let phiv = if vx1r == 0.0 && vy1r == 0.0 {
-        0.0
-    } else {
-        vy1r.atan2(vx1r)
-    };
-
-    //     **** calculate the normalized impact parameter ***
-    let dr = d * (thetav.sin()) / r12;
-
-    //     **** calculate impact angles if balls do collide ***
-    let alpha = (-dr).asin();
-    let beta = phiv;
-    let sbeta = beta.sin();
-    let cbeta = beta.cos();
-
-    //     **** calculate time to collision ***
-    let t = (d * thetav.cos() - r12 * (1.0 - dr * dr).sqrt()) / v;
-
-    //     **** update positions and reverse the coordinate shift ***
-    w2 += v2 * t + w1;
-    w1 += (v1 + v2) * t;
-
-    //  ***  update velocities ***
-
-    let a = (thetav + alpha).tan();
-
-    let dvz2 = 2.0 * (vz1r + a * (cbeta * vx1r + sbeta * vy1r)) / ((1.0 + a * a) * (1.0 + m21));
-
-    let vz2r = dvz2;
-    let vx2r = a * cbeta * dvz2;
-    let vy2r = a * sbeta * dvz2;
-    vz1r = vz1r - m21 * vz2r;
-    vx1r = vx1r - m21 * vx2r;
-    vy1r = vy1r - m21 * vy2r;
-
-    //     **** rotate the velocity vectors back and add the initial velocity
-    //           vector of ball 2 to retrieve the original coordinate system ****
-
-    v1.x = ct * cp * vx1r - sp * vy1r + st * cp * vz1r + v2.x;
-    v1.y = ct * sp * vx1r + cp * vy1r + st * sp * vz1r + v2.y;
-    v1.z = ct * vz1r - st * vx1r + v2.z;
-    v2.x = ct * cp * vx2r - sp * vy2r + st * cp * vz2r + v2.x;
-    v2.y = ct * sp * vx2r + cp * vy2r + st * sp * vz2r + v2.y;
-    v2.z = ct * vz2r - st * vx2r + v2.z;
-
-    //     ***  velocity correction for inelastic collisions ***
-    rb1.velocity = (v1 - v_cm) * re1 + v_cm;
-    rb2.velocity = (v2 - v_cm) * re2 + v_cm;
 }
 
 impl SphereColider {
@@ -329,7 +378,7 @@ fn collide(
     for c1 in cc1 {
         for c2 in cc2 {
             if is_colliding(c1, t1, c2, t2) {
-                println!("Colliding! {:?} {:?}", c1, c2);
+                println!("Colliding!");
                 solve_colliding(c1, rb1, t1, c2, rb2, t2)
             }
         }
@@ -429,15 +478,15 @@ fn main() {
 
     let physics_material = PhysicsMaterial {
         friction: 1.0,
-        restfullness: 0.5,
+        restfullness: 1.0,
     };
 
     let obj1 = PhysicsObject::new(
-        RidgidBody::new(Vec3::new(0.5, 0.02, 0.0), Vec3::new(0.0, 0.0, 0.0), 5.0),
+        RidgidBody::new(Vec3::new(0.5, 0.01, 0.002), Vec3::new(0.0, 0.0, 0.0), 10.0),
         Collider::SphereColider(SphereColider::new(1.0, physics_material)),
     );
     let obj2 = PhysicsObject::new(
-        RidgidBody::new(Vec3::new(0.0, 0.02, 0.0), Vec3::zero(), 5.0),
+        RidgidBody::new(Vec3::new(0.0, 0.01, 0.0), Vec3::zero(), 5.0),
         Collider::SphereColider(SphereColider::new(1.0, physics_material)),
     );
     let obj3 = PhysicsObject::new(
