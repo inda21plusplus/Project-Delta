@@ -641,12 +641,12 @@ pub struct RidgidBody {
 }
 
 impl RidgidBody {
-    fn new(velocity: Vec3, acceleration: Vec3, mass: f32) -> Self {
+    fn new(velocity: Vec3, acceleration: Vec3, angular_velocity: Vec3, mass: f32) -> Self {
         Self {
             velocity,
             acceleration,
             mass,
-            angular_velocity: Vec3::zero(),
+            angular_velocity,
             is_active: true,
             is_using_global_gravity: false,
             is_active_time: 0.0f32,
@@ -683,12 +683,14 @@ fn collide(
     t2: &mut Transform,
     rb2: &mut RidgidBody,
     cc2: &Vec<Collider>,
-) {
+) -> bool {
+    let mut has_colided = false;
     for c1 in cc1 {
         for c2 in cc2 {
             if is_colliding(c1, t1, c2, t2) {
                 println!("Colliding!");
-                pause!();
+
+                has_colided = true;
 
                 solve_colliding(c1, rb1, t1, c2, rb2, t2);
 
@@ -713,6 +715,7 @@ fn collide(
             }
         }
     }
+    has_colided
 }
 
 impl RidgidBody {
@@ -727,7 +730,7 @@ impl RidgidBody {
         //debug_assert!(velocity.magnitude_squared() != 0.0, "velocity is too close to 0 = {}", velocity);
 
         // if zero velocity is applied then nothing happends
-        if velocity.magnitude_squared() == 0.0 { 
+        if velocity.magnitude_squared() == 0.0 {
             return;
         }
 
@@ -774,8 +777,13 @@ impl RidgidBody {
     }
 }
 
-fn update(dt: f32, transforms: &mut Vec<Transform>, phx_objects: &mut Vec<PhysicsObject>) {
-    let real_dt = dt * 0.3;
+fn update(
+    is_paused: &mut bool,
+    dt: f32,
+    transforms: &mut Vec<Transform>,
+    phx_objects: &mut Vec<PhysicsObject>,
+) {
+    let real_dt = dt*0.3;
     let phx_length = phx_objects.len();
     for i in 0..phx_length {
         let (phx_first, phx_last) = phx_objects.split_at_mut(i + 1);
@@ -786,15 +794,21 @@ fn update(dt: f32, transforms: &mut Vec<Transform>, phx_objects: &mut Vec<Physic
         let (trans_first, trans_last) = transforms.split_at_mut(i + 1);
 
         phx_first[i].rb.step(real_dt, &mut trans_first[i]);
+        let mut has_colided = false;
         for (transform, phx_obj) in trans_last.iter_mut().zip(phx_last.iter_mut()) {
-            collide(
+            if collide(
                 &mut phx_first[i].rb,
                 &mut trans_first[i],
                 &phx_first[i].colliders,
                 transform,
                 &mut phx_obj.rb,
                 &phx_obj.colliders,
-            );
+            ) {
+                has_colided = true;
+            }
+        }
+        if has_colided {
+            *is_paused = true;
         }
     }
 }
@@ -831,11 +845,11 @@ fn main() {
         Vec3::new(-0.040865257, 2.8307953, 0.0),
     );
 
-    let mut instances = (0..NUM_INSTANCES_PER_ROW)
-        .flat_map(|z| {
-            (0..NUM_INSTANCES_PER_ROW).map(move |x| {
-                let x = SPACE_BETWEEN * (x as f32 - NUM_INSTANCES_PER_ROW as f32 / 2.0);
-                let z = SPACE_BETWEEN * (z as f32 - NUM_INSTANCES_PER_ROW as f32 / 2.0);
+    let mut instances = (0..1)
+        .flat_map(|j| {
+            (0..2).map(move |i| {
+                let x = SPACE_BETWEEN * (i as f32 - NUM_INSTANCES_PER_ROW as f32 / 2.0);
+                let z = SPACE_BETWEEN * (j as f32 - NUM_INSTANCES_PER_ROW as f32 / 2.0);
                 let r: f32 = rand::random();
                 let position = Vec3 { x, y: 0.0, z };
 
@@ -845,10 +859,12 @@ fn main() {
                     Quaternion::identity() //Quaternion::rotation_3d(std::f32::consts::FRAC_PI_4, position.normalized())
                 };
 
+                let is_ball = i == 0;
+
                 Transform {
                     position,
                     rotation,
-                    scale: Vec3::new(0.1, 0.1, 0.1),
+                    scale: Vec3::new(0.1, 0.1 + if is_ball { 0.0 } else { 0.6f32 }, 0.1),
                 }
             })
         })
@@ -860,7 +876,12 @@ fn main() {
     };
 
     let obj1 = PhysicsObject::new(
-        RidgidBody::new(Vec3::new(0.5, 0.02, 0.002), Vec3::new(0.0, 0.0, 0.0), 10.0),
+        RidgidBody::new(
+            Vec3::new(0.5, 0.02, 0.002),
+            Vec3::zero(),
+            Vec3::zero(),
+            10.0,
+        ),
         Collider::SphereColider(SphereColider::new(1.0, physics_material)),
     );
     //let obj2 = PhysicsObject::new(
@@ -869,7 +890,12 @@ fn main() {
     //);
 
     let obj2 = PhysicsObject::new(
-        RidgidBody::new(Vec3::new(0.0, 0.00, 0.0), Vec3::zero(), 5.0),
+        RidgidBody::new(
+            Vec3::new(0.0, 0.00, 0.0),
+            Vec3::zero(),
+            Vec3::new(0.0, 0.0, 0.01), // -1.6
+            5.0,
+        ),
         Collider::BoxColider(BoxColider::new(Vec3::new(1.0, 1.0, 1.0), physics_material)),
     );
     /*let obj3 = PhysicsObject::new(
@@ -885,6 +911,8 @@ fn main() {
 
     let mut allow_camera_update = true;
     let mut last_frame = std::time::Instant::now();
+    let mut pause_physics = false;
+    let can_pause_phx = true;
     event_loop.run(move |event, _, control_flow| {
         *control_flow = ControlFlow::Poll;
         match event {
@@ -966,8 +994,9 @@ fn main() {
                 if allow_camera_update {
                     camera_controller.update_camera(dt, &mut context.renderer.camera);
                 }
-
-                update(dt, &mut instances, &mut physics_objects);
+                if !pause_physics || !can_pause_phx {
+                    update(&mut pause_physics, dt, &mut instances, &mut physics_objects);
+                }
                 last_frame = std::time::Instant::now();
 
                 context.renderer.update_camera();
@@ -979,7 +1008,6 @@ fn main() {
                     .renderer
                     .render([0.229, 0.507, 0.921, 1.0])
                     .expect("render error");
-
             }
 
             _ => (),
