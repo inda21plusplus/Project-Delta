@@ -10,7 +10,11 @@ use winit::{
 
 //use image;
 use env_logger;
-use vek::Ray;
+use vek::{
+    num_integer::{sqrt, Roots},
+    num_traits::ToPrimitive,
+    Ray,
+};
 
 mod camera_controller;
 mod im;
@@ -71,8 +75,8 @@ pub fn is_colliding(c1: &Collider, t1: &mut Transform, c2: &Collider, t2: &mut T
                 let r1 = b1.get_radius(t1.scale);
                 let r2 = b2.get_radius(t2.scale);
 
-                debug_assert!(r1 > 0.0);
-                debug_assert!(r2 > 0.0);
+                debug_assert!(r1 > 0.0, "r1 = {}", r1);
+                debug_assert!(r2 > 0.0, "r2 = {}", r2);
 
                 let total_radius = r1 + r2;
 
@@ -80,25 +84,21 @@ pub fn is_colliding(c1: &Collider, t1: &mut Transform, c2: &Collider, t2: &mut T
             }
             Collider::BoxColider(b2) => {
                 let r1 = b1.get_radius(t1.scale);
-                let r2 = b2.get_radius(t2, w1-w2);
+                let r2 = b2.get_radius(t2, w1 - w2);
 
-                debug_assert!(r1 > 0.0, "r1 = {}",r1);
-                debug_assert!(r2 > 0.0, "r2 = {}",r2);
-                println!("{:?}",r2);
+                debug_assert!(r1 > 0.0, "r1 = {}", r1);
+                debug_assert!(r2 > 0.0, "r2 = {}", r2);
 
                 let total_radius = r1 + r2;
 
                 w1.distance_squared(w2) <= total_radius * total_radius
-            }, 
-            // https://github.com/DarkflameUniverse/DarkflameServer/blob/a49f9dc586f4a3e0ea34d8fe0a1d21f2fd4856e6/dPhysics/dpCollisionChecks.cpp#L81
+            } 
         },
         Collider::BoxColider(b1) => match c2 {
             Collider::BoxColider(b2) => {
                 todo!("box vs box")
-            },
-            Collider::SphereColider(b2) =>  {
-                is_colliding(c2,t2,c1,t1)
-            },
+            }
+            Collider::SphereColider(_) => is_colliding(c2, t2, c1, t1), // reuse code
         },
     }
 }
@@ -119,14 +119,10 @@ pub fn solve_colliding(
             Collider::SphereColider(b2) => {
                 collide_sphere_vs_sphere(b1, rb1, t1, w1, b2, rb2, t2, w2)
             }
-            Collider::BoxColider(b2) => {
-                collide_sphere_vs_box(b1, rb1, t1, w1, b2, rb2, t2, w2)
-            },
+            Collider::BoxColider(b2) => collide_sphere_vs_box(b1, rb1, t1, w1, b2, rb2, t2, w2),
         },
         Collider::BoxColider(b1) => match c2 {
-            Collider::SphereColider(b2) => {
-                collide_sphere_vs_box(b2, rb2, t2, w2,b1, rb1, t1, w1)
-            },
+            Collider::SphereColider(b2) => collide_sphere_vs_box(b2, rb2, t2, w2, b1, rb1, t1, w1),
             Collider::BoxColider(_b2) => {
                 todo!("box vs box")
             }
@@ -198,7 +194,7 @@ pub fn collide_sphere_vs_box(
     let v1 = rb1.velocity;
     let v2 = rb2.velocity;
 
-    let normal = c2.get_side(t2, w1-w2);
+    let normal = c2.get_side(t2, w1 - w2);
 
     // proj the velocities on the normal, this way you can move the frame of
     // refrence and think of the two objects are coliding head on
@@ -386,41 +382,177 @@ impl SphereColider {
 }
 
 impl BoxColider {
-    /// gets the distance from the box center acording to its bounds
+    #[inline]
+    /// gets the distance from the box center acording to its bounds, can take non normalized input
     pub fn get_radius(&self, t: &Transform, direction: Vec3) -> f32 {
-        let real_direction =  t.rotation*direction;
-        let scale = self.scale * t.scale;
-        
-        let mut x = proj(real_direction, Vec3::new(scale.x, 0.0, 0.0))
-            .magnitude()
-            .abs();
-        let mut y = proj(real_direction, Vec3::new(0.0, scale.y, 0.0))
-            .magnitude()
-            .abs();
-        let mut z = proj(real_direction, Vec3::new(0.0, 0.0, scale.z))
-            .magnitude()
-            .abs();
-            println!("{} {} {}",x,y,z);
+        debug_assert!(!t.scale.is_approx_zero(), "Scale too close to 0");
 
-        if x.is_nan() { x = f32::INFINITY }
-        if y.is_nan() { y = f32::INFINITY }
-        if z.is_nan() { z = f32::INFINITY }
-        x.min(y).min(z)
+        debug_assert!(
+            !direction.is_approx_zero(),
+            "Direction magintude is too close to 0, {} | {:?}",
+            direction.magnitude(),
+            direction
+        );
+
+        let outside_normal = self.get_side(t, direction);
+
+        debug_assert!(
+            outside_normal.x.is_finite()
+                && outside_normal.y.is_finite()
+                && outside_normal.z.is_finite(),
+            "outside_normal is not finite, {:?} at direction = {:?}",
+            outside_normal,
+            direction,
+        );
+
+        let plane_point = outside_normal * t.scale;
+        let inside_normal = -outside_normal;
+
+        let real_direction = t.rotation * direction.normalized();
+
+        //https://en.wikipedia.org/wiki/Line%E2%80%93plane_intersection
+        plane_point.dot(inside_normal) / (real_direction.dot(inside_normal))
     }
 
+    /// If you raycast from the center of a box, witch side does the ray intercet with
+    /// this function returns the side with the normal pointed out of the box of the side the ray colides with
+    /// so (1,0.1,0.1) => (1,0,0) as it hits the side with that normal, the result is allways normalized
+    /// if the direction is exactly 45 degrees, it prioritizes x then y then z
     pub fn get_side(&self, t: &Transform, direction: Vec3) -> Vec3 {
-        let real_direction = direction * t.rotation;
+        let real_direction = t.rotation * direction;
         let scale = self.scale * t.scale;
         let dir = real_direction.normalized() / scale;
+
         let x = dir.x.abs();
         let y = dir.y.abs();
         let z = dir.z.abs();
-        if x > y && x > z {
+
+        // this simply returns the axis with the largest scalar as a the normalized vector
+        if x >= y && x >= z {
             Vec3::new(dir.x / x, 0.0, 0.0)
-        } else if y > x && y > z {
+        } else if y >= x && y >= z {
             Vec3::new(0.0, dir.y / y, 0.0)
         } else {
             Vec3::new(0.0, 0.0, dir.z / z)
+        }
+    }
+}
+
+macro_rules! assert_delta {
+    ($x:expr, $y:expr, $d:expr) => {
+        if !($x - $y < $d || $y - $x < $d) { panic!(); }
+    }
+}
+
+#[test]
+fn get_radius_test() {
+    let t = Transform {
+        position: Vec3::new(0.0, 0.0, 0.0),
+        rotation: Quaternion::identity(),
+        scale: Vec3::new(1.0, 1.0, 1.0),
+    };
+
+    let box_c = BoxColider::new(
+        Vec3::new(1.0, 1.0, 1.0),
+        PhysicsMaterial {
+            friction: 1.0,
+            restfullness: 1.0,
+        },
+    );
+
+    assert_eq!(box_c.get_radius(&t, Vec3::new(1.0, 0.0, 0.0)), 1.0);
+    
+    assert_eq!(
+        box_c.get_radius(&t, Vec3::new(100.0, 0.0, 0.0)),
+        1.0,
+        "can not take non normalized input"
+    );
+    
+    assert_eq!(
+        box_c.get_radius(&t, Vec3::new(1.0, 1.0, 0.0)),
+        2.0f32.sqrt()
+    );
+
+    let max_radius = 3.0f32.sqrt();
+    let min_radius = 1.0f32.sqrt();
+
+    assert_delta!(
+        box_c.get_radius(&t, Vec3::new(1.0, 1.0, 1.0)),
+        max_radius, 0.0001f32
+    );
+
+    for pitch_deg in 0..360 {
+        for yaw_deg in 0..360 {
+            let pitch = pitch_deg.to_f32().unwrap().to_radians();
+            let yaw = yaw_deg.to_f32().unwrap().to_radians();
+
+            let forward = Vec3::new(
+                yaw.sin() * pitch.cos(),
+                pitch.sin(),
+                yaw.cos() * pitch.cos(),
+            );
+            let size = box_c.get_radius(&t, forward);
+
+            assert!(!size.is_nan(), "size is nan");
+            assert!(size.is_finite(), "size is inf");
+            assert!(size >=min_radius, "size is less than inner radius of box");
+            assert!(size <= max_radius, "size is above maximum")
+        }
+    }
+}
+
+#[test]
+/// simple test to check that BoxColider::get_side returns the correct results given a cube
+fn get_side_test() {
+    let t = Transform {
+        position: Vec3::new(0.0, 0.0, 0.0),
+        rotation: Quaternion::identity(),
+        scale: Vec3::new(1.0, 1.0, 1.0),
+    };
+
+    let box_c = BoxColider::new(
+        Vec3::new(1.0, 1.0, 1.0),
+        PhysicsMaterial {
+            friction: 1.0,
+            restfullness: 1.0,
+        },
+    );
+
+    let same_dirs = vec![
+        Vec3::new(0.0, 0.0, 1.0),
+        Vec3::new(0.0, 0.0, -1.0),
+        Vec3::new(0.0, 1.0, 0.0),
+        Vec3::new(0.0, -1.0, 0.0),
+        Vec3::new(1.0, 0.0, 0.0),
+        Vec3::new(-1.0, 0.0, 0.0),
+    ];
+
+    for small_offset in &same_dirs {
+        let offset = small_offset / 10.0;
+        for dir in &same_dirs {
+            let side_dir = box_c.get_side(&t, *dir * 0.5 + offset);
+
+            assert_eq!(side_dir, *dir); // assert correct direction
+            assert_eq!(side_dir.magnitude_squared(), 1.0) // assert normalized
+        }
+    }
+
+    // checks for nans and inf
+    for pitch_deg in 0..360 {
+        for yaw_deg in 0..360 {
+            let pitch = pitch_deg.to_f32().unwrap().to_radians();
+            let yaw = yaw_deg.to_f32().unwrap().to_radians();
+
+            let forward = Vec3::new(
+                yaw.sin() * pitch.cos(),
+                pitch.sin(),
+                yaw.cos() * pitch.cos(),
+            );
+
+            let side = box_c.get_side(&t, forward);
+            assert!(side.x.is_finite(), "{:?}", side);
+            assert!(side.y.is_finite(), "{:?}", side);
+            assert!(side.z.is_finite(), "{:?}", side);
         }
     }
 }
@@ -440,10 +572,10 @@ pub struct BoxColider {
 }
 
 impl BoxColider {
-    fn new(scale : Vec3, material: PhysicsMaterial) -> Self {
+    fn new(scale: Vec3, material: PhysicsMaterial) -> Self {
         Self {
-            local_position : Vec3::zero(),
-            local_rotation : Quaternion::identity(),
+            local_position: Vec3::zero(),
+            local_rotation: Quaternion::identity(),
             scale,
             material,
         }
@@ -596,9 +728,9 @@ fn main() {
                 let position = Vec3 { x, y: 0.0, z };
 
                 let rotation = if position == Vec3::zero() {
-                   Quaternion::identity()//  Quaternion::rotation_3d(0.0, Vec3::unit_z())
+                    Quaternion::identity() //  Quaternion::rotation_3d(0.0, Vec3::unit_z())
                 } else {
-                    Quaternion::identity()//Quaternion::rotation_3d(std::f32::consts::FRAC_PI_4, position.normalized())
+                    Quaternion::identity() //Quaternion::rotation_3d(std::f32::consts::FRAC_PI_4, position.normalized())
                 };
 
                 Transform {
@@ -626,7 +758,7 @@ fn main() {
 
     let obj2 = PhysicsObject::new(
         RidgidBody::new(Vec3::new(0.0, 0.01, 0.0), Vec3::zero(), 5.0),
-        Collider::BoxColider(BoxColider::new(Vec3::new(1.0,1.0,1.0), physics_material)),
+        Collider::BoxColider(BoxColider::new(Vec3::new(1.0, 1.0, 1.0), physics_material)),
     );
     /*let obj3 = PhysicsObject::new(
         RidgidBody::new(Vec3::new(0.0, 0.0, 0.0), Vec3::zero(), 5.0),
@@ -637,7 +769,7 @@ fn main() {
         Collider::SphereColider(SphereColider::new(1.0, physics_material)),
     );*/
 
-    let mut physics_objects: Vec<PhysicsObject> = vec![obj1, obj2 ]; //obj3, obj4 vec![obj1.clone(); 16];
+    let mut physics_objects: Vec<PhysicsObject> = vec![obj1, obj2]; //obj3, obj4 vec![obj1.clone(); 16];
 
     let mut allow_camera_update = true;
     let mut last_frame = std::time::Instant::now();
