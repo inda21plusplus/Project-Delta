@@ -9,3 +9,6 @@
 
 # emacs backup files
 *~
+
+# OS Specific
+.DS_Store
