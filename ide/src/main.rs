@@ -92,7 +92,7 @@ pub fn is_colliding(c1: &Collider, t1: &mut Transform, c2: &Collider, t2: &mut T
                 let total_radius = r1 + r2;
 
                 w1.distance_squared(w2) <= total_radius * total_radius
-            } 
+            }
         },
         Collider::BoxColider(b1) => match c2 {
             Collider::BoxColider(b2) => {
@@ -153,6 +153,26 @@ fn proj(on: Vec3, vec: Vec3) -> Vec3 {
     vec.dot(on) * on / on.magnitude_squared()
 }
 
+#[cfg(debug_assertions)]
+macro_rules! pause {
+    () => {
+        pause_and_wait_for_input()
+    };
+}
+
+#[cfg(not(debug_assertions))]
+macro_rules! pause {
+    () => {};
+}
+
+#[allow(dead_code)]
+fn pause_and_wait_for_input() {
+    let mut stdout = std::io::stdout();
+    std::io::Write::write(&mut stdout, b"Paused\n").unwrap();
+    std::io::Write::flush(&mut stdout).unwrap();
+    std::io::Read::read(&mut std::io::stdin(), &mut [0]).unwrap();
+}
+
 pub fn collide_sphere_vs_box(
     c1: &SphereColider,
     rb1: &mut RidgidBody,
@@ -205,8 +225,13 @@ pub fn collide_sphere_vs_box(
     let (new_v1, new_v2) = standard_elastic_collision_3(m1, &real_v1, m2, &real_v2);
 
     // inital velocity - velocity used to colide "head on" + velocity after coliding "head on"
-    rb1.velocity = v1 - real_v1 + new_v1;
-    rb2.velocity = v2 - real_v2 + new_v2;
+    rb1.velocity = v1 - real_v1;
+    rb2.velocity = v2 - real_v2;
+
+    let location_normal = w2 - w1;
+
+    rb1.add_impulse_at_location(new_v1, -location_normal * r1);
+    rb2.add_impulse_at_location(new_v2, location_normal * r2);
 }
 
 pub fn collide_sphere_vs_sphere(
@@ -265,8 +290,11 @@ pub fn collide_sphere_vs_sphere(
         let (new_v1, new_v2) = standard_elastic_collision_3(m1, &real_v1, m2, &real_v2);
 
         // inital velocity - velocity used to colide "head on" + velocity after coliding "head on"
-        rb1.velocity = v1 - real_v1 + new_v1;
-        rb2.velocity = v2 - real_v2 + new_v2;
+        rb1.velocity = v1 - real_v1;
+        rb2.velocity = v2 - real_v2;
+
+        rb1.add_impulse_at_location(new_v1, -normal * r1);
+        rb2.add_impulse_at_location(new_v2, normal * r2);
     } else {
         println!("Sphere collision!");
 
@@ -394,12 +422,16 @@ impl BoxColider {
             direction
         );
 
+        debug_assert!(
+            direction.x.is_finite() && direction.y.is_finite() && direction.z.is_finite(),
+            "direction is not finite, {:?}",
+            direction
+        );
+
         let outside_normal = self.get_side(t, direction);
 
         debug_assert!(
-            outside_normal.x.is_finite()
-                && outside_normal.y.is_finite()
-                && outside_normal.z.is_finite(),
+            is_finite(&outside_normal),
             "outside_normal is not finite, {:?} at direction = {:?}",
             outside_normal,
             direction,
@@ -440,8 +472,10 @@ impl BoxColider {
 
 macro_rules! assert_delta {
     ($x:expr, $y:expr, $d:expr) => {
-        if !($x - $y < $d || $y - $x < $d) { panic!(); }
-    }
+        if !($x - $y < $d || $y - $x < $d) {
+            panic!();
+        }
+    };
 }
 
 #[test]
@@ -461,13 +495,13 @@ fn get_radius_test() {
     );
 
     assert_eq!(box_c.get_radius(&t, Vec3::new(1.0, 0.0, 0.0)), 1.0);
-    
+
     assert_eq!(
         box_c.get_radius(&t, Vec3::new(100.0, 0.0, 0.0)),
         1.0,
         "can not take non normalized input"
     );
-    
+
     assert_eq!(
         box_c.get_radius(&t, Vec3::new(1.0, 1.0, 0.0)),
         2.0f32.sqrt()
@@ -478,7 +512,8 @@ fn get_radius_test() {
 
     assert_delta!(
         box_c.get_radius(&t, Vec3::new(1.0, 1.0, 1.0)),
-        max_radius, 0.0001f32
+        max_radius,
+        0.0001f32
     );
 
     for pitch_deg in 0..360 {
@@ -495,7 +530,7 @@ fn get_radius_test() {
 
             assert!(!size.is_nan(), "size is nan");
             assert!(size.is_finite(), "size is inf");
-            assert!(size >=min_radius, "size is less than inner radius of box");
+            assert!(size >= min_radius, "size is less than inner radius of box");
             assert!(size <= max_radius, "size is above maximum")
         }
     }
@@ -591,15 +626,18 @@ pub struct RayCastHit {
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub struct RidgidBody {
     pub velocity: Vec3,
-    pub angular_velocity: Vec3,
-    pub acceleration: Vec3, // gravity
-    pub center_of_mass_offset: Vec3,
+    pub acceleration: Vec3, // can be used for gravity
+
+    pub angular_velocity: Vec3, // Spin angular velocity in rad per seconds around that axis (Quaternion::rotate_3d)
+    pub torque: Vec3,           // torque to angular_velocity is what acceleration is to velocity
+
+    pub center_of_mass_offset: Vec3, // also used for instant center of rotation https://en.wikipedia.org/wiki/Instant_centre_of_rotation
     pub is_active_time: f32,
     pub mass: f32,
     pub is_using_global_gravity: bool,
     //is_trigger : bool,
     pub is_static: bool,
-    pub is_active: bool, // after object is not moving for 2s then it becomes disabled
+    pub is_active: bool, // TODO after object is not moving then it becomes disabled to oprimize
 }
 
 impl RidgidBody {
@@ -614,6 +652,7 @@ impl RidgidBody {
             is_active_time: 0.0f32,
             center_of_mass_offset: Vec3::zero(),
             is_static: false,
+            torque: Vec3::zero(),
         }
     }
 }
@@ -633,6 +672,10 @@ impl PhysicsObject {
     }
 }
 
+fn is_finite(v: &Vec3) -> bool {
+    v.x.is_finite() && v.y.is_finite() && v.z.is_finite()
+}
+
 fn collide(
     rb1: &mut RidgidBody,
     t1: &mut Transform,
@@ -645,7 +688,28 @@ fn collide(
         for c2 in cc2 {
             if is_colliding(c1, t1, c2, t2) {
                 println!("Colliding!");
-                solve_colliding(c1, rb1, t1, c2, rb2, t2)
+                pause!();
+
+                solve_colliding(c1, rb1, t1, c2, rb2, t2);
+
+                debug_assert!(is_finite(&rb1.velocity), "rb1 velocity = {}", rb1.velocity);
+                debug_assert!(is_finite(&rb2.velocity), "rb2 velocity = {}", rb2.velocity);
+
+                debug_assert!(
+                    is_finite(&rb1.angular_velocity),
+                    "rb1 angular_velocity = {}",
+                    rb1.angular_velocity
+                );
+                debug_assert!(
+                    is_finite(&rb2.angular_velocity),
+                    "rb2 angular_velocity = {}",
+                    rb2.angular_velocity
+                );
+
+                rb1.is_active = true;
+                rb2.is_active = true;
+                rb1.is_active_time = 0.0;
+                rb2.is_active_time = 0.0;
             }
         }
     }
@@ -656,24 +720,72 @@ impl RidgidBody {
         self.velocity += force / self.mass;
     }
 
+    fn add_impulse_at_location(&mut self, velocity: Vec3, location: Vec3) {
+        debug_assert!(is_finite(&velocity), "velocity = {}", velocity);
+        debug_assert!(is_finite(&location), "location = {}", location);
+
+        //debug_assert!(velocity.magnitude_squared() != 0.0, "velocity is too close to 0 = {}", velocity);
+
+        // if zero velocity is applied then nothing happends
+        if velocity.magnitude_squared() == 0.0 { 
+            return;
+        }
+
+        // Bullet Block Explained! https://youtu.be/BLYoyLcdGPc no velocity is lost due to angular velocity irl,
+        // so it is not removed here
+        self.velocity += velocity;
+
+        //https://en.wikipedia.org/wiki/Angular_velocity
+
+        // just random shit
+        let offset = self.center_of_mass_offset + location;
+        let normal = offset;
+
+        let rotation_around = -(normal.normalized().cross(velocity.normalized())).normalized();
+        debug_assert!(
+            is_finite(&rotation_around),
+            "rotation_around = {} normal {} velocity {}",
+            rotation_around,
+            normal,
+            velocity
+        );
+
+        let torque = rotation_around * 10.0; //velocity *  / offset.magnitude();
+
+        self.angular_velocity += torque;
+
+        // TODO idk what angular_velocity is
+    }
+
     fn step(&mut self, dt: f32, transform: &mut Transform) {
-        transform.position += self.velocity * dt;
+        // apply acceleration
         self.velocity += self.acceleration * dt;
+        self.angular_velocity += self.torque * dt;
+
+        // apply rotation
+        transform.rotation.rotate_x(self.angular_velocity.x * dt);
+        transform.rotation.rotate_y(self.angular_velocity.y * dt);
+        transform.rotation.rotate_z(self.angular_velocity.z * dt);
+
+        // update position
+        transform.position += self.velocity * dt;
+
+        self.is_active_time += dt;
     }
 }
 
-fn update(
-    start: std::time::Instant,
-    dt: f32,
-    transforms: &mut Vec<Transform>,
-    phx_objects: &mut Vec<PhysicsObject>,
-) {
+fn update(dt: f32, transforms: &mut Vec<Transform>, phx_objects: &mut Vec<PhysicsObject>) {
+    let real_dt = dt * 0.3;
     let phx_length = phx_objects.len();
     for i in 0..phx_length {
         let (phx_first, phx_last) = phx_objects.split_at_mut(i + 1);
+        if phx_first[i].rb.is_static || !phx_first[i].rb.is_active {
+            continue; // we dont care about non active or static objects
+        }
+
         let (trans_first, trans_last) = transforms.split_at_mut(i + 1);
 
-        phx_first[i].rb.step(dt, &mut trans_first[i]);
+        phx_first[i].rb.step(real_dt, &mut trans_first[i]);
         for (transform, phx_obj) in trans_last.iter_mut().zip(phx_last.iter_mut()) {
             collide(
                 &mut phx_first[i].rb,
@@ -748,7 +860,7 @@ fn main() {
     };
 
     let obj1 = PhysicsObject::new(
-        RidgidBody::new(Vec3::new(0.5, 0.01, 0.002), Vec3::new(0.0, 0.0, 0.0), 10.0),
+        RidgidBody::new(Vec3::new(0.5, 0.02, 0.002), Vec3::new(0.0, 0.0, 0.0), 10.0),
         Collider::SphereColider(SphereColider::new(1.0, physics_material)),
     );
     //let obj2 = PhysicsObject::new(
@@ -757,7 +869,7 @@ fn main() {
     //);
 
     let obj2 = PhysicsObject::new(
-        RidgidBody::new(Vec3::new(0.0, 0.01, 0.0), Vec3::zero(), 5.0),
+        RidgidBody::new(Vec3::new(0.0, 0.00, 0.0), Vec3::zero(), 5.0),
         Collider::BoxColider(BoxColider::new(Vec3::new(1.0, 1.0, 1.0), physics_material)),
     );
     /*let obj3 = PhysicsObject::new(
@@ -849,14 +961,14 @@ fn main() {
             Event::MainEventsCleared => window.request_redraw(),
             Event::RedrawRequested(_) => {
                 let dt = last_frame.elapsed().as_secs_f32();
-                last_frame = std::time::Instant::now();
                 let _frame_rate = 1.0 / dt; // TODO render on screen
 
                 if allow_camera_update {
                     camera_controller.update_camera(dt, &mut context.renderer.camera);
                 }
 
-                update(start, dt, &mut instances, &mut physics_objects);
+                update(dt, &mut instances, &mut physics_objects);
+                last_frame = std::time::Instant::now();
 
                 context.renderer.update_camera();
 
@@ -867,6 +979,7 @@ fn main() {
                     .renderer
                     .render([0.229, 0.507, 0.921, 1.0])
                     .expect("render error");
+
             }
 
             _ => (),
