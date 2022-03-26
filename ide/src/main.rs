@@ -864,7 +864,7 @@ fn main() {
                 Transform {
                     position,
                     rotation,
-                    scale: Vec3::new(0.1, 0.1 + if is_ball { 0.0 } else { 0.6f32 }, 0.1),
+                    scale: if is_ball { Vec3::new(1.0, 1.0, 1.0) } else { Vec3::new(0.1, 0.6, 0.1) },
                 }
             })
         })
@@ -891,9 +891,9 @@ fn main() {
 
     let obj2 = PhysicsObject::new(
         RidgidBody::new(
-            Vec3::new(0.0, 0.00, 0.0),
+            Vec3::new(0.0, 0.1, 0.0),
             Vec3::zero(),
-            Vec3::new(0.0, 0.0, 0.01), // -1.6
+            Vec3::new(0.0, 0.0, -1.3), // -1.6
             5.0,
         ),
         Collider::BoxColider(BoxColider::new(Vec3::new(1.0, 1.0, 1.0), physics_material)),
