@@ -96,16 +96,115 @@ fn get_closest_point(
     cube_rotation * (closest - cube_loc) + cube_loc
 }
 
+// returns (1,0,0) (0,1,0) (0,0,1) with rotation aka positive normals
+fn get_axis(t: &Transform, c: &BoxColider) -> (Vec3, Vec3, Vec3) {
+    let rotation = t.rotation * c.local_rotation;
+    (
+        rotation * Vec3::unit_x(),
+        rotation * Vec3::unit_y(),
+        rotation * Vec3::unit_z(),
+    )
+}
+
+#[cfg(debug_assertions)]
+macro_rules! pause {
+    () => {
+        pause_and_wait_for_input()
+    };
+}
+
+#[cfg(not(debug_assertions))]
+macro_rules! pause {
+    () => {};
+}
+
+fn get_vertex(w: Vec3, t: &Transform, c: &BoxColider) -> Vec<Vec3> {
+    let s = c.scale * t.scale;
+    let r = t.rotation * c.local_rotation;
+    let mut vec: Vec<Vec3> = Vec::with_capacity(8);
+
+    for x in [-1.0, 1.0] {
+        for y in [-1.0, 1.0] {
+            for z in [-1.0, 1.0] {
+                vec.push(w + r * Vec3::new(s.x * x, s.y * y, s.z * z))
+            }
+        }
+    }
+
+    vec
+}
+
+fn overlap(a_min: f32, a_max: f32, b_min: f32, b_max: f32) -> f32 {
+    debug_assert!(a_min <= a_max);
+    debug_assert!(b_min <= b_max);
+
+    if a_min < b_min {
+        if a_max < b_min {
+            0.0
+        } else {
+            a_max - b_min
+        }
+    } else if b_max < a_min {
+        0.0
+    } else {
+        b_max - a_min
+    }
+}
+
+fn get_min_max_vert(normal: Vec3, verts: &Vec<Vec3>) -> (f32, f32) {
+    let mut proj_min = f32::MAX;
+    let mut proj_max = f32::MIN;
+    for vert in verts {
+        let val = vert.dot(normal);
+        if val < proj_min {
+            proj_min = val;
+        }
+
+        if val > proj_max {
+            proj_max = val;
+        }
+    }
+    (proj_min, proj_max)
+}
+
+// SAT algo on 3d
+fn proj_has_overlap(normals: &Vec<Vec3>, a_verts: &Vec<Vec3>, b_verts: &Vec<Vec3>) -> bool {
+    let mut min_overlap = f32::INFINITY;
+    for normal in normals {
+        if *normal == Vec3::zero() {
+            return true;
+        }
+        let (a_min, a_max) = get_min_max_vert(*normal, a_verts);
+        let (b_min, b_max) = get_min_max_vert(*normal, b_verts);
+        let overlap = overlap(a_min, a_max, b_min, b_max);
+
+        if overlap <= 0.0 {
+            return false;
+        }
+
+        if overlap < min_overlap {
+            min_overlap = overlap;
+
+            //    min_overlap_axis = axis;
+            //    penetration_axes.push(axis);
+            //    penetration_axes_distance.push(overlap);
+        }
+    }
+    
+    true
+}
+
+//TODO https://hitokageproduction.com/article/11
 /// Returns true if 2 objects are colliding
 pub fn is_colliding(c1: &Collider, t1: &mut Transform, c2: &Collider, t2: &mut Transform) -> bool {
     let w1 = get_position(t1, c1);
     let w2 = get_position(t2, c2);
 
     match c1 {
-        Collider::SphereColider(b1) => match c2 {
-            Collider::SphereColider(b2) => {
-                let r1 = b1.get_radius(t1.scale);
-                let r2 = b2.get_radius(t2.scale);
+        Collider::SphereColider(sc1) => match c2 {
+            Collider::SphereColider(sc2) => {
+                let r1 = sc1.get_radius(t1.scale);
+                let r2 = sc2.get_radius(t2.scale);
 
                 debug_assert!(r1 > 0.0, "r1 = {}", r1);
                 debug_assert!(r2 > 0.0, "r2 = {}", r2);
@@ -114,11 +213,11 @@ pub fn is_colliding(c1: &Collider, t1: &mut Transform, c2: &Collider, t2: &mut T
 
                 w1.distance_squared(w2) <= total_radius * total_radius
             }
-            Collider::BoxColider(b2) => {
-                let r_squared = squared(b1.get_radius(t1.scale));
+            Collider::BoxColider(bc2) => {
+                let r_squared = squared(sc1.get_radius(t1.scale));
                 debug_assert!(r_squared > 0.0, "r^2 = {}", r_squared);
 
-                let scale = t2.scale * b2.scale;
+                let scale = t2.scale * bc2.scale;
                 debug_assert!(scale.are_all_positive(), "Scale is negative");
                 debug_assert!(is_finite(&scale), "Scale is Nan = {}", scale);
 
@@ -126,18 +225,42 @@ pub fn is_colliding(c1: &Collider, t1: &mut Transform, c2: &Collider, t2: &mut T
                 closest_point.distance_squared(w1) < r_squared
             }
         },
-        Collider::BoxColider(b1) => match c2 {
-            Collider::BoxColider(b2) => {
-                todo!("BoxColider vs BoxColider");
-                let s1 = t1.scale * b1.scale;
+        Collider::BoxColider(bc1) => match c2 {
+            Collider::BoxColider(bc2) => {
+                //https://github.com/irixapps/Unity-Separating-Axis-SAT/blob/master/Assets/SeparatingAxisTest.cs
+                let (a0, a1, a2) = get_axis(&t1, bc1);
+                let (b0, b1, b2) = get_axis(&t2, bc2);
+
+                let axis = vec![
+                    a0,
+                    a1,
+                    a2,
+                    b0,
+                    b1,
+                    b2,
+                    a0.cross(b0),
+                    a0.cross(b1),
+                    a0.cross(b2),
+                    a1.cross(b0),
+                    a1.cross(b1),
+                    a1.cross(b2),
+                    a2.cross(b0),
+                    a2.cross(b1),
+                    a2.cross(b2),
+                ];
+
+                let a_vex = get_vertex(w1, &t1, bc1);
+                let b_vex = get_vertex(w2, &t2, bc2);
+
+                proj_has_overlap(&axis, &a_vex, &b_vex) || proj_has_overlap(&axis, &b_vex, &a_vex)
+
+                /*let s1 = t1.scale * b1.scale;
                 let s2 = t2.scale * b2.scale;
 
                 let closest_point_1 = get_closest_point(w2, w1, s1, t1.rotation);
                 let closest_point_2 = get_closest_point(w1, w2, s2, t2.rotation);
 
-                println!("{}", closest_point_1.distance(closest_point_2));
-
-                closest_point_1.distance_squared(closest_point_2) <= 0.009f32
+                closest_point_1.distance(w2) + closest_point_2.distance(w1) <= w1.distance(w2)*/
             }
             Collider::SphereColider(_) => is_colliding(c2, t2, c1, t1), // reuse code
         },
@@ -194,18 +317,6 @@ fn proj(on: Vec3, vec: Vec3) -> Vec3 {
     vec.dot(on) * on / on.magnitude_squared()
 }
 
-#[cfg(debug_assertions)]
-macro_rules! pause {
-    () => {
-        pause_and_wait_for_input()
-    };
-}
-
-#[cfg(not(debug_assertions))]
-macro_rules! pause {
-    () => {};
-}
-
 #[allow(dead_code)]
 fn pause_and_wait_for_input() {
     let mut stdout = std::io::stdout();
@@ -224,6 +335,7 @@ pub fn collide_sphere_vs_box(
     t2: &mut Transform,
     mut w2: Vec3, // world position
 ) {
+    todo!("not implemented correctly atm");
     // TODO https://se.mathworks.com/matlabcentral/fileexchange/12744-distance-from-points-to-polyline-or-polygon
 
     let re1 = c1.material.restfullness;
@@ -884,59 +996,29 @@ fn main() {
     let mut camera_controller = CameraController::new(
         10.0,
         0.01,
-        Vec3::new(-2.617557, 0.3896206, -2.1071591),
-        Vec3::new(-0.040865257, 2.8307953, 0.0),
+        Vec3 { x: -1.3849019, y: 2.8745177, z: 8.952639 }, Vec3 { x: -0.32086524, y: 2.8307953, z: 0.0 }
+        //Vec3::new(-2.617557, 0.3896206, -2.1071591),
+        //Vec3::new(-0.040865257, 2.8307953, 0.0),
     );
 
-    let mut instances = (0..1)
-        .flat_map(|j| {
-            (0..2).map(move |i| {
-                let x = SPACE_BETWEEN * (i as f32 - NUM_INSTANCES_PER_ROW as f32 / 2.0);
-                let z = SPACE_BETWEEN * (j as f32 - NUM_INSTANCES_PER_ROW as f32 / 2.0);
-                let r: f32 = rand::random();
-                let position = Vec3 { x, y: 0.0, z };
-
-                let rotation = Quaternion::identity();
-
-                /*if position == Vec3::zero() {
-                    Quaternion::identity() //  Quaternion::rotation_3d(0.0, Vec3::unit_z())
-                } else {
-                    Quaternion::identity() //Quaternion::rotation_3d(std::f32::consts::FRAC_PI_4, position.normalized())
-                };*/
-
-                let is_ball = i == 0;
-
-                Transform {
-                    position,
-                    rotation,
-                    scale: if is_ball {
-                        Vec3::new(0.1, 0.1, 0.1)
-                    } else {
-                        Vec3::new(0.1, 0.6, 0.1)
-                    },
-                }
-            })
-        })
-        .collect::<Vec<_>>();
+    let mut instances = vec![
+        Transform {
+            position: Vec3::new(0.0, 0.0, 0.0),
+            rotation: Quaternion::identity(),
+            scale: Vec3::new(1.0, 1.0, 1.0),
+        },
+        Transform {
+            position: Vec3::new(5.1, 0.0, 0.0),
+            rotation: Quaternion::identity(),
+            scale: Vec3::new(1.0, 3.0, 1.0),
+        },
+    ];
 
     let physics_material = PhysicsMaterial {
         friction: 1.0,
         restfullness: 1.0,
     };
 
-    let obj1 = PhysicsObject::new(
-        RidgidBody::new(
-            Vec3::new(0.5, 0.00, 0.000),
-            Vec3::zero(),
-            Vec3::zero(),
-            10.0,
-        ),
-        Collider::SphereColider(SphereColider::new(1.0, physics_material)),
-    );
-    //let obj2 = PhysicsObject::new(
-    //    RidgidBody::new(Vec3::new(0.0, 0.01, 0.0), Vec3::zero(), 5.0),
-    //    Collider::SphereColider(SphereColider::new(1.0, physics_material)),
-    //);
     /*let obj1 = PhysicsObject::new(
         RidgidBody::new(
             Vec3::new(0.5, 0.00, 0.000),
@@ -944,13 +1026,26 @@ fn main() {
             Vec3::zero(),
             10.0,
         ),
-        Collider::BoxColider(BoxColider::new(Vec3::new(1.0, 1.0, 1.0), physics_material)),
+        Collider::SphereColider(SphereColider::new(1.0, physics_material)),
     );*/
+    //let obj2 = PhysicsObject::new(
+    //    RidgidBody::new(Vec3::new(0.0, 0.01, 0.0), Vec3::zero(), 5.0),
+    //    Collider::SphereColider(SphereColider::new(1.0, physics_material)),
+    //);
+    let obj1 = PhysicsObject::new(
+        RidgidBody::new(
+            Vec3::new(0.5, 0.00, 0.000),
+            Vec3::zero(),
+            Vec3::new(5.0, 5.0, 5.0), // -1.6
+            10.0,
+        ),
+        Collider::BoxColider(BoxColider::new(Vec3::new(1.0, 1.0, 1.0), physics_material)),
+    );
     let obj2 = PhysicsObject::new(
         RidgidBody::new(
             Vec3::new(0.0, 0.0, 0.0),
             Vec3::zero(),
-            Vec3::new(0.0, 0.0, -1.3), // -1.6
+            Vec3::new(1.0, 3.0, -3.0), // -1.6
             5.0,
         ),
         Collider::BoxColider(BoxColider::new(Vec3::new(1.0, 1.0, 1.0), physics_material)),
@@ -1058,9 +1153,17 @@ fn main() {
 
                 context.renderer.update_camera();
 
+                /*
+                println!(
+                    "camera: {:?} {:?}",
+                    camera_controller.position, camera_controller.rotation
+                );*/
+
                 context
                     .renderer
-                    .update_instances(&[(cube_model, &instances[1..]),(ball_model, &instances[..1])]); // , (ball_model, &instances[..1])
+                    .update_instances(&[(cube_model, &instances[..])]); // , (ball_model, &instances[..1])
+
+                //  .update_instances(&[(cube_model, &instances[1..]),(ball_model, &instances[..1])]); // , (ball_model, &instances[..1])
                 context
                     .renderer
                     .render([0.229, 0.507, 0.921, 1.0])
