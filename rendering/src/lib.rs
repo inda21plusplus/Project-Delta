@@ -7,4 +7,4 @@ mod renderer;
 
 pub use camera::Camera;
 pub use error::RenderingError;
-pub use renderer::Renderer;
+pub use renderer::{Line, Renderer};
