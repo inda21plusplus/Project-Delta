@@ -53,6 +53,7 @@ fn get_world_position(world_pos: Vec3, rotation: Quaternion, local_position: Vec
     world_pos + rotation * local_position
 }
 
+#[must_use]
 fn get_position(transform: &Transform, collider: &Collider) -> Vec3 {
     get_world_position(
         transform.position,
@@ -65,10 +66,12 @@ fn get_position(transform: &Transform, collider: &Collider) -> Vec3 {
 }
 
 #[inline]
+#[must_use]
 fn squared(v: f32) -> f32 {
     v * v
 }
 
+#[must_use]
 fn clamp(v: Vec3, min: Vec3, max: Vec3) -> Vec3 {
     let mut ret = Vec3::zero();
     for i in 0..3 {
@@ -77,6 +80,7 @@ fn clamp(v: Vec3, min: Vec3, max: Vec3) -> Vec3 {
     ret
 }
 
+#[must_use]
 fn get_closest_point(
     other_loc: Vec3,
     cube_loc: Vec3,
@@ -96,7 +100,8 @@ fn get_closest_point(
     cube_rotation * (closest - cube_loc) + cube_loc
 }
 
-// returns (1,0,0) (0,1,0) (0,0,1) with rotation aka positive normals
+/// returns (1,0,0) (0,1,0) (0,0,1) with rotation aka positive normals
+#[must_use]
 fn get_axis(t: &Transform, c: &BoxColider) -> (Vec3, Vec3, Vec3) {
     let rotation = t.rotation * c.local_rotation;
     (
@@ -118,7 +123,7 @@ macro_rules! pause {
     () => {};
 }
 
-fn get_vertex(w: Vec3, t: &Transform, c: &BoxColider) -> Vec<Vec3> {
+fn get_vertex(w: &Vec3, t: &Transform, c: &BoxColider) -> Vec<Vec3> {
     let s = c.scale * t.scale;
     let r = t.rotation * c.local_rotation;
     let mut vec: Vec<Vec3> = Vec::with_capacity(8);
@@ -167,10 +172,12 @@ fn get_min_max_vert(normal: Vec3, verts: &Vec<Vec3>) -> (f32, f32) {
     (proj_min, proj_max)
 }
 
-// SAT algo on 3d
-fn proj_has_overlap(normals: &Vec<Vec3>, a_verts: &Vec<Vec3>, b_verts: &Vec<Vec3>) -> bool {
-    let mut min_overlap = f32::INFINITY;
-    for normal in normals {
+/// SAT algo on 3d
+/// https://hitokageproduction.com/article/11
+/// https://github.com/irixapps/Unity-Separating-Axis-SAT/
+#[must_use]
+fn proj_has_overlap(axis: &Vec<Vec3>, a_verts: &Vec<Vec3>, b_verts: &Vec<Vec3>) -> bool {
+    for normal in axis {
         if *normal == Vec3::zero() {
             return true;
         }
@@ -181,21 +188,79 @@ fn proj_has_overlap(normals: &Vec<Vec3>, a_verts: &Vec<Vec3>, b_verts: &Vec<Vec3
         if overlap <= 0.0 {
             return false;
         }
+    }
+
+    true
+}
+
+/// same as proj_has_overlap with more return info
+#[must_use]
+fn proj_has_overlap_extra(
+    axis: &Vec<Vec3>,
+    a_verts: &Vec<Vec3>,
+    b_verts: &Vec<Vec3>,
+) -> Option<(f32, Vec<(Vec3, f32)>)> {
+    let mut min_overlap = f32::INFINITY;
+    let mut penetration: Vec<(Vec3, f32)> = Vec::new();
+    for normal in axis {
+        if *normal == Vec3::zero() {
+            return Some((min_overlap, penetration));
+        }
+        let (a_min, a_max) = get_min_max_vert(*normal, a_verts);
+        let (b_min, b_max) = get_min_max_vert(*normal, b_verts);
+        let overlap = overlap(a_min, a_max, b_min, b_max);
+
+        if overlap <= 0.0 {
+            return None;
+        }
 
         if overlap < min_overlap {
             min_overlap = overlap;
 
-            //    min_overlap_axis = axis;
-            //    penetration_axes.push(axis);
-            //    penetration_axes_distance.push(overlap);
+            penetration.push((*normal, overlap));
         }
     }
-    
-    true
+
+    Some((min_overlap, penetration))
 }
 
-//TODO https://hitokageproduction.com/article/11
+#[must_use]
+fn get_axis_and_verts(
+    w1: &Vec3,
+    w2: &Vec3,
+    t1: &Transform,
+    t2: &Transform,
+    bc1: &BoxColider,
+    bc2: &BoxColider,
+) -> (Vec<Vec3>, Vec<Vec3>, Vec<Vec3>) {
+    let (a0, a1, a2) = get_axis(&t1, bc1);
+    let (b0, b1, b2) = get_axis(&t2, bc2);
+
+    let axis = vec![
+        a0,
+        a1,
+        a2,
+        b0,
+        b1,
+        b2,
+        a0.cross(b0),
+        a0.cross(b1),
+        a0.cross(b2),
+        a1.cross(b0),
+        a1.cross(b1),
+        a1.cross(b2),
+        a2.cross(b0),
+        a2.cross(b1),
+        a2.cross(b2),
+    ];
+
+    let a_vex = get_vertex(w1, &t1, bc1);
+    let b_vex = get_vertex(w2, &t2, bc2);
+    (axis, a_vex, b_vex)
+}
+
 /// Returns true if 2 objects are colliding
+#[must_use]
 pub fn is_colliding(c1: &Collider, t1: &mut Transform, c2: &Collider, t2: &mut Transform) -> bool {
     let w1 = get_position(t1, c1);
     let w2 = get_position(t2, c2);
@@ -227,40 +292,9 @@ pub fn is_colliding(c1: &Collider, t1: &mut Transform, c2: &Collider, t2: &mut T
         },
         Collider::BoxColider(bc1) => match c2 {
             Collider::BoxColider(bc2) => {
-                //https://github.com/irixapps/Unity-Separating-Axis-SAT/blob/master/Assets/SeparatingAxisTest.cs
-                let (a0, a1, a2) = get_axis(&t1, bc1);
-                let (b0, b1, b2) = get_axis(&t2, bc2);
-
-                let axis = vec![
-                    a0,
-                    a1,
-                    a2,
-                    b0,
-                    b1,
-                    b2,
-                    a0.cross(b0),
-                    a0.cross(b1),
-                    a0.cross(b2),
-                    a1.cross(b0),
-                    a1.cross(b1),
-                    a1.cross(b2),
-                    a2.cross(b0),
-                    a2.cross(b1),
-                    a2.cross(b2),
-                ];
-
-                let a_vex = get_vertex(w1, &t1, bc1);
-                let b_vex = get_vertex(w2, &t2, bc2);
-
-                proj_has_overlap(&axis, &a_vex, &b_vex) || proj_has_overlap(&axis, &b_vex, &a_vex)
-
-                /*let s1 = t1.scale * b1.scale;
-                let s2 = t2.scale * b2.scale;
-
-                let closest_point_1 = get_closest_point(w2, w1, s1, t1.rotation);
-                let closest_point_2 = get_closest_point(w1, w2, s2, t2.rotation);
-
-                closest_point_1.distance(w2) + closest_point_2.distance(w1) <= w1.distance(w2)*/
+                let (axis, a_verts, b_verts) = get_axis_and_verts(&w1, &w2, &t1, &t2, bc1, bc2);
+                proj_has_overlap(&axis, &a_verts, &b_verts)
+                    || proj_has_overlap(&axis, &b_verts, &a_verts)
             }
             Collider::SphereColider(_) => is_colliding(c2, t2, c1, t1), // reuse code
         },
@@ -283,18 +317,17 @@ pub fn solve_colliding(
             Collider::SphereColider(b2) => {
                 collide_sphere_vs_sphere(b1, rb1, t1, w1, b2, rb2, t2, w2)
             }
-            Collider::BoxColider(b2) => (), //collide_sphere_vs_box(b1, rb1, t1, w1, b2, rb2, t2, w2),
+            Collider::BoxColider(b2) => collide_sphere_vs_box(b1, rb1, t1, w1, b2, rb2, t2, w2),
         },
         Collider::BoxColider(b1) => match c2 {
-            Collider::SphereColider(b2) => (), //collide_sphere_vs_box(b2, rb2, t2, w2, b1, rb1, t1, w1),
-            Collider::BoxColider(_b2) => {
-                todo!("box vs box")
-            }
+            Collider::SphereColider(b2) => collide_sphere_vs_box(b2, rb2, t2, w2, b1, rb1, t1, w1),
+            Collider::BoxColider(b2) => collide_box_vs_box(b1, rb1, t1, w1, b2, rb2, t2, w2),
         },
     }
 }
 
 #[inline]
+#[must_use]
 /// using https://en.wikipedia.org/wiki/Elastic_collision on a 1d plane where m is mass and v is velocity
 fn standard_elastic_collision(m1: f32, v1: f32, m2: f32, v2: f32) -> (f32, f32) {
     let u1: f32 = (m1 * v1 - m2 * v1 + 2.0 * m2 * v2) / (m1 + m2);
@@ -305,6 +338,7 @@ fn standard_elastic_collision(m1: f32, v1: f32, m2: f32, v2: f32) -> (f32, f32) 
     (u1, u2)
 }
 
+#[must_use]
 fn standard_elastic_collision_3(m1: f32, v1: &Vec3, m2: f32, v2: &Vec3) -> (Vec3, Vec3) {
     let (v1x, v2x) = standard_elastic_collision(m1, v1.x, m2, v2.x);
     let (v1y, v2y) = standard_elastic_collision(m1, v1.y, m2, v2.y);
@@ -313,6 +347,7 @@ fn standard_elastic_collision_3(m1: f32, v1: &Vec3, m2: f32, v2: &Vec3) -> (Vec3
 }
 
 #[inline]
+#[must_use]
 fn proj(on: Vec3, vec: Vec3) -> Vec3 {
     vec.dot(on) * on / on.magnitude_squared()
 }
@@ -325,51 +360,101 @@ fn pause_and_wait_for_input() {
     std::io::Read::read(&mut std::io::stdin(), &mut [0]).unwrap();
 }
 
+pub fn collide_box_vs_box(
+    c1: &BoxColider,
+    rb1: &mut RidgidBody,
+    t1: &mut Transform,
+    w1: Vec3, // world position
+    c2: &BoxColider,
+    rb2: &mut RidgidBody,
+    t2: &mut Transform,
+    w2: Vec3, // world position
+) {
+    todo!("collide_box_vs_box");
+    let (axis, a_verts, b_verts) = get_axis_and_verts(&w1, &w2, t1, t2, c1, c2);
+    let mut all: Vec<(Vec3, f32)> = Vec::new();
+
+    if let Some((_min_overlap, mut list)) = proj_has_overlap_extra(&axis, &a_verts, &b_verts) {
+        all.append(&mut list)
+    }
+    if let Some((_min_overlap, mut list)) = proj_has_overlap_extra(&axis, &b_verts, &a_verts) {
+        all.append(&mut list)
+    }
+
+    for (normal, distance) in all {
+        pop_coliders(normal * distance, t1, t2, &rb1, &rb2);
+        break;
+        /*standard_collision(
+            normal,
+            rb1,
+            rb2,
+            point_of_contact - w1,
+            point_of_contact - w2,
+            re1,
+            re2,
+        );*/
+    }
+}
+
 pub fn collide_sphere_vs_box(
     c1: &SphereColider,
     rb1: &mut RidgidBody,
     t1: &mut Transform,
-    mut w1: Vec3, // world position
+    w1: Vec3, // world position
     c2: &BoxColider,
     rb2: &mut RidgidBody,
     t2: &mut Transform,
-    mut w2: Vec3, // world position
+    w2: Vec3, // world position
 ) {
-    todo!("not implemented correctly atm");
-    // TODO https://se.mathworks.com/matlabcentral/fileexchange/12744-distance-from-points-to-polyline-or-polygon
-
     let re1 = c1.material.restfullness;
     let re2 = c2.material.restfullness;
 
-    let r1 = c1.get_radius(t1.scale);
-    let r2 = c2.get_radius_dbg(t2, w1 - w2);
+    let r = c1.get_radius(t1.scale);
+    debug_assert!(r > 0.0);
 
-    // pop
-    if !rb1.is_static && !rb2.is_static {
-        let diff = w2 - w1;
-        let distance_pop = diff.magnitude() - r1 - r2;
-        let normal = diff.normalized();
+    let scale = t2.scale * c2.scale;
+    debug_assert!(is_finite(&scale));
 
-        const POP_SIZE: f32 = 1.10;
-        let pop = normal * distance_pop * POP_SIZE;
-        if rb1.is_static {
-            t2.position -= pop;
-        } else if rb2.is_static {
-            t1.position += pop;
-        } else {
-            t2.position -= pop * 0.5;
-            t1.position += pop * 0.5;
-        }
-    }
+    let closest_point = get_closest_point(w1, w2, scale, t2.rotation);
+    let overlap_distance = r - closest_point.distance(w1);
+    debug_assert!(overlap_distance >= 0.0);
+
+    let normal = (w1 - closest_point).normalized();
+    let point_of_contact = closest_point;
+
+    pop_coliders(normal * overlap_distance, t1, t2, &rb1, &rb2);
+    standard_collision(
+        normal,
+        rb1,
+        rb2,
+        point_of_contact - w1,
+        point_of_contact - w2,
+        re1,
+        re2,
+    );
+}
+
+fn standard_collision(
+    normal: Vec3,
+    rb1: &mut RidgidBody,
+    rb2: &mut RidgidBody,
+    // offset from point of contact
+    o1: Vec3,
+    o2: Vec3,
+    // not used atm, restfullness
+    _re1: f32,
+    _re2: f32,
+) {
+    debug_assert!(normal.is_normalized(), "Normal is not normalized");
+
+    let v1 = rb1.velocity;
+    let v2 = rb2.velocity;
 
     let m1 = rb1.mass;
     let m2 = rb2.mass;
 
-    println!("General collision!");
-    let v1 = rb1.velocity;
-    let v2 = rb2.velocity;
-
-    let normal = c2.get_side(t2, w1 - w2);
+    debug_assert!(m1 > 0.0);
+    debug_assert!(m2 > 0.0);
 
     // proj the velocities on the normal, this way you can move the frame of
     // refrence and think of the two objects are coliding head on
@@ -383,21 +468,45 @@ pub fn collide_sphere_vs_box(
     rb1.velocity = v1 - real_v1;
     rb2.velocity = v2 - real_v2;
 
-    let location_normal = w2 - w1;
+    rb1.add_impulse_at_location(new_v1, o1);
+    rb2.add_impulse_at_location(new_v2, o2);
+}
 
-    rb1.add_impulse_at_location(new_v1, -location_normal * r1);
-    rb2.add_impulse_at_location(new_v2, location_normal * r2);
+/// where normal_distance is the normal pointing at c1 from c2 with the length of the intercetion
+pub fn pop_coliders(
+    normal_distance: Vec3,
+    t1: &mut Transform,
+    t2: &mut Transform,
+    rb1: &RidgidBody,
+    rb2: &RidgidBody,
+) {
+    debug_assert!(normal_distance.magnitude_squared() > 0.0);
+    // cant move static coliders
+    if rb1.is_static && rb2.is_static {
+        return;
+    }
+
+    const POP_SIZE: f32 = 1.10;
+    let pop = normal_distance * POP_SIZE;
+    if rb1.is_static {
+        t2.position -= pop;
+    } else if rb2.is_static {
+        t1.position += pop;
+    } else {
+        t2.position -= pop * 0.5;
+        t1.position += pop * 0.5;
+    }
 }
 
 pub fn collide_sphere_vs_sphere(
     c1: &SphereColider,
     rb1: &mut RidgidBody,
     t1: &mut Transform,
-    mut w1: Vec3, // world position
+    w1: Vec3, // world position
     c2: &SphereColider,
     rb2: &mut RidgidBody,
     t2: &mut Transform,
-    mut w2: Vec3, // world position
+    w2: Vec3, // world position
 ) {
     let re1 = c1.material.restfullness;
     let re2 = c2.material.restfullness;
@@ -405,156 +514,12 @@ pub fn collide_sphere_vs_sphere(
     let r1 = c1.get_radius(t1.scale);
     let r2 = c2.get_radius(t2.scale);
 
-    let m1 = rb1.mass;
-    let m2 = rb2.mass;
-
     // pop
-    if !rb1.is_static && !rb2.is_static {
-        let diff = w2 - w1;
-        let distance_pop = diff.magnitude() - r1 - r2;
-        let normal = diff.normalized();
-
-        const POP_SIZE: f32 = 1.10;
-        let pop = normal * distance_pop * POP_SIZE;
-        if rb1.is_static {
-            t2.position -= pop;
-        } else if rb2.is_static {
-            t1.position += pop;
-        } else {
-            t2.position -= pop * 0.5;
-            t1.position += pop * 0.5;
-        }
-    }
-
-    // these both colision methods should return the exact same result
-    if true {
-        // this is used because it can be used for non-sphere colisions
-        println!("General collision!");
-        let v1 = rb1.velocity;
-        let v2 = rb2.velocity;
-
-        let diff = w2 - w1;
-        let normal = diff.normalized();
-
-        // proj the velocities on the normal, this way you can move the frame of
-        // refrence and think of the two objects are coliding head on
-        let real_v1 = proj(normal, v1);
-        let real_v2 = proj(normal, v2);
-
-        // using a perfectly elastic collision on each axis
-        let (new_v1, new_v2) = standard_elastic_collision_3(m1, &real_v1, m2, &real_v2);
-
-        // inital velocity - velocity used to colide "head on" + velocity after coliding "head on"
-        rb1.velocity = v1 - real_v1;
-        rb2.velocity = v2 - real_v2;
-
-        rb1.add_impulse_at_location(new_v1, -normal * r1);
-        rb2.add_impulse_at_location(new_v2, normal * r2);
-    } else {
-        println!("Sphere collision!");
-
-        let mut v1 = rb1.velocity;
-        let mut v2 = rb2.velocity;
-
-        //https://www.plasmaphysics.org.uk/collision3d.htm
-        //https://www.plasmaphysics.org.uk/programs/coll3d_cpp.htm
-
-        let r12 = r1 + r2;
-        let m21 = m2 / m1;
-        let b21 = w2 - w1;
-        let v21 = v2 - v1;
-
-        let v_cm = (m1 * v1 + m2 * v2) / (m1 + m2);
-
-        //     **** calculate relative distance and relative speed ***
-        let d = b21.magnitude();
-        let v = v21.magnitude();
-        //     **** return if relative speed = 0 ****
-        if v.abs() < 0.00001f32 {
-            return;
-        }
-        //     **** shift coordinate system so that ball 1 is at the origin ***
-        w2 = b21;
-
-        //     **** boost coordinate system so that ball 2 is resting ***
-        v1 = -v21;
-
-        //     **** find the polar coordinates of the location of ball 2 ***
-        let theta2 = (w2.z / d).acos();
-        let phi2 = if w2.x == 0.0 && w2.y == 0.0 {
-            0.0
-        } else {
-            w2.y.atan2(w2.x)
-        };
-
-        let st = theta2.sin();
-        let ct = theta2.cos();
-        let sp = phi2.sin();
-        let cp = phi2.cos();
-
-        //     **** express the velocity vector of ball 1 in a rotated coordinate
-        //          system where ball 2 lies on the z-axis ******
-        let mut vx1r = ct * cp * v1.x + ct * sp * v1.y - st * v1.z;
-        let mut vy1r = cp * v1.y - sp * v1.x;
-        let mut vz1r = st * cp * v1.x + st * sp * v1.y + ct * v1.z;
-        let mut fvz1r = vz1r / v;
-        if fvz1r > 1.0 {
-            fvz1r = 1.0;
-        }
-        // fix for possible rounding errors
-        else if fvz1r < -1.0 {
-            fvz1r = -1.0;
-        }
-        let thetav = fvz1r.acos();
-        let phiv = if vx1r == 0.0 && vy1r == 0.0 {
-            0.0
-        } else {
-            vy1r.atan2(vx1r)
-        };
-
-        //     **** calculate the normalized impact parameter ***
-        let dr = d * (thetav.sin()) / r12;
-
-        //     **** calculate impact angles if balls do collide ***
-        let alpha = (-dr).asin();
-        let beta = phiv;
-        let sbeta = beta.sin();
-        let cbeta = beta.cos();
-
-        //     **** calculate time to collision ***
-        let t = (d * thetav.cos() - r12 * (1.0 - dr * dr).sqrt()) / v;
-
-        //     **** update positions and reverse the coordinate shift ***
-        w2 += v2 * t + w1;
-        w1 += (v1 + v2) * t;
-
-        //  ***  update velocities ***
-
-        let a = (thetav + alpha).tan();
-
-        let dvz2 = 2.0 * (vz1r + a * (cbeta * vx1r + sbeta * vy1r)) / ((1.0 + a * a) * (1.0 + m21));
-
-        let vz2r = dvz2;
-        let vx2r = a * cbeta * dvz2;
-        let vy2r = a * sbeta * dvz2;
-        vz1r = vz1r - m21 * vz2r;
-        vx1r = vx1r - m21 * vx2r;
-        vy1r = vy1r - m21 * vy2r;
-
-        //     **** rotate the velocity vectors back and add the initial velocity
-        //           vector of ball 2 to retrieve the original coordinate system ****
-
-        v1.x = ct * cp * vx1r - sp * vy1r + st * cp * vz1r + v2.x;
-        v1.y = ct * sp * vx1r + cp * vy1r + st * sp * vz1r + v2.y;
-        v1.z = ct * vz1r - st * vx1r + v2.z;
-        v2.x = ct * cp * vx2r - sp * vy2r + st * cp * vz2r + v2.x;
-        v2.y = ct * sp * vx2r + cp * vy2r + st * sp * vz2r + v2.y;
-        v2.z = ct * vz2r - st * vx2r + v2.z;
-
-        //     ***  velocity correction for inelastic collisions ***
-        rb1.velocity = (v1 - v_cm) * re1 + v_cm;
-        rb2.velocity = (v2 - v_cm) * re2 + v_cm;
-    }
+    let diff = w2 - w1;
+    let distance_pop = diff.magnitude() - r1 - r2;
+    let normal = diff.normalized();
+    pop_coliders(distance_pop * normal, t1, t2, &rb1, &rb2);
+    standard_collision(normal, rb1, rb2, -normal * r1, normal * r2, re1, re2);
 }
 
 impl SphereColider {
@@ -847,7 +812,7 @@ fn collide(
 
                 has_colided = true;
 
-                //solve_colliding(c1, rb1, t1, c2, rb2, t2);
+                solve_colliding(c1, rb1, t1, c2, rb2, t2);
 
                 debug_assert!(is_finite(&rb1.velocity), "rb1 velocity = {}", rb1.velocity);
                 debug_assert!(is_finite(&rb2.velocity), "rb2 velocity = {}", rb2.velocity);
@@ -896,6 +861,7 @@ impl RidgidBody {
         //https://en.wikipedia.org/wiki/Angular_velocity
 
         // just random shit
+        return;
         let offset = self.center_of_mass_offset + location;
         let normal = offset;
 
@@ -991,7 +957,7 @@ fn main() {
     let mut context = Context::new(&window, (size.width, size.height));
     let cube_model = context.renderer.load_model("./res/Cube.obj").unwrap();
     let ball_model = context.renderer.load_model("./res/ball.obj").unwrap();
-    let start = std::time::Instant::now();
+    let _start = std::time::Instant::now();
 
     let mut camera_controller = CameraController::new(
         10.0,
@@ -1008,11 +974,24 @@ fn main() {
             scale: Vec3::new(1.0, 1.0, 1.0),
         },
         Transform {
+            position: Vec3::new(5.0, 0.0, 0.0),
+            rotation: Quaternion::identity(),
+            scale: Vec3::new(1.0, 4.0, 1.0),
+        },
+    ];
+
+    /*let mut instances = vec![
+        Transform {
+            position: Vec3::new(0.0, 0.0, 0.0),
+            rotation: Quaternion::identity(),
+            scale: Vec3::new(1.0, 1.0, 1.0),
+        },
+        Transform {
             position: Vec3::new(5.1, 0.0, 0.0),
             rotation: Quaternion::identity(),
             scale: Vec3::new(1.0, 3.0, 1.0),
         },
-    ];
+    ];*/
 
     let physics_material = PhysicsMaterial {
         friction: 1.0,
@@ -1032,7 +1011,36 @@ fn main() {
     //    RidgidBody::new(Vec3::new(0.0, 0.01, 0.0), Vec3::zero(), 5.0),
     //    Collider::SphereColider(SphereColider::new(1.0, physics_material)),
     //);
+
     let obj1 = PhysicsObject::new(
+        RidgidBody::new(
+            Vec3::new(10.0, 1.00, 0.000),
+            Vec3::zero(),
+            Vec3::new(5.0, 5.0, 5.0), // -1.6
+            10.0,
+        ),
+        Collider::SphereColider(SphereColider::new(1.0, physics_material)),
+    );
+    /*let obj2 = PhysicsObject::new(
+        RidgidBody::new(
+            Vec3::new(0.0, 0.0, 0.0),
+            Vec3::zero(),
+            Vec3::new(1.0, 3.0, -3.0), // -1.6
+            5.0,
+        ),
+        Collider::SphereColider(SphereColider::new(1.0, physics_material)),
+    );*/
+    /*let obj2 = PhysicsObject::new(
+        RidgidBody::new(
+            Vec3::new(0.0, 0.0, 0.0),
+            Vec3::zero(),
+            Vec3::new(0.0, 0.0, 1.0), // -1.6
+            50.0,
+        ),
+        Collider::BoxColider(BoxColider::new(Vec3::new(1.0, 1.0, 1.0), physics_material)),
+    );*/
+
+    /*let obj1 = PhysicsObject::new(
         RidgidBody::new(
             Vec3::new(0.5, 0.00, 0.000),
             Vec3::zero(),
@@ -1040,7 +1048,7 @@ fn main() {
             10.0,
         ),
         Collider::BoxColider(BoxColider::new(Vec3::new(1.0, 1.0, 1.0), physics_material)),
-    );
+    );*/
     let obj2 = PhysicsObject::new(
         RidgidBody::new(
             Vec3::new(0.0, 0.0, 0.0),
@@ -1064,7 +1072,7 @@ fn main() {
     let mut allow_camera_update = true;
     let mut last_frame = std::time::Instant::now();
     let mut pause_physics = false;
-    let can_pause_phx = true;
+    let can_pause_phx = false;
     event_loop.run(move |event, _, control_flow| {
         *control_flow = ControlFlow::Poll;
         match event {
@@ -1161,9 +1169,13 @@ fn main() {
 
                 context
                     .renderer
-                    .update_instances(&[(cube_model, &instances[..])]); // , (ball_model, &instances[..1])
-
-                //  .update_instances(&[(cube_model, &instances[1..]),(ball_model, &instances[..1])]); // , (ball_model, &instances[..1])
+                    //.update_instances(&[(cube_model, &instances[..])]); // , (ball_model, &instances[..1])
+                    //.update_instances(&[(ball_model, &instances[..])]); // , (ball_model, &instances[..1])
+                    .update_instances(&[
+                        (cube_model, &instances[1..]),
+                        (ball_model, &instances[..1]),
+                    ]);
+                // , (ball_model, &instances[..1])
                 context
                     .renderer
                     .render([0.229, 0.507, 0.921, 1.0])
