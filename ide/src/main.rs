@@ -152,7 +152,7 @@ fn overlap(a_min: f32, a_max: f32, b_min: f32, b_max: f32) -> f32 {
     } else if b_max < a_min {
         0.0
     } else {
-        b_max - a_min
+        a_min - b_max
     }
 }
 
@@ -175,6 +175,9 @@ fn get_min_max_vert(normal: Vec3, verts: &Vec<Vec3>) -> (f32, f32) {
 /// SAT algo on 3d
 /// https://hitokageproduction.com/article/11
 /// https://github.com/irixapps/Unity-Separating-Axis-SAT/
+/// https://youtu.be/7Ik2vowGcU0
+/// The seperated axis theorem tldr:
+/// If 2 shapes colide then all the shadows along all the axis must overlap
 #[must_use]
 fn proj_has_overlap(axis: &Vec<Vec3>, a_verts: &Vec<Vec3>, b_verts: &Vec<Vec3>) -> bool {
     for normal in axis {
@@ -183,7 +186,7 @@ fn proj_has_overlap(axis: &Vec<Vec3>, a_verts: &Vec<Vec3>, b_verts: &Vec<Vec3>) 
         }
         let (a_min, a_max) = get_min_max_vert(*normal, a_verts);
         let (b_min, b_max) = get_min_max_vert(*normal, b_verts);
-        let overlap = overlap(a_min, a_max, b_min, b_max);
+        let overlap = overlap(a_min, a_max, b_min, b_max).abs();
 
         if overlap <= 0.0 {
             return false;
@@ -199,9 +202,9 @@ fn proj_has_overlap_extra(
     axis: &Vec<Vec3>,
     a_verts: &Vec<Vec3>,
     b_verts: &Vec<Vec3>,
-) -> Option<(f32, Vec<(Vec3, f32)>)> {
+) -> Option<(f32, Vec3)> {
     let mut min_overlap = f32::INFINITY;
-    let mut penetration: Vec<(Vec3, f32)> = Vec::new();
+    let mut penetration = Vec3::zero();
     for normal in axis {
         if *normal == Vec3::zero() {
             return Some((min_overlap, penetration));
@@ -209,15 +212,14 @@ fn proj_has_overlap_extra(
         let (a_min, a_max) = get_min_max_vert(*normal, a_verts);
         let (b_min, b_max) = get_min_max_vert(*normal, b_verts);
         let overlap = overlap(a_min, a_max, b_min, b_max);
-
-        if overlap <= 0.0 {
+        let abs_overlap = overlap.abs();
+        if abs_overlap <= 0.0 {
             return None;
         }
 
-        if overlap < min_overlap {
+        if abs_overlap < min_overlap.abs() {
             min_overlap = overlap;
-
-            penetration.push((*normal, overlap));
+            penetration = *normal;
         }
     }
 
@@ -370,29 +372,24 @@ pub fn collide_box_vs_box(
     t2: &mut Transform,
     w2: Vec3, // world position
 ) {
-    todo!("collide_box_vs_box");
     let (axis, a_verts, b_verts) = get_axis_and_verts(&w1, &w2, t1, t2, c1, c2);
-    let mut all: Vec<(Vec3, f32)> = Vec::new();
+    let mut min_overlap: Option<(f32, Vec3)> = None;
 
-    if let Some((_min_overlap, mut list)) = proj_has_overlap_extra(&axis, &a_verts, &b_verts) {
-        all.append(&mut list)
+    min_overlap = proj_has_overlap_extra(&axis, &b_verts, &a_verts);
+    if min_overlap.is_none() {
+        min_overlap = proj_has_overlap_extra(&axis, &a_verts, &b_verts);
     }
-    if let Some((_min_overlap, mut list)) = proj_has_overlap_extra(&axis, &b_verts, &a_verts) {
-        all.append(&mut list)
-    }
+    debug_assert!(min_overlap.is_some());
 
-    for (normal, distance) in all {
-        pop_coliders(normal * distance, t1, t2, &rb1, &rb2);
-        break;
-        /*standard_collision(
-            normal,
-            rb1,
-            rb2,
-            point_of_contact - w1,
-            point_of_contact - w2,
-            re1,
-            re2,
-        );*/
+    if let Some((overlap, overlap_axis)) = min_overlap {
+        let re1 = c1.material.restfullness;
+        let re2 = c2.material.restfullness;
+
+        // TODO MAKE BETTER
+        let normal = overlap_axis.normalized(); // this is not perfect
+        pop_coliders(normal * overlap, t1, t2, &rb1, &rb2);
+        standard_collision(normal, rb1, rb2, normal * overlap, -normal * overlap, re1, re2);
+        // t1.position = w2 + _axis.normalized() * overlap;
     }
 }
 
@@ -1012,7 +1009,7 @@ fn main() {
     //    Collider::SphereColider(SphereColider::new(1.0, physics_material)),
     //);
 
-    let obj1 = PhysicsObject::new(
+    /*let obj1 = PhysicsObject::new(
         RidgidBody::new(
             Vec3::new(10.0, 1.00, 0.000),
             Vec3::zero(),
@@ -1020,7 +1017,7 @@ fn main() {
             10.0,
         ),
         Collider::SphereColider(SphereColider::new(1.0, physics_material)),
-    );
+    );*/
     /*let obj2 = PhysicsObject::new(
         RidgidBody::new(
             Vec3::new(0.0, 0.0, 0.0),
@@ -1040,20 +1037,20 @@ fn main() {
         Collider::BoxColider(BoxColider::new(Vec3::new(1.0, 1.0, 1.0), physics_material)),
     );*/
 
-    /*let obj1 = PhysicsObject::new(
+    let obj1 = PhysicsObject::new(
         RidgidBody::new(
-            Vec3::new(0.5, 0.00, 0.000),
+            Vec3::new(5.0, 0.00, 0.000),
             Vec3::zero(),
-            Vec3::new(5.0, 5.0, 5.0), // -1.6
+            Vec3::new(0.0,0.0,0.0), // -1.6
             10.0,
         ),
         Collider::BoxColider(BoxColider::new(Vec3::new(1.0, 1.0, 1.0), physics_material)),
-    );*/
+    );
     let obj2 = PhysicsObject::new(
         RidgidBody::new(
             Vec3::new(0.0, 0.0, 0.0),
             Vec3::zero(),
-            Vec3::new(1.0, 3.0, -3.0), // -1.6
+            Vec3::new(0.0,0.0,3.0), // -1.6
             5.0,
         ),
         Collider::BoxColider(BoxColider::new(Vec3::new(1.0, 1.0, 1.0), physics_material)),
@@ -1169,13 +1166,13 @@ fn main() {
 
                 context
                     .renderer
-                    //.update_instances(&[(cube_model, &instances[..])]); // , (ball_model, &instances[..1])
-                    //.update_instances(&[(ball_model, &instances[..])]); // , (ball_model, &instances[..1])
-                    .update_instances(&[
-                        (cube_model, &instances[1..]),
-                        (ball_model, &instances[..1]),
-                    ]);
-                // , (ball_model, &instances[..1])
+                    .update_instances(&[(cube_model, &instances[..])]); // , (ball_model, &instances[..1])
+                                                                        //.update_instances(&[(ball_model, &instances[..])]); // , (ball_model, &instances[..1])
+                                                                        // .update_instances(&[
+                                                                        //     (cube_model, &instances[1..]),
+                                                                        //     (ball_model, &instances[..1]),
+                                                                        // ]);
+                                                                        // , (ball_model, &instances[..1])
                 context
                     .renderer
                     .render([0.229, 0.507, 0.921, 1.0])
