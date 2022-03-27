@@ -1,5 +1,6 @@
 use camera_controller::CameraController;
 use game_engine::{renderer::Transform, Context};
+use rand::Rng;
 
 use winit::{
     dpi::LogicalPosition,
@@ -75,7 +76,9 @@ fn squared(v: f32) -> f32 {
 fn clamp(v: Vec3, min: Vec3, max: Vec3) -> Vec3 {
     let mut ret = Vec3::zero();
     for i in 0..3 {
-        ret[i] = f32::clamp(v[i], min[i], max[i])
+        let min = min[i];
+        let max = max[i];
+        ret[i] = f32::clamp(v[i], min.min(max), min.max(max))
     }
     ret
 }
@@ -140,8 +143,8 @@ fn get_vertex(w: &Vec3, t: &Transform, c: &BoxColider) -> Vec<Vec3> {
 }
 
 fn overlap(a_min: f32, a_max: f32, b_min: f32, b_max: f32) -> f32 {
-    debug_assert!(a_min <= a_max);
-    debug_assert!(b_min <= b_max);
+    debug_assert!(a_min <= a_max, "a min < max");
+    debug_assert!(b_min <= b_max, "b min < max");
 
     if a_min < b_min {
         if a_max < b_min {
@@ -387,8 +390,16 @@ pub fn collide_box_vs_box(
 
         // TODO MAKE BETTER
         let normal = overlap_axis.normalized(); // this is not perfect
-        pop_coliders(normal * overlap, t1, t2, &rb1, &rb2);
-        standard_collision(normal, rb1, rb2, normal * overlap, -normal * overlap, re1, re2);
+        pop_coliders(normal * overlap * 2.0, t1, t2, &rb1, &rb2);
+        standard_collision(
+            normal,
+            rb1,
+            rb2,
+            normal * overlap,
+            -normal * overlap,
+            re1,
+            re2,
+        );
         // t1.position = w2 + _axis.normalized() * overlap;
     }
 }
@@ -431,6 +442,13 @@ pub fn collide_sphere_vs_box(
     );
 }
 
+macro_rules! assert_delta {
+    ($x:expr, $y:expr, $d:expr) => {
+        if !($x - $y < $d || $y - $x < $d) {
+            panic!();
+        }
+    };
+}
 fn standard_collision(
     normal: Vec3,
     rb1: &mut RidgidBody,
@@ -442,7 +460,10 @@ fn standard_collision(
     _re1: f32,
     _re2: f32,
 ) {
-    debug_assert!(normal.is_normalized(), "Normal is not normalized");
+    //assert_delta!(normal.magnitude(),1.0, 0.1f32);
+    if !is_finite(&normal) {
+        return;
+    }
 
     let v1 = rb1.velocity;
     let v2 = rb2.velocity;
@@ -457,6 +478,16 @@ fn standard_collision(
     // refrence and think of the two objects are coliding head on
     let real_v1 = proj(normal, v1);
     let real_v2 = proj(normal, v2);
+
+    let bouncy_ness = 0.6;
+    let friction = 0.7;
+    if rb1.is_static {
+        rb2.velocity = (v2 - (1.0 + bouncy_ness) * real_v2) * friction;
+        return;
+    } else if rb2.is_static {
+        rb1.velocity = (v1 - (1.0 + bouncy_ness) * real_v1) * friction;
+        return;
+    }
 
     // using a perfectly elastic collision on each axis
     let (new_v1, new_v2) = standard_elastic_collision_3(m1, &real_v1, m2, &real_v2);
@@ -477,13 +508,13 @@ pub fn pop_coliders(
     rb1: &RidgidBody,
     rb2: &RidgidBody,
 ) {
-    debug_assert!(normal_distance.magnitude_squared() > 0.0);
+    //debug_assert!(normal_distance.magnitude_squared() > 0.0); //TODO
     // cant move static coliders
     if rb1.is_static && rb2.is_static {
         return;
     }
 
-    const POP_SIZE: f32 = 1.10;
+    const POP_SIZE: f32 = 1.1;
     let pop = normal_distance * POP_SIZE;
     if rb1.is_static {
         t2.position -= pop;
@@ -585,14 +616,6 @@ impl BoxColider {
             Vec3::new(0.0, 0.0, dir.z / z)
         }
     }
-}
-
-macro_rules! assert_delta {
-    ($x:expr, $y:expr, $d:expr) => {
-        if !($x - $y < $d || $y - $x < $d) {
-            panic!();
-        }
-    };
 }
 
 #[test]
@@ -805,8 +828,7 @@ fn collide(
     for c1 in cc1 {
         for c2 in cc2 {
             if is_colliding(c1, t1, c2, t2) {
-                println!("Colliding!");
-
+                //println!("Colliding!");
                 has_colided = true;
 
                 solve_colliding(c1, rb1, t1, c2, rb2, t2);
@@ -879,6 +901,10 @@ impl RidgidBody {
     }
 
     fn step(&mut self, dt: f32, transform: &mut Transform) {
+        if self.is_static {
+            return;
+        }
+
         // apply acceleration
         self.velocity += self.acceleration * dt;
         self.angular_velocity += self.torque * dt;
@@ -901,13 +927,14 @@ fn update(
     transforms: &mut Vec<Transform>,
     phx_objects: &mut Vec<PhysicsObject>,
 ) {
-    let real_dt = dt * 0.3;
+
+    let real_dt = dt;
     let phx_length = phx_objects.len();
     for i in 0..phx_length {
         let (phx_first, phx_last) = phx_objects.split_at_mut(i + 1);
-        if phx_first[i].rb.is_static || !phx_first[i].rb.is_active {
-            continue; // we dont care about non active or static objects
-        }
+        //if phx_first[i].rb.is_static || !phx_first[i].rb.is_active {
+        //    continue; // we dont care about non active or static objects
+        //}
 
         let (trans_first, trans_last) = transforms.split_at_mut(i + 1);
 
@@ -964,107 +991,88 @@ fn main() {
         //Vec3::new(-0.040865257, 2.8307953, 0.0),
     );
 
-    let mut instances = vec![
-        Transform {
-            position: Vec3::new(0.0, 0.0, 0.0),
-            rotation: Quaternion::identity(),
-            scale: Vec3::new(1.0, 1.0, 1.0),
-        },
-        Transform {
-            position: Vec3::new(5.0, 0.0, 0.0),
-            rotation: Quaternion::identity(),
-            scale: Vec3::new(1.0, 4.0, 1.0),
-        },
-    ];
+    let mut instances = vec![Transform {
+        position: Vec3::new(0.0, 0.0, 0.0),
+        rotation: Quaternion::identity(),
+        scale: Vec3::new(10.0, 1.0, 10.0),
+    }];
+    let cubes = 15;
+    let spheres = 15;
+    let mut rng = rand::thread_rng();
 
-    /*let mut instances = vec![
-        Transform {
-            position: Vec3::new(0.0, 0.0, 0.0),
+    for _ in 0..(cubes + spheres) {
+        let scale = rng.gen_range(1.0..1.5);
+        instances.push(Transform {
+            position: Vec3::new(
+                rng.gen_range(-10.0..10.0),
+                rng.gen_range(1.0..20.0),
+                rng.gen_range(-10.0..10.0),
+            ),
             rotation: Quaternion::identity(),
-            scale: Vec3::new(1.0, 1.0, 1.0),
-        },
-        Transform {
-            position: Vec3::new(5.1, 0.0, 0.0),
-            rotation: Quaternion::identity(),
-            scale: Vec3::new(1.0, 3.0, 1.0),
-        },
-    ];*/
-
+            scale: Vec3::new(scale, scale, scale),
+        })
+    }
     let physics_material = PhysicsMaterial {
         friction: 1.0,
         restfullness: 1.0,
     };
 
-    /*let obj1 = PhysicsObject::new(
-        RidgidBody::new(
-            Vec3::new(0.5, 0.00, 0.000),
-            Vec3::zero(),
-            Vec3::zero(),
-            10.0,
-        ),
-        Collider::SphereColider(SphereColider::new(1.0, physics_material)),
-    );*/
-    //let obj2 = PhysicsObject::new(
-    //    RidgidBody::new(Vec3::new(0.0, 0.01, 0.0), Vec3::zero(), 5.0),
-    //    Collider::SphereColider(SphereColider::new(1.0, physics_material)),
-    //);
+    let gravity = Vec3::new(0.0, -9.82, 0.0);
 
-    /*let obj1 = PhysicsObject::new(
-        RidgidBody::new(
-            Vec3::new(10.0, 1.00, 0.000),
-            Vec3::zero(),
-            Vec3::new(5.0, 5.0, 5.0), // -1.6
-            10.0,
-        ),
-        Collider::SphereColider(SphereColider::new(1.0, physics_material)),
-    );*/
-    /*let obj2 = PhysicsObject::new(
-        RidgidBody::new(
-            Vec3::new(0.0, 0.0, 0.0),
-            Vec3::zero(),
-            Vec3::new(1.0, 3.0, -3.0), // -1.6
-            5.0,
-        ),
-        Collider::SphereColider(SphereColider::new(1.0, physics_material)),
-    );*/
-    /*let obj2 = PhysicsObject::new(
-        RidgidBody::new(
-            Vec3::new(0.0, 0.0, 0.0),
-            Vec3::zero(),
-            Vec3::new(0.0, 0.0, 1.0), // -1.6
-            50.0,
-        ),
-        Collider::BoxColider(BoxColider::new(Vec3::new(1.0, 1.0, 1.0), physics_material)),
-    );*/
-
-    let obj1 = PhysicsObject::new(
+    let mut obj1 = PhysicsObject::new(
         RidgidBody::new(
             Vec3::new(5.0, 0.00, 0.000),
             Vec3::zero(),
-            Vec3::new(0.0,0.0,0.0), // -1.6
+            Vec3::new(0.0, 0.0, 0.0), // -1.6
             10.0,
         ),
         Collider::BoxColider(BoxColider::new(Vec3::new(1.0, 1.0, 1.0), physics_material)),
     );
-    let obj2 = PhysicsObject::new(
-        RidgidBody::new(
-            Vec3::new(0.0, 0.0, 0.0),
-            Vec3::zero(),
-            Vec3::new(0.0,0.0,3.0), // -1.6
-            5.0,
-        ),
-        Collider::BoxColider(BoxColider::new(Vec3::new(1.0, 1.0, 1.0), physics_material)),
-    );
-    /*let obj3 = PhysicsObject::new(
-        RidgidBody::new(Vec3::new(0.0, 0.0, 0.0), Vec3::zero(), 5.0),
-        Collider::SphereColider(SphereColider::new(1.0, physics_material)),
-    );
-    let obj4 = PhysicsObject::new(
-        RidgidBody::new(Vec3::new(0.0, 0.0, 0.0), Vec3::zero(), 5.0),
-        Collider::SphereColider(SphereColider::new(1.0, physics_material)),
-    );*/
+    obj1.rb.is_static = true;
 
-    let mut physics_objects: Vec<PhysicsObject> = vec![obj1, obj2]; //obj3, obj4 vec![obj1.clone(); 16];
+    let mut physics_objects: Vec<PhysicsObject> = vec![obj1]; //obj3, obj4 vec![obj1.clone(); 16];
+    let vel = 1.0;
+    let angle = 0.0001;
+
+    for _ in 0..cubes {
+        physics_objects.push(PhysicsObject::new(
+            RidgidBody::new(
+                Vec3::new(
+                    rng.gen_range(-vel..vel),
+                    rng.gen_range(-vel..vel),
+                    rng.gen_range(-vel..vel),
+                ),
+                gravity,
+                Vec3::new(
+                    rng.gen_range(-angle..angle),
+                    rng.gen_range(-angle..angle),
+                    rng.gen_range(-angle..angle),
+                ),
+                10.0,
+            ),
+            Collider::BoxColider(BoxColider::new(Vec3::new(1.0, 1.0, 1.0), physics_material)),
+        ));
+    }
+
+    for _ in 0..spheres {
+        physics_objects.push(PhysicsObject::new(
+            RidgidBody::new(
+                Vec3::new(
+                    rng.gen_range(-vel..vel),
+                    rng.gen_range(-vel..vel),
+                    rng.gen_range(-vel..vel),
+                ),
+                gravity,
+                Vec3::new(
+                    rng.gen_range(-angle..angle),
+                    rng.gen_range(-angle..angle),
+                    rng.gen_range(-angle..angle),
+                ),
+                10.0,
+            ),
+            Collider::SphereColider(SphereColider::new(1.0, physics_material)),
+        ));
+    }
 
     let mut allow_camera_update = true;
     let mut last_frame = std::time::Instant::now();
@@ -1147,14 +1155,19 @@ fn main() {
             Event::RedrawRequested(_) => {
                 let dt = last_frame.elapsed().as_secs_f32();
                 let _frame_rate = 1.0 / dt; // TODO render on screen
+                last_frame = std::time::Instant::now();
 
                 if allow_camera_update {
                     camera_controller.update_camera(dt, &mut context.renderer.camera);
                 }
                 if !pause_physics || !can_pause_phx {
-                    update(&mut pause_physics, dt, &mut instances, &mut physics_objects);
+                    update(
+                        &mut pause_physics,
+                        dt,
+                        &mut instances,
+                        &mut physics_objects,
+                    );
                 }
-                last_frame = std::time::Instant::now();
 
                 context.renderer.update_camera();
 
@@ -1166,13 +1179,13 @@ fn main() {
 
                 context
                     .renderer
-                    .update_instances(&[(cube_model, &instances[..])]); // , (ball_model, &instances[..1])
-                                                                        //.update_instances(&[(ball_model, &instances[..])]); // , (ball_model, &instances[..1])
-                                                                        // .update_instances(&[
-                                                                        //     (cube_model, &instances[1..]),
-                                                                        //     (ball_model, &instances[..1]),
-                                                                        // ]);
-                                                                        // , (ball_model, &instances[..1])
+                    //.update_instances(&[(cube_model, &instances[..])]); // , (ball_model, &instances[..1])
+                    //.update_instances(&[(ball_model, &instances[..])]); // , (ball_model, &instances[..1])
+                    .update_instances(&[
+                        (cube_model, &instances[..(cubes + 1)]),
+                        (ball_model, &instances[(cubes + 1)..]),
+                    ]);
+                // , (ball_model, &instances[..1])
                 context
                     .renderer
                     .render([0.229, 0.507, 0.921, 1.0])
