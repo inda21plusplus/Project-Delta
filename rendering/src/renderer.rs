@@ -9,7 +9,7 @@ use crate::model::ModelIndex;
 use crate::model::ModelManager;
 use crate::model::{self, DrawModel, Vertex};
 use crate::{camera, texture, Camera, RenderingError};
-use common::{Mat4, Transform, Vec3, Vec4};
+use common::{Mat4, Transform, Vec2, Vec3, Vec4};
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
@@ -72,6 +72,9 @@ pub struct Renderer {
     queue: wgpu::Queue,
     config: wgpu::SurfaceConfiguration,
     size: (u32, u32),
+    line_render_pipeline: wgpu::RenderPipeline,
+    line_vertex_buffer: wgpu::Buffer,
+    n_lines: u32,
     render_pipeline: wgpu::RenderPipeline,
     model_manager: ModelManager,
     texture_bind_group_layout: wgpu::BindGroupLayout,
@@ -80,6 +83,80 @@ pub struct Renderer {
     camera_bind_group: wgpu::BindGroup,
     depth_texture: texture::Texture,
     clear_color: [f64; 3],
+}
+
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct Line {
+    pub start: Vec3,
+    pub end: Vec3,
+    pub color: Vec3,
+}
+
+impl Line {
+    fn into_raw(self) -> RawLine {
+        let Line {
+            start:
+                Vec3 {
+                    x: s_x,
+                    y: s_y,
+                    z: s_z,
+                },
+            end:
+                Vec3 {
+                    x: e_x,
+                    y: e_y,
+                    z: e_z,
+                },
+            color: Vec3 { x: r, y: g, z: b },
+        } = self;
+        let color = [r, g, b];
+        RawLine {
+            start: RawLineVertex {
+                pos: [s_x, s_y, s_z],
+                color,
+            },
+            end: RawLineVertex {
+                pos: [e_x, e_y, e_z],
+                color,
+            },
+        }
+    }
+}
+
+#[repr(C)]
+#[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+struct RawLine {
+    start: RawLineVertex,
+    end: RawLineVertex,
+}
+
+#[repr(C)]
+#[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+struct RawLineVertex {
+    pub pos: [f32; 3],
+    pub color: [f32; 3],
+}
+
+impl RawLineVertex {
+    fn desc<'a>() -> wgpu::VertexBufferLayout<'a> {
+        wgpu::VertexBufferLayout {
+            array_stride: mem::size_of::<RawLineVertex>() as wgpu::BufferAddress,
+            step_mode: wgpu::VertexStepMode::Vertex,
+            attributes: &[
+                wgpu::VertexAttribute {
+                    offset: 0,
+                    shader_location: 0,
+                    format: wgpu::VertexFormat::Float32x3,
+                },
+                wgpu::VertexAttribute {
+                    offset: mem::size_of::<[f32; 3]>() as wgpu::BufferAddress,
+                    shader_location: 1,
+                    format: wgpu::VertexFormat::Float32x3,
+                },
+            ],
+        }
+    }
 }
 
 impl Renderer {
@@ -191,6 +268,11 @@ impl Renderer {
             source: wgpu::ShaderSource::Wgsl(include_str!("../shader.wgsl").into()),
         });
 
+        let line_shader = device.create_shader_module(&wgpu::ShaderModuleDescriptor {
+            label: Some("line_shader.wgsl"),
+            source: wgpu::ShaderSource::Wgsl(include_str!("../line_shader.wgsl").into()),
+        });
+
         let depth_texture = texture::Texture::new_depth_texture(&device, &config);
 
         let render_pipeline_layout =
@@ -199,6 +281,63 @@ impl Renderer {
                 bind_group_layouts: &[&texture_bind_group_layout, &camera_bind_group_layout],
                 push_constant_ranges: &[],
             });
+
+        let n_lines = 16;
+        let line_vertex_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Line Buffer"),
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+            size: n_lines as wgpu::BufferAddress * mem::size_of::<RawLine>() as wgpu::BufferAddress,
+        });
+        let line_render_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("Line Render Pipeline Layout"),
+                bind_group_layouts: &[&camera_bind_group_layout],
+                push_constant_ranges: &[],
+            });
+        let line_render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("Line Render Pipeline"),
+            layout: Some(&line_render_pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &line_shader,
+                entry_point: "vs_main",
+                buffers: &[RawLineVertex::desc()],
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &line_shader,
+                entry_point: "fs_main",
+                targets: &[wgpu::ColorTargetState {
+                    format: config.format,
+                    blend: Some(wgpu::BlendState {
+                        color: wgpu::BlendComponent::REPLACE,
+                        alpha: wgpu::BlendComponent::OVER,
+                    }),
+                    write_mask: wgpu::ColorWrites::ALL,
+                }],
+            }),
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::LineList,
+                strip_index_format: None,
+                front_face: wgpu::FrontFace::Ccw,
+                cull_mode: Some(wgpu::Face::Back),
+                polygon_mode: wgpu::PolygonMode::Fill,
+                unclipped_depth: false,
+                conservative: false,
+            },
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: texture::Texture::DEPTH_FORMAT,
+                depth_write_enabled: false,
+                depth_compare: wgpu::CompareFunction::Always,
+                stencil: wgpu::StencilState::default(),
+                bias: wgpu::DepthBiasState::default(),
+            }),
+            multisample: wgpu::MultisampleState {
+                count: 1,
+                mask: !0,
+                alpha_to_coverage_enabled: false,
+            },
+            multiview: None,
+        });
 
         let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("Render Pipeline"),
@@ -256,6 +395,9 @@ impl Renderer {
             config,
             size,
             render_pipeline,
+            line_render_pipeline,
+            line_vertex_buffer,
+            n_lines,
             model_manager: ModelManager::new(),
             texture_bind_group_layout,
             camera,
@@ -310,7 +452,7 @@ impl Renderer {
         }
     }
 
-    pub fn render(&mut self) -> Result<(), RenderingError> {
+    pub fn render(&mut self, lines: &[Line]) -> Result<(), RenderingError> {
         let output = self.surface.get_current_texture()?;
         let view = output
             .texture
@@ -321,6 +463,29 @@ impl Renderer {
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("Render Encoder"),
             });
+
+        if lines.len() > self.n_lines as usize {
+            self.n_lines = lines.len() as u32;
+            self.line_vertex_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
+                label: Some("Line Buffer"),
+                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+                mapped_at_creation: false,
+                size: self.n_lines as wgpu::BufferAddress
+                    * mem::size_of::<RawLine>() as wgpu::BufferAddress,
+            });
+        }
+
+        self.queue.write_buffer(
+            &self.line_vertex_buffer,
+            0,
+            bytemuck::cast_slice(
+                &lines
+                    .iter()
+                    .cloned()
+                    .map(Line::into_raw)
+                    .collect::<Vec<_>>(),
+            ),
+        );
 
         {
             let [r, g, b] = self.clear_color;
@@ -354,6 +519,11 @@ impl Renderer {
                     &self.camera_bind_group,
                 );
             }
+
+            render_pass.set_pipeline(&self.line_render_pipeline);
+            render_pass.set_vertex_buffer(0, self.line_vertex_buffer.slice(..));
+            render_pass.set_bind_group(0, &self.camera_bind_group, &[]);
+            render_pass.draw(0..lines.len() as u32, 0..1);
         }
 
         self.queue.submit(iter::once(encoder.finish()));

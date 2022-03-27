@@ -2,7 +2,7 @@ use std::{ops::ControlFlow, time::Instant};
 
 use common::{Quaternion, Transform, Vec2, Vec3};
 use game_engine::{
-    rendering::{model::ModelIndex, Renderer},
+    rendering::{model::ModelIndex, Line, Renderer},
     Context,
 };
 use winit::{
@@ -138,9 +138,17 @@ impl Editor {
             .update_camera(dt, &mut self.context.renderer.camera);
         self.context.renderer.update_camera();
 
+        let mut lines = Vec::new();
+        let start = self.scene.transforms[0].position;
+        let color = Vec3::new(1.0, 0.0, 0.0);
+
+        for &Transform { position: end, .. } in &self.scene.transforms[1..] {
+            lines.push(Line { start, end, color });
+        }
+
         self.context
             .renderer
-            .render()
+            .render(&lines)
             .unwrap_or_else(|err| log::error!("Failed to render: {}", err))
     }
 }
