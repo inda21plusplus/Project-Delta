@@ -1,19 +1,17 @@
 use crate::texture;
 use ahash::AHashMap;
 use egui::{
-    emath::Rect,
     epaint::{ImageDelta, Mesh, Vertex},
     TextureId,
 };
 use wgpu;
-use wgpu::util::DeviceExt;
 
 use std::mem;
 
 struct Texture {
     tex: wgpu::Texture,
-    sampler: wgpu::Sampler,
-    view: wgpu::TextureView,
+    _sampler: wgpu::Sampler,
+    _view: wgpu::TextureView,
     bind_group: wgpu::BindGroup,
 }
 
@@ -50,7 +48,6 @@ struct RawVertex {
 }
 
 pub struct Painter {
-    max_texture_side: usize,
     textures: AHashMap<egui::TextureId, Texture>,
     pipeline: wgpu::RenderPipeline,
     vertex_buffer: wgpu::Buffer,
@@ -196,7 +193,6 @@ impl Painter {
         });
 
         Painter {
-            max_texture_side: 0,
             textures: AHashMap::new(),
             pipeline,
             vertex_buffer,
@@ -214,7 +210,6 @@ impl Painter {
         queue: &wgpu::Queue,
         pass: &mut wgpu::RenderPass<'a>,
         meshes: Vec<egui::ClippedMesh>,
-        config: &wgpu::SurfaceConfiguration,
         scale_factor: f32,
         physical_height: u32,
         physical_width: u32,
@@ -306,19 +301,6 @@ impl Painter {
         }
     }
 
-    pub fn handle_output(
-        &mut self,
-        context: &egui::Context,
-        output: egui::FullOutput,
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
-        target: &wgpu::TextureView,
-        config: &wgpu::SurfaceConfiguration,
-    ) {
-        self.update_textures(device, queue, output.textures_delta.set);
-        let meshes = context.tessellate(output.shapes);
-    }
-
     fn make_tex(
         &mut self,
         id: egui::TextureId,
@@ -366,8 +348,8 @@ impl Painter {
 
         Texture {
             tex: texture,
-            view,
-            sampler,
+            _view: view,
+            _sampler: sampler,
             bind_group,
         }
     }

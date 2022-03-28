@@ -10,7 +10,7 @@ use crate::model::ModelIndex;
 use crate::model::ModelManager;
 use crate::model::{self, DrawModel, Vertex};
 use crate::{camera, texture, Camera, RenderingError};
-use common::{Mat4, Transform, Vec2, Vec3, Vec4};
+use common::{Mat4, Transform, Vec3, Vec4};
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
@@ -543,7 +543,6 @@ impl Renderer {
                 &self.queue,
                 &mut render_pass,
                 meshes,
-                &self.config,
                 1.0,
                 self.config.height,
                 self.config.width,
