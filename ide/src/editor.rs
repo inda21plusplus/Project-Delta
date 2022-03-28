@@ -1,5 +1,8 @@
 use std::{ops::ControlFlow, time::Instant};
 
+use egui::Context as EguiContext;
+use egui_winit::State as EguiWinitState;
+
 use common::{Quaternion, Transform, Vec2, Vec3};
 use game_engine::{
     rendering::{model::ModelIndex, Line, Renderer},
@@ -17,6 +20,8 @@ use crate::{
 
 pub struct Editor {
     window: Window,
+    state: EguiWinitState,
+    egui_context: EguiContext,
     context: Context,
     camera_controller: CameraController,
     scene: ExampleScene,
@@ -56,10 +61,15 @@ impl Editor {
         );
 
         let scene = ExampleScene::new(&mut context)?;
+        let state = EguiWinitState::new(4096, &window.winit_window());
+        let egui_context = EguiContext::default();
+
         Ok((
             event_loop,
             Self {
                 window,
+                state,
+                egui_context,
                 context,
                 camera_controller,
                 scene,
@@ -88,6 +98,7 @@ impl Editor {
             }
             Event::WindowEvent { event, .. } => {
                 self.camera_controller.process_window_events(&event);
+                self.state.on_event(&self.egui_context, &event);
                 if let WindowEvent::KeyboardInput {
                     input:
                         KeyboardInput {
@@ -146,9 +157,19 @@ impl Editor {
             lines.push(Line { start, end, color });
         }
 
+        let raw_input = self.state.take_egui_input(&self.window.winit_window());
+        let full_output = self.egui_context.run(raw_input, |ctx| {
+            egui::Window::new("my_area").auto_sized().show(&ctx, |ui| {
+                ui.label("Hello world!");
+                if ui.button("Click me").clicked() {
+                    ui.label("lmao");
+                }
+            });
+        });
+
         self.context
             .renderer
-            .render(&lines)
+            .render(&lines, &self.egui_context, full_output)
             .unwrap_or_else(|err| log::error!("Failed to render: {}", err))
     }
 }

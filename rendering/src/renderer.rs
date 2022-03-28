@@ -1,6 +1,7 @@
 use std::iter;
 use std::mem;
 
+use egui;
 use pollster::FutureExt;
 use raw_window_handle::HasRawWindowHandle;
 use wgpu::util::DeviceExt;
@@ -67,6 +68,7 @@ impl RawTranslationMatrix {
 pub struct Renderer {
     pub camera: Camera,
 
+    painter: crate::ui::Painter,
     surface: wgpu::Surface,
     device: wgpu::Device,
     queue: wgpu::Queue,
@@ -218,7 +220,7 @@ impl Renderer {
                         count: None,
                     },
                 ],
-                label: Some("texture_bind_group_layout"),
+                label: Some("texture bind group layout"),
             });
 
         let camera = Camera {
@@ -388,6 +390,8 @@ impl Renderer {
             multiview: None,
         });
 
+        let painter = crate::ui::Painter::new(&device, &queue, &config);
+
         Ok(Self {
             surface,
             device,
@@ -406,6 +410,7 @@ impl Renderer {
             camera_uniform,
             depth_texture,
             clear_color,
+            painter,
         })
     }
 
@@ -452,7 +457,12 @@ impl Renderer {
         }
     }
 
-    pub fn render(&mut self, lines: &[Line]) -> Result<(), RenderingError> {
+    pub fn render(
+        &mut self,
+        lines: &[Line],
+        ui: &egui::Context,
+        egui_output: egui::FullOutput,
+    ) -> Result<(), RenderingError> {
         let output = self.surface.get_current_texture()?;
         let view = output
             .texture
@@ -524,7 +534,23 @@ impl Renderer {
             render_pass.set_vertex_buffer(0, self.line_vertex_buffer.slice(..));
             render_pass.set_bind_group(0, &self.camera_bind_group, &[]);
             render_pass.draw(0..lines.len() as u32, 0..1);
+
+            self.painter
+                .update_textures(&self.device, &self.queue, egui_output.textures_delta.set);
+            let meshes = ui.tessellate(egui_output.shapes);
+            self.painter.paint(
+                &self.device,
+                &self.queue,
+                &mut render_pass,
+                meshes,
+                &self.config,
+                1.0,
+                self.config.height,
+                self.config.width,
+            );
         }
+
+        self.painter.free_textures(egui_output.textures_delta.free);
 
         self.queue.submit(iter::once(encoder.finish()));
         output.present();
