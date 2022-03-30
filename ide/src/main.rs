@@ -26,6 +26,24 @@ const NUM_INSTANCES_PER_ROW: u32 = 4;
 type Vec3 = vek::vec::repr_c::Vec3<f32>;
 type Quaternion = vek::quaternion::repr_c::Quaternion<f32>;
 
+#[cfg(debug_assertions)]
+macro_rules! pause {
+    () => {
+        pause_and_wait_for_input()
+    };
+}
+
+macro_rules! debug_assert_finite {
+    ($x:expr) => {
+        debug_assert!(is_finite(&$x), "{} = {}", stringify!($x), $x)
+    };
+}
+
+#[cfg(not(debug_assertions))]
+macro_rules! pause {
+    () => {};
+}
+
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub struct PhysicsMaterial {
     //static_friction: f32,
@@ -74,11 +92,15 @@ fn squared(v: f32) -> f32 {
 
 #[must_use]
 fn clamp(v: Vec3, min: Vec3, max: Vec3) -> Vec3 {
+    debug_assert_finite!(min);
+    debug_assert_finite!(max);
+
     let mut ret = Vec3::zero();
     for i in 0..3 {
         let min = min[i];
         let max = max[i];
-        ret[i] = f32::clamp(v[i], min.min(max), min.max(max))
+
+        ret[i] = f32::clamp(v[i], min, max)
     }
     ret
 }
@@ -90,6 +112,10 @@ fn get_closest_point(
     cube_scale: Vec3,
     cube_rotation: Quaternion,
 ) -> Vec3 {
+    debug_assert_finite!(other_loc);
+    debug_assert_finite!(cube_loc);
+    debug_assert_finite!(cube_scale);
+
     // this rotates the other so the cube is aligned with the world axis (aka Quaterion Identity)
     let other_loc = cube_rotation.inverse() * (other_loc - cube_loc) + cube_loc;
 
@@ -112,18 +138,6 @@ fn get_axis(t: &Transform, c: &BoxColider) -> (Vec3, Vec3, Vec3) {
         rotation * Vec3::unit_y(),
         rotation * Vec3::unit_z(),
     )
-}
-
-#[cfg(debug_assertions)]
-macro_rules! pause {
-    () => {
-        pause_and_wait_for_input()
-    };
-}
-
-#[cfg(not(debug_assertions))]
-macro_rules! pause {
-    () => {};
 }
 
 fn get_vertex(w: &Vec3, t: &Transform, c: &BoxColider) -> Vec<Vec3> {
@@ -289,7 +303,7 @@ pub fn is_colliding(c1: &Collider, t1: &mut Transform, c2: &Collider, t2: &mut T
 
                 let scale = t2.scale * bc2.scale;
                 debug_assert!(scale.are_all_positive(), "Scale is negative");
-                debug_assert!(is_finite(&scale), "Scale is Nan = {}", scale);
+                debug_assert_finite!(scale);
 
                 let closest_point = get_closest_point(w1, w2, scale, t2.rotation);
                 closest_point.distance_squared(w1) < r_squared
@@ -316,6 +330,9 @@ pub fn solve_colliding(
 ) {
     let w1 = get_position(t1, c1);
     let w2 = get_position(t2, c2);
+
+    debug_assert_finite!(w1);
+    debug_assert_finite!(w2);
 
     match c1 {
         Collider::SphereColider(b1) => match c2 {
@@ -390,6 +407,7 @@ pub fn collide_box_vs_box(
 
         // TODO MAKE BETTER
         let normal = overlap_axis.normalized(); // this is not perfect
+        debug_assert_finite!(normal);
         pop_coliders(normal * overlap * 2.0, t1, t2, &rb1, &rb2);
         standard_collision(
             normal,
@@ -421,16 +439,31 @@ pub fn collide_sphere_vs_box(
     debug_assert!(r > 0.0);
 
     let scale = t2.scale * c2.scale;
-    debug_assert!(is_finite(&scale));
+    debug_assert_finite!(scale);
 
     let closest_point = get_closest_point(w1, w2, scale, t2.rotation);
+    debug_assert_finite!(closest_point);
+
     let overlap_distance = r - closest_point.distance(w1);
     debug_assert!(overlap_distance >= 0.0);
 
-    let normal = (w1 - closest_point).normalized();
+    // if objects completely overlap
+    let normal = if r <= overlap_distance {
+        if w1 == w2 {
+            Vec3::unit_y()
+        } else {
+            (w2 - w1).normalized()
+        }
+    } else {
+        (w1 - closest_point).normalized()
+    };
+
+    debug_assert_finite!(normal);
+
     let point_of_contact = closest_point;
 
     pop_coliders(normal * overlap_distance, t1, t2, &rb1, &rb2);
+
     standard_collision(
         normal,
         rb1,
@@ -460,10 +493,7 @@ fn standard_collision(
     _re1: f32,
     _re2: f32,
 ) {
-    //assert_delta!(normal.magnitude(),1.0, 0.1f32);
-    if !is_finite(&normal) {
-        return;
-    }
+    debug_assert_finite!(normal);
 
     let v1 = rb1.velocity;
     let v2 = rb2.velocity;
@@ -545,7 +575,15 @@ pub fn collide_sphere_vs_sphere(
     // pop
     let diff = w2 - w1;
     let distance_pop = diff.magnitude() - r1 - r2;
-    let normal = diff.normalized();
+
+    // just in case that w1 == w2
+    let normal = if diff == Vec3::zero() {
+        Vec3::unit_y()
+    }  else {
+        diff.normalized()
+    };
+    debug_assert_finite!(normal);
+
     pop_coliders(distance_pop * normal, t1, t2, &rb1, &rb2);
     standard_collision(normal, rb1, rb2, -normal * r1, normal * r2, re1, re2);
 }
@@ -570,20 +608,11 @@ impl BoxColider {
             direction
         );
 
-        debug_assert!(
-            direction.x.is_finite() && direction.y.is_finite() && direction.z.is_finite(),
-            "direction is not finite, {:?}",
-            direction
-        );
+        debug_assert_finite!(direction);
 
         let outside_normal = self.get_side(t, direction);
 
-        debug_assert!(
-            is_finite(&outside_normal),
-            "outside_normal is not finite, {:?} at direction = {:?}",
-            outside_normal,
-            direction,
-        );
+        debug_assert_finite!(outside_normal);
 
         let plane_point = outside_normal * t.scale;
         let inside_normal = -outside_normal;
@@ -614,120 +643,6 @@ impl BoxColider {
             Vec3::new(0.0, dir.y / y, 0.0)
         } else {
             Vec3::new(0.0, 0.0, dir.z / z)
-        }
-    }
-}
-
-#[test]
-fn get_radius_test() {
-    let t = Transform {
-        position: Vec3::new(0.0, 0.0, 0.0),
-        rotation: Quaternion::identity(),
-        scale: Vec3::new(1.0, 1.0, 1.0),
-    };
-
-    let box_c = BoxColider::new(
-        Vec3::new(1.0, 1.0, 1.0),
-        PhysicsMaterial {
-            friction: 1.0,
-            restfullness: 1.0,
-        },
-    );
-
-    assert_eq!(box_c.get_radius_dbg(&t, Vec3::new(1.0, 0.0, 0.0)), 1.0);
-
-    assert_eq!(
-        box_c.get_radius_dbg(&t, Vec3::new(100.0, 0.0, 0.0)),
-        1.0,
-        "can not take non normalized input"
-    );
-
-    assert_eq!(
-        box_c.get_radius_dbg(&t, Vec3::new(1.0, 1.0, 0.0)),
-        2.0f32.sqrt()
-    );
-
-    let max_radius = 3.0f32.sqrt();
-    let min_radius = 1.0f32.sqrt();
-
-    assert_delta!(
-        box_c.get_radius_dbg(&t, Vec3::new(1.0, 1.0, 1.0)),
-        max_radius,
-        0.0001f32
-    );
-
-    for pitch_deg in 0..360 {
-        for yaw_deg in 0..360 {
-            let pitch = pitch_deg.to_f32().unwrap().to_radians();
-            let yaw = yaw_deg.to_f32().unwrap().to_radians();
-
-            let forward = Vec3::new(
-                yaw.sin() * pitch.cos(),
-                pitch.sin(),
-                yaw.cos() * pitch.cos(),
-            );
-            let size = box_c.get_radius_dbg(&t, forward);
-
-            assert!(!size.is_nan(), "size is nan");
-            assert!(size.is_finite(), "size is inf");
-            assert!(size >= min_radius, "size is less than inner radius of box");
-            assert!(size <= max_radius, "size is above maximum")
-        }
-    }
-}
-
-#[test]
-/// simple test to check that BoxColider::get_side returns the correct results given a cube
-fn get_side_test() {
-    let t = Transform {
-        position: Vec3::new(0.0, 0.0, 0.0),
-        rotation: Quaternion::identity(),
-        scale: Vec3::new(1.0, 1.0, 1.0),
-    };
-
-    let box_c = BoxColider::new(
-        Vec3::new(1.0, 1.0, 1.0),
-        PhysicsMaterial {
-            friction: 1.0,
-            restfullness: 1.0,
-        },
-    );
-
-    let same_dirs = vec![
-        Vec3::new(0.0, 0.0, 1.0),
-        Vec3::new(0.0, 0.0, -1.0),
-        Vec3::new(0.0, 1.0, 0.0),
-        Vec3::new(0.0, -1.0, 0.0),
-        Vec3::new(1.0, 0.0, 0.0),
-        Vec3::new(-1.0, 0.0, 0.0),
-    ];
-
-    for small_offset in &same_dirs {
-        let offset = small_offset / 10.0;
-        for dir in &same_dirs {
-            let side_dir = box_c.get_side(&t, *dir * 0.5 + offset);
-
-            assert_eq!(side_dir, *dir); // assert correct direction
-            assert_eq!(side_dir.magnitude_squared(), 1.0) // assert normalized
-        }
-    }
-
-    // checks for nans and inf
-    for pitch_deg in 0..360 {
-        for yaw_deg in 0..360 {
-            let pitch = pitch_deg.to_f32().unwrap().to_radians();
-            let yaw = yaw_deg.to_f32().unwrap().to_radians();
-
-            let forward = Vec3::new(
-                yaw.sin() * pitch.cos(),
-                pitch.sin(),
-                yaw.cos() * pitch.cos(),
-            );
-
-            let side = box_c.get_side(&t, forward);
-            assert!(side.x.is_finite(), "{:?}", side);
-            assert!(side.y.is_finite(), "{:?}", side);
-            assert!(side.z.is_finite(), "{:?}", side);
         }
     }
 }
@@ -833,19 +748,10 @@ fn collide(
 
                 solve_colliding(c1, rb1, t1, c2, rb2, t2);
 
-                debug_assert!(is_finite(&rb1.velocity), "rb1 velocity = {}", rb1.velocity);
-                debug_assert!(is_finite(&rb2.velocity), "rb2 velocity = {}", rb2.velocity);
-
-                debug_assert!(
-                    is_finite(&rb1.angular_velocity),
-                    "rb1 angular_velocity = {}",
-                    rb1.angular_velocity
-                );
-                debug_assert!(
-                    is_finite(&rb2.angular_velocity),
-                    "rb2 angular_velocity = {}",
-                    rb2.angular_velocity
-                );
+                debug_assert_finite!(rb1.velocity);
+                debug_assert_finite!(rb2.velocity);
+                debug_assert_finite!(rb1.angular_velocity);
+                debug_assert_finite!(rb2.angular_velocity);
 
                 rb1.is_active = true;
                 rb2.is_active = true;
@@ -863,8 +769,8 @@ impl RidgidBody {
     }
 
     fn add_impulse_at_location(&mut self, velocity: Vec3, location: Vec3) {
-        debug_assert!(is_finite(&velocity), "velocity = {}", velocity);
-        debug_assert!(is_finite(&location), "location = {}", location);
+        debug_assert_finite!(velocity);
+        debug_assert_finite!(location);
 
         //debug_assert!(velocity.magnitude_squared() != 0.0, "velocity is too close to 0 = {}", velocity);
 
@@ -927,7 +833,6 @@ fn update(
     transforms: &mut Vec<Transform>,
     phx_objects: &mut Vec<PhysicsObject>,
 ) {
-
     let real_dt = dt;
     let phx_length = phx_objects.len();
     for i in 0..phx_length {
@@ -1005,7 +910,7 @@ fn main() {
         instances.push(Transform {
             position: Vec3::new(
                 rng.gen_range(-10.0..10.0),
-                rng.gen_range(1.0..20.0),
+                rng.gen_range(4.0..20.0),
                 rng.gen_range(-10.0..10.0),
             ),
             rotation: Quaternion::identity(),
@@ -1161,12 +1066,7 @@ fn main() {
                     camera_controller.update_camera(dt, &mut context.renderer.camera);
                 }
                 if !pause_physics || !can_pause_phx {
-                    update(
-                        &mut pause_physics,
-                        dt,
-                        &mut instances,
-                        &mut physics_objects,
-                    );
+                    update(&mut pause_physics, dt, &mut instances, &mut physics_objects);
                 }
 
                 context.renderer.update_camera();
