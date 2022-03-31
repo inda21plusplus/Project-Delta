@@ -14,7 +14,6 @@ use env_logger;
 use vek::{
     num_integer::{sqrt, Roots},
     num_traits::ToPrimitive,
-    Ray,
 };
 
 mod camera_controller;
@@ -127,6 +126,73 @@ fn get_closest_point(
 
     // rotate back to world space
     cube_rotation * (closest - cube_loc) + cube_loc
+}
+
+type Tri = [Vec3; 3];
+type Ray = vek::Ray<f32>;
+
+#[must_use]
+/// in binary order, aka v000 v001 v010, not rotated where v000 is min and v111 is max
+fn get_verts(t: &Transform, c: &BoxColider) -> [Vec3; 8] {
+    let c = t.scale * c.scale;
+    let v111 = c;
+    let v000 = -c;
+
+    let v001 = Vec3::new(v000.x, v000.z, v111.y);
+    let v010 = Vec3::new(v000.x, v111.z, v000.y);
+    let v100 = Vec3::new(v111.x, v000.z, v000.y);
+
+    let v011 = Vec3::new(v000.x, v111.z, v111.y);
+    let v110 = Vec3::new(v111.x, v111.z, v000.y);
+    let v101 = Vec3::new(v111.x, v000.z, v111.y);
+
+    [v000, v001, v010, v011, v100, v101, v110, v111]
+}
+
+#[must_use]
+fn get_rays_for_box(verts: &[Vec3; 8]) -> [Ray; 12] {
+    let [v000, v001, v010, v011, v100, v101, v110, v111] = *verts;
+    [
+        Ray::new(v000, Vec3::unit_x()),
+        Ray::new(v001, Vec3::unit_x()),
+        Ray::new(v010, Vec3::unit_x()),
+        Ray::new(v011, Vec3::unit_x()),
+        Ray::new(v000, Vec3::unit_y()),
+        Ray::new(v001, Vec3::unit_y()),
+        Ray::new(v100, Vec3::unit_y()),
+        Ray::new(v101, Vec3::unit_y()),
+        Ray::new(v000, Vec3::unit_z()),
+        Ray::new(v010, Vec3::unit_z()),
+        Ray::new(v100, Vec3::unit_z()),
+        Ray::new(v110, Vec3::unit_z()),
+    ]
+}
+
+#[must_use]
+fn get_tris_for_box(verts: &[Vec3; 8]) -> [Tri; 12] {
+    let [v000, v001, v010, v011, v100, v101, v110, v111] = *verts;
+
+    // counter clockwise
+    [
+        // x face
+        [v101, v100, v110],
+        [v101, v110, v111],
+        // -x face
+        [v000, v001, v011],
+        [v000, v011, v010],
+        // y face
+        [v111, v010, v011],
+        [v010, v111, v110],
+        // -y face
+        [v000, v101, v001],
+        [v000, v100, v101],
+        // z face
+        [v001, v101, v111],
+        [v001, v111, v011],
+        //-z face
+        [v000, v010, v100],
+        [v010, v110, v100],
+    ]
 }
 
 /// returns (1,0,0) (0,1,0) (0,0,1) with rotation aka positive normals
@@ -579,7 +645,7 @@ pub fn collide_sphere_vs_sphere(
     // just in case that w1 == w2
     let normal = if diff == Vec3::zero() {
         Vec3::unit_y()
-    }  else {
+    } else {
         diff.normalized()
     };
     debug_assert_finite!(normal);
