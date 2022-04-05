@@ -3,6 +3,7 @@
 pub mod component;
 mod entity;
 mod error;
+#[macro_use]
 mod query;
 mod world;
 
@@ -506,6 +507,46 @@ mod tests {
             world.try_query(&q2).unwrap_err(),
         );
         mem::drop(r);
+    }
+
+    #[test]
+    fn type_safe_macros() {
+        let mut world = World::default();
+        struct Name(String);
+        struct Speed(f32);
+        let sanic = world.spawn();
+        world.add(sanic, Name("Sanic".into()));
+        world.add(sanic, Speed(100.0));
+        let mario = world.spawn();
+        world.add(mario, Name("Mario".into()));
+        world.add(mario, Speed(200.0)); // copilot thinks mario is faster than sanic
+
+        let mut cheeky_breeky = None;
+        query_iter!(world, (name: Name, speed: mut Speed) => {
+            match name.0.as_ref() {
+                "Mario" => assert_eq!(speed.0, 200.0),
+                "Sanic" => {
+                    assert_eq!(speed.0, 100.0);
+                    speed.0 = 300.0; // copilot thinks he's faster than mario
+                    cheeky_breeky = Some(speed); // TODO: this should not be possible
+                }
+                _ => panic!("Unexpected name"),
+            }
+        });
+
+        query_iter!(world, (name: Name, speed: Speed) => {
+            match name.0.as_ref() {
+                "Mario" => assert_eq!(speed.0, 200.0),
+                "Sanic" => {
+                    assert_eq!(speed.0, 300.0);
+                    if let Some(Speed(s)) = cheeky_breeky {
+                        *s += 1.;
+                    }
+                    assert_eq!(speed.0, 301.0);
+                }
+                _ => panic!("Unexpected name"),
+            }
+        });
     }
 
     #[test]

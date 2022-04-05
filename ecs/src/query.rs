@@ -5,6 +5,70 @@ use crate::{
     BorrowMutError, Entity,
 };
 
+#[macro_export]
+macro_rules! _query_definition {
+    ( $world:expr, $vec:expr, ($name:ident: $type:ty, $($tail:tt)*) ) => {{
+        $vec.push(ComponentQuery {
+            id: $world.component_id::<$type>().unwrap(),
+            mutable: false,
+        });
+        _query_definition!($world, $vec, ($($tail)*));
+    }};
+    ( $world:expr, $vec:expr, ($name:ident: mut $type:ty, $($tail:tt)*) ) => {{
+        $vec.push(ComponentQuery {
+            id: $world.component_id::<$type>().unwrap(),
+            mutable: true,
+        });
+        _query_definition!($world, $vec, ($($tail)*));
+    }};
+    ( $world:expr, $vec:expr, ($name:ident: $type:ty) ) => {{
+        $vec.push(ComponentQuery {
+            id: $world.component_id::<$type>().unwrap(),
+            mutable: false,
+        });
+    }};
+    ( $world:expr, $vec:expr, ($name:ident: mut $type:ty) ) => {{
+        $vec.push(ComponentQuery {
+            id: $world.component_id::<$type>().unwrap(),
+            mutable: true,
+        });
+    }};
+}
+
+#[macro_export]
+macro_rules! _query_defvars {
+    ( $comps:expr, ($name:ident: $type:ty, $($tail:tt)*) ) => {
+        let $name = unsafe { $comps[0].cast::<$type>().as_ref() };
+        _query_defvars!($comps[1..], ($($tail)*));
+    };
+    ( $comps:expr, ($name:ident: mut $type:ty, $($tail:tt)*) ) => {
+        let $name = unsafe { $comps[0].cast::<$type>().as_mut() };
+        _query_defvars!($comps[1..], ($($tail)*));
+    };
+    ( $comps:expr, ($name:ident: $type:ty) ) => {
+        let $name = unsafe { $comps[0].cast::<$type>().as_ref() };
+    };
+    ( $comps:expr, ($name:ident: mut $type:ty) ) => {
+        let $name = unsafe { $comps[0].cast::<$type>().as_mut() };
+    };
+}
+
+#[macro_export]
+macro_rules! query_iter {
+    ( $world:expr, ($($query:tt)*) => $body:block ) => {{
+        let mut v = vec![];
+        _query_definition!($world, v, ($($query)*));
+        let q = Query::new(v).expect("Query violates rusts borrow rules");
+
+        let mut res = $world.query(&q);
+
+        for comps in unsafe { res.iter() } {
+            $crate::_query_defvars!(comps, ($($query)*));
+            $body
+        }
+    }};
+}
+
 /// Represents a valid query for components without multiple mutable access to the same type of
 /// component.
 /// NOTE: there's currently no way of for example having one query for `mut A` on entities with a
