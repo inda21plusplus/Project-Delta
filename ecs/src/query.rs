@@ -5,6 +5,14 @@ use crate::{
     BorrowMutError, Entity,
 };
 
+pub unsafe fn as_ref_lt<'a, T>(_lifetime: &'a (), ptr: NonNull<T>) -> &'a T {
+    ptr.as_ref()
+}
+
+pub unsafe fn as_mut_lt<'a, T>(_lifetime: &'a (), mut ptr: NonNull<T>) -> &'a mut T {
+    ptr.as_mut()
+}
+
 #[macro_export]
 macro_rules! _query_definition {
     ( $world:expr, $vec:expr, ($name:ident: $type:ty, $($tail:tt)*) ) => {{
@@ -37,19 +45,19 @@ macro_rules! _query_definition {
 
 #[macro_export]
 macro_rules! _query_defvars {
-    ( $comps:expr, ($name:ident: $type:ty, $($tail:tt)*) ) => {
-        let $name = unsafe { $comps[0].cast::<$type>().as_ref() };
-        _query_defvars!($comps[1..], ($($tail)*));
+    ( $comps:expr, $lt:expr, ($name:ident: $type:ty, $($tail:tt)*) ) => {
+        let $name = unsafe { $crate::query::as_ref_lt($lt, $comps[0].cast::<$type>()) };
+        _query_defvars!($comps[1..], $lt, ($($tail)*));
     };
-    ( $comps:expr, ($name:ident: mut $type:ty, $($tail:tt)*) ) => {
-        let $name = unsafe { $comps[0].cast::<$type>().as_mut() };
-        _query_defvars!($comps[1..], ($($tail)*));
+    ( $comps:expr, $lt:expr, ($name:ident: mut $type:ty, $($tail:tt)*) ) => {
+        let $name = unsafe { $crate::query::as_mut_lt($lt, $comps[0].cast::<$type>()) };
+        _query_defvars!($comps[1..], $lt, ($($tail)*));
     };
-    ( $comps:expr, ($name:ident: $type:ty) ) => {
-        let $name = unsafe { $comps[0].cast::<$type>().as_ref() };
+    ( $comps:expr, $lt:expr, ($name:ident: $type:ty) ) => {
+        let $name = unsafe { $crate::query::as_ref_lt($lt, $comps[0].cast::<$type>()) };
     };
-    ( $comps:expr, ($name:ident: mut $type:ty) ) => {
-        let $name = unsafe { $comps[0].cast::<$type>().as_mut() };
+    ( $comps:expr, $lt:expr, ($name:ident: mut $type:ty) ) => {
+        let $name = unsafe { $crate::query::as_mut_lt($lt, $comps[0].cast::<$type>()) };
     };
 }
 
@@ -63,7 +71,8 @@ macro_rules! query_iter {
         let mut res = $world.query(&q);
 
         for comps in unsafe { res.iter() } {
-            $crate::_query_defvars!(comps, ($($query)*));
+            let lt = ();
+            $crate::_query_defvars!(comps, &lt, ($($query)*));
             $body
         }
     }};
