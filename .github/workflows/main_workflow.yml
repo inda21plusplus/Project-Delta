@@ -28,6 +28,10 @@ jobs:
         working-directory: ./game-engine
         run: cargo check --verbose
 
+      - name: Check ECS
+        working-directory: ./ecs
+        run: cargo check --verbose
+
   build:
     name: Build
     runs-on: ubuntu-latest
@@ -48,6 +52,10 @@ jobs:
 
       - name: Build Engine
         working-directory: ./game-engine
+        run: cargo build --verbose
+
+      - name: Build ECS
+        working-directory: ./ecs
         run: cargo build --verbose
 
   test:
@@ -72,6 +80,10 @@ jobs:
         working-directory: ./game-engine
         run: cargo test --verbose
 
+      - name: Test ECS
+        working-directory: ./ecs
+        run: cargo test --verbose
+
   clippy:
     name: Clippy
     runs-on: ubuntu-latest
@@ -89,15 +101,15 @@ jobs:
 
       - name: Clippy IDE
         working-directory: ./ide
-        run: |
-          cargo clippy
-        # cargo clippy -- -D warnings # This line will interpet Warnings as errors
+        run: cargo clippy # -- -D warnings
 
       - name: Clippy Engine
         working-directory: ./game-engine
-        run: |
-          cargo clippy
-        # cargo clippy -- -D warnings # This line will interpet Warnings as errors
+        run: cargo clippy # -- -D warnings
+
+      - name: Clippy ECS
+        working-directory: ./ecs
+        run: cargo clippy # -- -D warnings
 
   format:
     name: Check code formatting
@@ -120,4 +132,8 @@ jobs:
 
       - name: Check Engine formatting
         working-directory: ./game-engine
+        run: cargo fmt --check
+
+      - name: Check ECS formatting
+        working-directory: ./ecs
         run: cargo fmt --check
