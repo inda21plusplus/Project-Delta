@@ -1,6 +1,24 @@
 # Project-Delta
 This is the repository for the group project assignment in the course "Project in Introduction to Computer Science" (DD1396), by the Inda21plusplus group.
 
+## How to run the project
+### 1. Clone
+Clone repo using `git clone` 
+### 2. Run
+Run project using `cargo run`
+### 3. Keybindings
+WASD - Move in the plane created by camera pos and forward viewing vector
+
+Space - Acend
+
+Ctrl - Decend
+
+Q - Enable Cursor mode
+
+E - Enbale Camera mode
+
+
+
 ## How the development process will look
 ### The plan
 The plan is to have a clean and structured approach to development in order to make everyones lives easier. 

@@ -1,3 +1,5 @@
 [workspace]
 
-members = ["ide", "game-engine", "ecs"]
+resolver = "2"
+
+members = ["ide", "game-engine", "ecs", "rendering", "common"]
