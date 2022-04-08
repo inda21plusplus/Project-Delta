@@ -67,14 +67,17 @@ impl SphereColider {
     }
 }
 
-fn get_world_position(world_pos: Vec3, rotation: Quaternion, local_position: Vec3) -> Vec3 {
-    world_pos + rotation * local_position
+/// returns the world position
+fn get_world_position(pos: Vec3, scale: Vec3, rotation: Quaternion, local_position: Vec3) -> Vec3 {
+    pos + rotation * local_position * scale
 }
 
+/// returns the world position of a collider given transform and colider
 #[must_use]
 fn get_position(transform: &Transform, collider: &Collider) -> Vec3 {
     get_world_position(
         transform.position,
+        transform.scale,
         transform.rotation,
         match collider {
             Collider::SphereColider(c) => c.local_position,
@@ -83,12 +86,14 @@ fn get_position(transform: &Transform, collider: &Collider) -> Vec3 {
     )
 }
 
+/// v^2
 #[inline]
 #[must_use]
 fn squared(v: f32) -> f32 {
     v * v
 }
 
+/// clamps a vector between 2 others vectors
 #[must_use]
 fn clamp(v: Vec3, min: Vec3, max: Vec3) -> Vec3 {
     debug_assert_finite!(min);
@@ -104,6 +109,7 @@ fn clamp(v: Vec3, min: Vec3, max: Vec3) -> Vec3 {
     ret
 }
 
+/// get the closest point on a cube to another point
 #[must_use]
 fn get_closest_point(
     other_loc: Vec3,
@@ -138,20 +144,51 @@ fn get_verts(t: &Transform, c: &BoxColider) -> [Vec3; 8] {
     let v111 = c;
     let v000 = -c;
 
-    let v001 = Vec3::new(v000.x, v000.z, v111.y);
-    let v010 = Vec3::new(v000.x, v111.z, v000.y);
-    let v100 = Vec3::new(v111.x, v000.z, v000.y);
+    let v001 = Vec3::new(v000.x, v000.y, v111.z);
+    let v010 = Vec3::new(v000.x, v111.y, v000.z);
+    let v100 = Vec3::new(v111.x, v000.y, v000.z);
 
-    let v011 = Vec3::new(v000.x, v111.z, v111.y);
-    let v110 = Vec3::new(v111.x, v111.z, v000.y);
-    let v101 = Vec3::new(v111.x, v000.z, v111.y);
+    let v011 = Vec3::new(v000.x, v111.y, v111.z);
+    let v110 = Vec3::new(v111.x, v111.y, v000.z);
+    let v101 = Vec3::new(v111.x, v000.y, v111.z);
 
     [v000, v001, v010, v011, v100, v101, v110, v111]
 }
 
+#[test]
+fn test_get_verts() {
+    let scale = Vec3::new(2.0, 1.0, 10.0);
+
+    let t = Transform {
+        position: Vec3::zero(),
+        rotation: Quaternion::identity(),
+        scale,
+    };
+
+    let material = PhysicsMaterial {
+        friction: 1.0,
+        restfullness: 1.0,
+    };
+
+    let c = BoxColider::new(Vec3::one(), material);
+    let verts = get_verts(&t, &c);
+
+    for x in [-1, 1] {
+        for y in [-1, 1] {
+            for z in [-1, 1] {
+                assert!(verts.contains(&Vec3::new(
+                    scale.x * x as f32,
+                    scale.y * y as f32,
+                    scale.z * z as f32,
+                )))
+            }
+        }
+    }
+}
+
 #[must_use]
 fn get_rays_for_box(verts: &[Vec3; 8]) -> [Ray; 12] {
-    let [v000, v001, v010, v011, v100, v101, v110, v111] = *verts;
+    let [v000, v001, v010, v011, v100, v101, v110, _v111] = *verts;
     [
         Ray::new(v000, Vec3::unit_x()),
         Ray::new(v001, Vec3::unit_x()),
@@ -222,6 +259,7 @@ fn get_vertex(w: &Vec3, t: &Transform, c: &BoxColider) -> Vec<Vec3> {
     vec
 }
 
+/// returns the overlap between [a_min,a_max] and [b_min,b_max], will return a negative value if range is inverted, overlap(a,b) = -overlap(b,a)
 fn overlap(a_min: f32, a_max: f32, b_min: f32, b_max: f32) -> f32 {
     debug_assert!(a_min <= a_max, "a min < max");
     debug_assert!(b_min <= b_max, "b min < max");
@@ -458,33 +496,78 @@ pub fn collide_box_vs_box(
     t2: &mut Transform,
     w2: Vec3, // world position
 ) {
-    let (axis, a_verts, b_verts) = get_axis_and_verts(&w1, &w2, t1, t2, c1, c2);
-    let mut min_overlap: Option<(f32, Vec3)> = None;
-
-    min_overlap = proj_has_overlap_extra(&axis, &b_verts, &a_verts);
-    if min_overlap.is_none() {
-        min_overlap = proj_has_overlap_extra(&axis, &a_verts, &b_verts);
+    if rb1.is_static && rb2.is_static {
+        return;
     }
-    debug_assert!(min_overlap.is_some());
 
-    if let Some((overlap, overlap_axis)) = min_overlap {
-        let re1 = c1.material.restfullness;
-        let re2 = c2.material.restfullness;
+    // this ensures that rb2 is never static
+    if rb1.is_static {
+        return collide_box_vs_box(c2, rb2, t2, w2, c1, rb1, t1, w1);
+    }
+    let v1 = get_verts(t1, c1);
+    let v2 = get_verts(t2, c2);
 
-        // TODO MAKE BETTER
-        let normal = overlap_axis.normalized(); // this is not perfect
-        debug_assert_finite!(normal);
-        pop_coliders(normal * overlap * 2.0, t1, t2, &rb1, &rb2);
-        standard_collision(
-            normal,
-            rb1,
-            rb2,
-            normal * overlap,
-            -normal * overlap,
-            re1,
-            re2,
-        );
-        // t1.position = w2 + _axis.normalized() * overlap;
+    let mut rays = get_rays_for_box(&v1);
+    let tri2 = get_tris_for_box(&v2);
+
+    // casting rays on the AABB c2 in a cordinate system where w2 is the Origin
+    let world_offset = w1 - w2;
+
+    let r1 = t1.rotation * c1.local_rotation;
+    let r2 = t2.rotation * c2.local_rotation;
+
+    let re1 = c1.material.restfullness;
+    let re2 = c2.material.restfullness;
+
+    //t1.rotation = Quaternion::identity();
+    //t2.rotation = Quaternion::identity();
+
+    let r2_inv = r2.inverse();
+
+    let s1 = t1.scale * c1.scale;
+
+    for ray in &mut rays {
+        let origin = r2_inv *            // rotate ray
+            (r1 *                                  // rotation on self 
+                (ray.origin + s1 * ray.direction)  // set ray origin between vertexes, this is used because ray intercect returns negetive values
+                                  + world_offset); // applied offset to center the world on w2
+
+        let direction = r2_inv * r1 * ray.direction;
+        let new_ray = Ray::new(origin, direction);
+
+        for tri in &tri2 {
+            if let Some(d) = new_ray.triangle_intersection(*tri) {
+                let ray_distance = d.abs();
+                if ray_distance <= f32::EPSILON {
+                    continue;
+                }
+
+                let box_distance = (ray.direction * s1).magnitude();
+                
+                // ray hit is not outside the box
+                if ray_distance < box_distance {
+
+                    let overlap = box_distance - ray_distance;
+                    let normal = -(r2 * ray.direction).normalized();
+                    let normal_overlap = normal * overlap;
+
+                    pop_coliders(d.signum() * normal_overlap / 4.0, t1, t2, &rb1, &rb2);
+
+                    let point_of_contact =
+                        w1 + r2 * (ray.direction * d + ray.origin) - s1 * ray.direction;
+
+                    standard_collision(
+                        normal,
+                        rb1,
+                        rb2,
+                        point_of_contact - w1,
+                        point_of_contact - w2,
+                        re1,
+                        re2,
+                    );
+                }
+            }
+        }
     }
 }
 
@@ -548,6 +631,7 @@ macro_rules! assert_delta {
         }
     };
 }
+
 fn standard_collision(
     normal: Vec3,
     rb1: &mut RidgidBody,
@@ -1048,7 +1132,9 @@ fn main() {
     let mut allow_camera_update = true;
     let mut last_frame = std::time::Instant::now();
     let mut pause_physics = false;
+
     let can_pause_phx = false;
+
     event_loop.run(move |event, _, control_flow| {
         *control_flow = ControlFlow::Poll;
         match event {
