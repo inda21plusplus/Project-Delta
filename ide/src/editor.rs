@@ -113,9 +113,11 @@ impl Editor {
         ControlFlow::Continue(())
     }
 
-    fn handle_keyboard_input(&mut self, keycode: VirtualKeyCode, state: ElementState) 
-    -> ControlFlow<()>
-    {
+    fn handle_keyboard_input(
+        &mut self,
+        keycode: VirtualKeyCode,
+        state: ElementState,
+    ) -> ControlFlow<()> {
         if state != ElementState::Pressed {
             return ControlFlow::Continue(());
         }
