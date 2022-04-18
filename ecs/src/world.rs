@@ -119,7 +119,7 @@ impl World {
                 None => return Err(BorrowMutError::new(c.id)),
             }
         }
-        Ok(QueryResponse::new(&self, query, entries))
+        Ok(QueryResponse::new(self, query, entries))
     }
 
     /// Tries to query for a set of components. If thats not possible (see `try_query`) this
