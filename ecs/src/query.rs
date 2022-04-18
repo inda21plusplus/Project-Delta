@@ -5,10 +5,20 @@ use crate::{
     BorrowMutError, Entity,
 };
 
+/// Casts `ptr` to a reference with the lifetime `'a`.
+/// # Safety
+/// It is the responsibility of the caller to ensure that the lifetime `'a` outlives
+/// the lifetime of the data pointed to by `ptr`.
+#[allow(clippy::needless_lifetimes)]
 pub unsafe fn as_ref_lt<'a, T>(_lifetime: &'a (), ptr: NonNull<T>) -> &'a T {
     ptr.as_ref()
 }
 
+/// Casts `ptr` to a mutable reference with the lifetime `'a`.
+/// # Safety
+/// It is the responsibility of the caller to ensure that the lifetime `'a` outlives
+/// the lifetime of the data pointed to by `ptr`.
+#[allow(clippy::mut_from_ref, clippy::needless_lifetimes)]
 pub unsafe fn as_mut_lt<'a, T>(_lifetime: &'a (), mut ptr: NonNull<T>) -> &'a mut T {
     ptr.as_mut()
 }
