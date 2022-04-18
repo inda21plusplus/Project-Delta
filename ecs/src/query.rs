@@ -1,8 +1,9 @@
-use std::{collections::HashSet, marker::PhantomData, ptr::NonNull};
+use std::{collections::HashSet, ptr::NonNull};
 
 use crate::{
-    component::{ComponentEntryRef, ComponentId, ComponentRegistry},
-    BorrowMutError, Entity,
+    component::{ComponentEntryRef, ComponentId},
+    entity::Iter as EntityIter,
+    BorrowMutError, Entity, World,
 };
 
 /// Casts `ptr` to a reference with the lifetime `'a`.
@@ -25,6 +26,9 @@ pub unsafe fn as_mut_lt<'a, T>(_lifetime: &'a (), mut ptr: NonNull<T>) -> &'a mu
 
 #[macro_export]
 macro_rules! _query_definition {
+    ( $world:expr, $vec:expr, ($name:ident: Entity, $($tail:tt)*) ) => {{
+        _query_definition!($world, $vec, ($($tail)*));
+    }};
     ( $world:expr, $vec:expr, ($name:ident: $type:ty, $($tail:tt)*) ) => {{
         $vec.push(ComponentQuery {
             id: $world.component_id::<$type>().unwrap(),
@@ -39,6 +43,9 @@ macro_rules! _query_definition {
         });
         _query_definition!($world, $vec, ($($tail)*));
     }};
+
+    // Last entry
+    ( $world:expr, $vec:expr, ($name:ident: Entity) ) => { };
     ( $world:expr, $vec:expr, ($name:ident: $type:ty) ) => {{
         $vec.push(ComponentQuery {
             id: $world.component_id::<$type>().unwrap(),
@@ -55,18 +62,27 @@ macro_rules! _query_definition {
 
 #[macro_export]
 macro_rules! _query_defvars {
-    ( $comps:expr, $lt:expr, ($name:ident: $type:ty, $($tail:tt)*) ) => {
-        let $name = unsafe { $crate::query::as_ref_lt($lt, $comps[0].cast::<$type>()) };
-        _query_defvars!($comps[1..], $lt, ($($tail)*));
+    ( $comps:expr, $lt:expr, $entity:expr, ($name:ident: Entity, $($tail:tt)*) ) => {
+        let $name = $entity;
+        _query_defvars!($comps[..], $lt, $entity, ($($tail)*));
     };
-    ( $comps:expr, $lt:expr, ($name:ident: mut $type:ty, $($tail:tt)*) ) => {
+    ( $comps:expr, $lt:expr, $entity:expr, ($name:ident: $type:ty, $($tail:tt)*) ) => {
+        let $name = unsafe { $crate::query::as_ref_lt($lt, $comps[0].cast::<$type>()) };
+        _query_defvars!($comps[1..], $lt, $entity, ($($tail)*));
+    };
+    ( $comps:expr, $lt:expr, $entity:expr, ($name:ident: mut $type:ty, $($tail:tt)*) ) => {
         let $name = unsafe { $crate::query::as_mut_lt($lt, $comps[0].cast::<$type>()) };
-        _query_defvars!($comps[1..], $lt, ($($tail)*));
+        _query_defvars!($comps[1..], $lt, $entity, ($($tail)*));
     };
-    ( $comps:expr, $lt:expr, ($name:ident: $type:ty) ) => {
+
+    // Last entry
+    ( $comps:expr, $lt:expr, $entity:expr, ($name:ident: Entity) ) => {
+        let $name = $entity;
+    };
+    ( $comps:expr, $lt:expr, $entity:expr, ($name:ident: $type:ty) ) => {
         let $name = unsafe { $crate::query::as_ref_lt($lt, $comps[0].cast::<$type>()) };
     };
-    ( $comps:expr, $lt:expr, ($name:ident: mut $type:ty) ) => {
+    ( $comps:expr, $lt:expr, $entity:expr, ($name:ident: mut $type:ty) ) => {
         let $name = unsafe { $crate::query::as_mut_lt($lt, $comps[0].cast::<$type>()) };
     };
 }
@@ -74,15 +90,17 @@ macro_rules! _query_defvars {
 #[macro_export]
 macro_rules! query_iter {
     ( $world:expr, ($($query:tt)*) => $body:block ) => {{
+        #[allow(unused_mut)]
         let mut v = vec![];
         _query_definition!($world, v, ($($query)*));
         let q = Query::new(v).expect("Query violates rusts borrow rules");
 
         let mut res = $world.query(&q);
 
-        for comps in unsafe { res.iter() } {
+        #[allow(unused_variables)]
+        for (e, comps) in unsafe { res.iter() } {
             let lt = ();
-            $crate::_query_defvars!(comps, &lt, ($($query)*));
+            $crate::_query_defvars!(comps, &lt, e, ($($query)*));
             $body
         }
     }};
@@ -102,7 +120,6 @@ pub struct Query {
 pub struct ComponentQuery {
     pub id: ComponentId,
     pub mutable: bool,
-    // TODO: add optional queries: `optional: bool,`
 }
 
 impl Query {
@@ -133,21 +150,17 @@ impl Query {
 }
 
 #[derive(Debug)]
-pub struct QueryResponse<'r, 'q> {
-    _world_marker: PhantomData<&'r ComponentRegistry>,
+pub struct QueryResponse<'w, 'q> {
+    world: &'w World,
     entries: Vec<ComponentEntryRef>,
     query: &'q Query,
 }
 
-impl<'r, 'q> QueryResponse<'r, 'q> {
-    pub(crate) fn new(
-        _registry: &'r ComponentRegistry,
-        query: &'q Query,
-        entries: Vec<ComponentEntryRef>,
-    ) -> Self {
+impl<'w, 'q> QueryResponse<'w, 'q> {
+    pub(crate) fn new(world: &'w World, query: &'q Query, entries: Vec<ComponentEntryRef>) -> Self {
         debug_assert!(query.components().len() == entries.len());
         Self {
-            _world_marker: PhantomData,
+            world,
             entries,
             query,
         }
@@ -156,7 +169,7 @@ impl<'r, 'q> QueryResponse<'r, 'q> {
     /// Same as `try_get` but panics if `None` would be returned.
     /// # Safety
     /// See documentation for `try_get`
-    pub unsafe fn get(&mut self, entity: Entity) -> Vec<NonNull<u8>> {
+    pub unsafe fn get(&self, entity: Entity) -> Vec<NonNull<u8>> {
         self.try_get(entity)
             .expect("The given entity does not match the query or has been despawned")
     }
@@ -168,67 +181,47 @@ impl<'r, 'q> QueryResponse<'r, 'q> {
     /// All pointers returned are technically mutable **BUT** modifying the pointers to components
     /// not marked as mutable in the query is undefined behaviour.
     /// The pointers must not outlive this `QueryResponse`
-    pub unsafe fn try_get(&mut self, entity: Entity) -> Option<Vec<NonNull<u8>>> {
+    pub unsafe fn try_get(&self, entity: Entity) -> Option<Vec<NonNull<u8>>> {
         self.try_get_by_index(entity.get_id_unchecked())
     }
 
-    unsafe fn try_get_by_index(&mut self, index: u32) -> Option<Vec<NonNull<u8>>> {
+    unsafe fn try_get_by_index(&self, index: u32) -> Option<Vec<NonNull<u8>>> {
         let mut res = Vec::with_capacity(self.entries.len());
-        for (e, cq) in self.entries.iter_mut().zip(self.query.components().iter()) {
-            res.push(if cq.mutable {
-                NonNull::new(e.get_mut().storage.get_mut_ptr(index as usize))?
-            } else {
-                NonNull::new(e.get().storage.get_ptr(index as usize) as *mut _)?
-            });
+        for (e, _) in self.entries.iter().zip(self.query.components().iter()) {
+            res.push(NonNull::new(
+                e.get().storage.get_ptr(index as usize) as *mut _
+            )?);
         }
         Some(res)
     }
 
-    /// Returns the last index of an entity that has at least one component in the query. There
-    /// might not actually be a hit for this query at this index, but there is definitly no hits
-    /// after this index.
-    fn last_index_worth_checking(&self) -> Option<u32> {
-        self.entries
-            .iter()
-            .flat_map(|e| e.get().storage.last_set_index())
-            .max()
-            .map(|max| max as u32)
-    }
-
-    pub unsafe fn iter<'a>(&'a mut self) -> Iter<'a, 'r, 'q> {
-        Iter::new(self, self.last_index_worth_checking())
+    pub unsafe fn iter<'a>(&'a mut self) -> Iter<'a, 'w, 'q> {
+        Iter::new(self)
     }
 }
 
-pub struct Iter<'a, 'r, 'q> {
-    index: u32,
-    last: Option<u32>,
-    res: &'a mut QueryResponse<'r, 'q>,
+pub struct Iter<'a, 'w, 'q> {
+    res: &'a QueryResponse<'w, 'q>,
+    entity_iter: EntityIter<'w>,
 }
 
-impl<'a, 'r, 'q> Iter<'a, 'r, 'q> {
-    pub fn new(res: &'a mut QueryResponse<'r, 'q>, last: Option<u32>) -> Self {
-        Self {
-            index: 0,
-            last,
-            res,
-        }
+impl<'a, 'w, 'q> Iter<'a, 'w, 'q> {
+    pub fn new(res: &'a mut QueryResponse<'w, 'q>) -> Self {
+        let mut entity_iter = res.world.entities().iter();
+        entity_iter.next(); // Skip the resource entity.
+        Self { res, entity_iter }
     }
 }
 
 // TODO: for sparse components this could be optimized
 impl<'a, 'r, 'q> Iterator for Iter<'a, 'r, 'q> {
-    type Item = Vec<NonNull<u8>>;
+    type Item = (Entity, Vec<NonNull<u8>>);
 
     fn next(&mut self) -> Option<Self::Item> {
-        while self.index < self.last? {
-            let index = self.index;
-            self.index += 1;
-            let res = unsafe { self.res.try_get_by_index(index) };
-            if res.is_some() {
-                return res;
-            }
-        }
-        None
+        self.entity_iter.next().and_then(|e| unsafe {
+            self.res
+                .try_get_by_index(self.entity_iter.entities().id(e).unwrap())
+                .map(|comps| (e, comps))
+        })
     }
 }

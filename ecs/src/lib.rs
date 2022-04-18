@@ -387,12 +387,12 @@ mod tests {
         ])
         .unwrap();
         {
-            let mut res = world.query(&usize_query);
+            let res = world.query(&usize_query);
             assert_eq!(*unsafe { res.get(a)[0].cast::<usize>().as_ref() }, 0);
             assert_eq!(*unsafe { res.get(b)[0].cast::<usize>().as_ref() }, 1);
         }
         {
-            let mut res = world.query(&both_query);
+            let res = world.query(&both_query);
             assert!(unsafe { res.try_get(a) }.is_none());
             let (int, float) = unsafe {
                 if let [int, float] = res.get(b)[..] {
@@ -405,7 +405,7 @@ mod tests {
             assert_eq!(2., *float);
         }
         {
-            let mut res = world.query(&usize_query);
+            let res = world.query(&usize_query);
             assert_eq!(*unsafe { res.get(a)[0].cast::<usize>().as_ref() }, 0);
             assert_eq!(*unsafe { res.get(b)[0].cast::<usize>().as_ref() }, 3);
         }
@@ -532,15 +532,32 @@ mod tests {
             }
         });
 
-        query_iter!(world, (name: Name, speed: Speed) => {
+        query_iter!(world, (entity: Entity, name: Name, speed: Speed) => {
             match name.0.as_ref() {
-                "Mario" => assert_eq!(speed.0, 200.0),
+                "Mario" => {
+                    assert_eq!(entity, mario);
+                    assert_eq!(speed.0, 200.0)
+                }
                 "Sanic" => {
+                    assert_eq!(entity, sanic);
                     assert_eq!(speed.0, 300.0);
                 }
                 _ => panic!("Unexpected name"),
             }
         });
+
+        let mut found_sanic = false;
+        let mut found_mario = false;
+        query_iter!(world, (entity: Entity) => {
+            if found_sanic {
+                assert_eq!(entity, mario);
+                found_mario = true;
+            } else {
+                assert_eq!(entity, sanic);
+                found_sanic = true;
+            }
+        });
+        assert!(found_sanic && found_mario);
     }
 
     #[test]
@@ -570,7 +587,7 @@ mod tests {
         .unwrap();
         let mut q = world.query(&q);
         for (pos, vel) in unsafe {
-            q.iter().map(|comps| {
+            q.iter().map(|(_e, comps)| {
                 if let [pos, vel] = comps[..] {
                     (
                         pos.cast::<Position>().as_mut(),
@@ -593,7 +610,7 @@ mod tests {
         let mut q = world.query(&q);
         for (i, pos) in unsafe {
             q.iter()
-                .map(|comps| {
+                .map(|(_e, comps)| {
                     if let [pos] = comps[..] {
                         pos.cast::<Position>().as_ref()
                     } else {
