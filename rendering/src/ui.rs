@@ -8,6 +8,8 @@ use wgpu;
 
 use std::mem;
 
+// not sure if it's a better idea to use texture::Texture
+// TODO: look into it
 struct Texture {
     tex: wgpu::Texture,
     _sampler: wgpu::Sampler,
@@ -15,6 +17,14 @@ struct Texture {
     bind_group: wgpu::BindGroup,
 }
 
+// in glsl:
+// ```
+// layout(location = 0) in vec2 pos;
+// layout(location = 1) in vec2 uv_coords;
+// layout(location = 2) in uint color;
+// ```
+// in rust,
+// see: https://docs.rs/epaint/0.17.0/epaint/struct.Vertex.html
 fn egui_vertex_desc<'a>() -> wgpu::VertexBufferLayout<'a> {
     wgpu::VertexBufferLayout {
         array_stride: mem::size_of::<Vertex>() as wgpu::BufferAddress,
@@ -39,14 +49,6 @@ fn egui_vertex_desc<'a>() -> wgpu::VertexBufferLayout<'a> {
     }
 }
 
-#[repr(C)]
-#[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
-struct RawVertex {
-    pos: [f32; 2],
-    uv: [f32; 2],
-    color: u32,
-}
-
 pub struct Painter {
     textures: AHashMap<egui::TextureId, Texture>,
     pipeline: wgpu::RenderPipeline,
@@ -64,6 +66,9 @@ impl Painter {
         queue: &wgpu::Queue,
         config: &wgpu::SurfaceConfiguration,
     ) -> Painter {
+        // we keep the bind group layout around
+        // as each time we make a new texture, we need to create its bindgroup
+        // but these bindgroups are the same every time.
         let texture_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                 entries: &[
@@ -94,6 +99,9 @@ impl Painter {
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
 
+        // write the current config sizes into the local buffer
+        // I have no clue what happens when the window is resized.
+        // TODO: add (proper) resizing support elsewhere
         queue.write_buffer(
             &local_buffer,
             0,
@@ -114,6 +122,9 @@ impl Painter {
                 }],
                 label: Some("egui local bind group layout"),
             });
+        // as opposed to the texture bind groups, where we keep the layout around,
+        // the local bind group will stay the same forever, so we just make it
+        // and discard the layout
         let local_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             label: Some("egui local bind group"),
             layout: &local_bind_group_layout,
@@ -147,6 +158,8 @@ impl Painter {
                 entry_point: "fs_main",
                 targets: &[wgpu::ColorTargetState {
                     format: config.format,
+                    // we don't want any transparent UI to replace
+                    // other elements of the scene.
                     blend: Some(wgpu::BlendState {
                         color: wgpu::BlendComponent::OVER,
                         alpha: wgpu::BlendComponent::OVER,
@@ -158,11 +171,16 @@ impl Painter {
                 topology: wgpu::PrimitiveTopology::TriangleList,
                 strip_index_format: None,
                 front_face: wgpu::FrontFace::Ccw,
+                // cull mode is None as egui has no guarantees for which
+                // face will be "forwards"
                 cull_mode: None,
                 polygon_mode: wgpu::PolygonMode::Fill,
                 unclipped_depth: false,
                 conservative: false,
             },
+            // use the depth stencil that the renderpass uses
+            // cause otherwise it crashes
+            // TODO: add stencil support so we don't draw the scene where there's UI
             depth_stencil: Some(wgpu::DepthStencilState {
                 format: texture::Texture::DEPTH_FORMAT,
                 depth_write_enabled: false,
@@ -177,6 +195,8 @@ impl Painter {
             },
             multiview: None,
         });
+        // "reasonable" default sizes, I have no clue honestly, but it doesn't
+        // really matter as on-demand reallocation is supported anyway
         let vertex_buf_size = 32;
         let vertex_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("egui vertex buffer"),
@@ -204,6 +224,8 @@ impl Painter {
         }
     }
 
+    // weird lifetimes, self must outlive renderpass
+    // as renderpass borrows some of the buffers in self.
     pub fn paint<'a, 'b: 'a>(
         &'b mut self,
         device: &wgpu::Device,
@@ -214,6 +236,12 @@ impl Painter {
         physical_height: u32,
         physical_width: u32,
     ) {
+        // find the highest number of vertices and whatnot beforehand
+        // this is annoying to do in the loop later due to renderpass
+        // borrowing the vertex/index buffer, and the overhead
+        // of looping through it an extra time is minimal compared to
+        // the rest of what we're doing
+        // in case of performance issues: verify this claim
         let max_verts = meshes
             .iter()
             .map(|egui::ClippedMesh(_, Mesh { vertices, .. })| vertices.len())
@@ -257,6 +285,12 @@ impl Painter {
                 );
             };
 
+            // code from https://github.com/hasenbanck/egui_wgpu_backend
+            // I don't really know how to properly translate the rects
+            // in light of logical pixel sizes etc., so I can't verify
+            // correctness of this.
+            // this is also "important" for not rendering UI that
+            // shouldn't be rendered I believe.
             // Transform clip rect to physical pixels.
             let clip_min_x = scale_factor * clip_rect.min.x;
             let clip_min_y = scale_factor * clip_rect.min.y;
@@ -299,8 +333,11 @@ impl Painter {
             pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
             pass.draw_indexed(0..mesh.indices.len() as u32, 0, 0..1);
         }
+        // TODO: see if we need to reset the scissor to it's previous values
     }
 
+    // create a new texture if it didn't exist earlier
+    // this might be better served by using texture::Texture, but I'm not sure
     fn make_tex(
         &mut self,
         id: egui::TextureId,
@@ -354,6 +391,7 @@ impl Painter {
         }
     }
 
+    /// Update all the textures egui is requesting, call this before paint
     pub fn update_textures(
         &mut self,
         device: &wgpu::Device,
@@ -363,6 +401,9 @@ impl Painter {
         for (id, delta) in set {
             let (size, data) = match delta.image {
                 egui::epaint::image::ImageData::Color(img) => (img.size, img.pixels),
+                // this has worked for now, but I think there might be a better
+                // solution than just making a normal RGBA image with all white
+                // pixels
                 egui::epaint::image::ImageData::Alpha(img) => {
                     let data = img.pixels;
                     let new_data: Vec<_> = data
@@ -379,6 +420,10 @@ impl Painter {
                 depth_or_array_layers: 1,
             };
 
+            // there were some annoying lifetime issues and whatnot here
+            // this looks really ugly, so should be refactored
+            // but I don't really know how exactly. Ahash should support
+            // the entry API, possibly we could move away from ahash altogether.
             let tex_exists = self.textures.get(&id).is_some();
 
             let texture;
@@ -391,12 +436,16 @@ impl Painter {
                 texture = &self.textures.get(&id).unwrap().tex;
             }
 
+            // I think offset is just an index into the image buffer?
+            // if it isn't then this is **completely** wrong,
+            // and this entire part needs to be rewritten
             let offset = if let Some(pos) = delta.pos {
                 pos[0] * pos[1] * 4
             } else {
                 0
             } as u64;
 
+            // still assuming offset is just into the flat buffer...
             // TODO: Check that this is actually correct and won't blow up in our faces
             queue.write_texture(
                 wgpu::ImageCopyTexture {
@@ -420,8 +469,12 @@ impl Painter {
             );
         }
     }
+
+    /// Free all the textures egui is asking us to free,
+    /// call this after paint
     pub fn free_textures(&mut self, free: Vec<TextureId>) {
         for id in free {
+            // thankfully WGPU frees these for us
             self.textures.remove(&id);
         }
     }

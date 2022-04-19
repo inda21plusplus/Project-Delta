@@ -53,6 +53,7 @@ impl Vertex for ModelVertex {
 #[derive(Debug)]
 pub struct Material {
     pub name: String,
+    // TODO: load normals
     pub diffuse_texture: texture::Texture,
     pub bind_group: wgpu::BindGroup,
 }
@@ -263,6 +264,7 @@ impl ModelManager {
         self.instance_buffers
             .push(device.create_buffer(&wgpu::BufferDescriptor {
                 label: Some(&format!("Instance buffer {}", self.models.len())),
+                // size of a 4x4 matrix of f32s
                 size: n_instances * 4 * 4 * mem::size_of::<f32>() as u64,
                 usage: wgpu::BufferUsages::COPY_DST | wgpu::BufferUsages::VERTEX,
                 mapped_at_creation: false,

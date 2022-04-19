@@ -297,6 +297,8 @@ impl Renderer {
                 bind_group_layouts: &[&camera_bind_group_layout],
                 push_constant_ranges: &[],
             });
+        // Render pipeline for the lines, this is largely the same as the normal one
+        // with a few explicit differences
         let line_render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("Line Render Pipeline"),
             layout: Some(&line_render_pipeline_layout),
@@ -311,6 +313,8 @@ impl Renderer {
                 targets: &[wgpu::ColorTargetState {
                     format: config.format,
                     blend: Some(wgpu::BlendState {
+                        // we want our lines to be rendered
+                        // over other geometry
                         color: wgpu::BlendComponent::REPLACE,
                         alpha: wgpu::BlendComponent::OVER,
                     }),
@@ -318,10 +322,15 @@ impl Renderer {
                 }],
             }),
             primitive: wgpu::PrimitiveState {
+                // we explicitly wish to use the GPUs built in
+                // line rendering hardware
                 topology: wgpu::PrimitiveTopology::LineList,
                 strip_index_format: None,
                 front_face: wgpu::FrontFace::Ccw,
-                cull_mode: Some(wgpu::Face::Back),
+                // culling doesn't matter
+                cull_mode: None,
+                // this shouldn't matter, but anything besides
+                // fill requires specific GPU features.
                 polygon_mode: wgpu::PolygonMode::Fill,
                 unclipped_depth: false,
                 conservative: false,
@@ -329,6 +338,10 @@ impl Renderer {
             depth_stencil: Some(wgpu::DepthStencilState {
                 format: texture::Texture::DEPTH_FORMAT,
                 depth_write_enabled: false,
+                // unlike the normal pipeline, our depth test always
+                // succeeds, to make sure we always draw lines on top
+                // of other geometry. This might change in the future,
+                // or be made configurable.
                 depth_compare: wgpu::CompareFunction::Always,
                 stencil: wgpu::StencilState::default(),
                 bias: wgpu::DepthBiasState::default(),
@@ -423,8 +436,10 @@ impl Renderer {
             self.surface.configure(&self.device, &self.config);
             self.depth_texture = texture::Texture::new_depth_texture(&self.device, &self.config);
         }
+        // TODO: also resize UI stuff
     }
 
+    /// Load an obj file and all its associate files.
     pub fn load_model<P: AsRef<std::path::Path>>(
         &mut self,
         path: P,
@@ -441,6 +456,10 @@ impl Renderer {
         Ok(idx)
     }
 
+    pub fn get_models_mut(&mut self) -> &mut ModelManager {
+        &mut self.model_manager
+    }
+
     pub fn update_camera(&mut self) {
         self.camera_uniform.update_view_proj(&self.camera);
         self.queue.write_buffer(
@@ -450,6 +469,7 @@ impl Renderer {
         );
     }
 
+    #[deprecated = "use the model manager for this functionality instead"]
     pub fn update_instances(&mut self, instances: &[(ModelIndex, &[Transform])]) {
         for (idx, data) in instances {
             self.model_manager
@@ -457,6 +477,11 @@ impl Renderer {
         }
     }
 
+    // TODO: pass some kind of Scene object to renderer instead, or make it a part of renderer
+    // this would help in allowing the renderer to be more configurable, and would alleviate
+    // some of the potential creep in just getting more and more arguments.
+    // This also conflicts design-wise with the existing model manager, as we now have two
+    // entirely distinct ways to interact with what is being rendered.
     pub fn render(
         &mut self,
         lines: &[Line],
@@ -474,6 +499,7 @@ impl Renderer {
                 label: Some("Render Encoder"),
             });
 
+        // update the line buffer to accomodate potential extra lines
         if lines.len() > self.n_lines as usize {
             self.n_lines = lines.len() as u32;
             self.line_vertex_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
@@ -485,6 +511,9 @@ impl Renderer {
             });
         }
 
+        // write the lines into the buffer immediately
+        // normally you don't want to do this every frame
+        // but in this case
         self.queue.write_buffer(
             &self.line_vertex_buffer,
             0,
