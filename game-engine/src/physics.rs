@@ -73,6 +73,7 @@ pub struct RayCastHit {
 
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub struct RidgidBody {
+    pub last_frame_location : Vec3, // used for lerp location
     pub velocity: Vec3,
     pub acceleration: Vec3, // can be used for gravity
 
@@ -101,6 +102,7 @@ impl RidgidBody {
             center_of_mass_offset: Vec3::zero(),
             is_static: false,
             torque: Vec3::zero(),
+            last_frame_location : Vec3::zero(),
         }
     }
 }

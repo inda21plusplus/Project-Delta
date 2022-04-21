@@ -81,7 +81,7 @@ pub fn collide_box_vs_box(
                     let normal = -(r2 * ray.direction).normalized();
                     let normal_overlap = normal * overlap;
 
-                    pop_coliders(d.signum() * normal_overlap / 4.0, t1, t2, &rb1, &rb2);
+                    //pop_coliders(d.signum() * normal_overlap / 4.0, t1, t2, &rb1, &rb2);
 
                     let point_of_contact =
                         w1 + r2 * (ray.direction * d + ray.origin) - s1 * ray.direction;

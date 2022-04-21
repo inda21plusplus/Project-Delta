@@ -1,6 +1,8 @@
+use std::collections::HashMap;
+
 use super::{
     get_position,
-    r#box::collision::is_colliding_box_vs_box,
+    r#box::{collision::is_colliding_box_vs_box, BoxColider},
     sphere::collision::{is_colliding_sphere_vs_box, is_colliding_sphere_vs_sphere},
     Collider, PhysicsObject, RidgidBody, Vec3,
 };
@@ -161,15 +163,23 @@ pub fn collide(
     rb2: &mut RidgidBody,
     cc2: &Vec<Collider>,
 ) -> bool {
+    let t1_post = t1.position;
+    let t2_post = t2.position;
+
     let mut has_colided = false;
-    for c1 in cc1 {
-        for c2 in cc2 {
+
+    // used when pop does not work, simply uses binary search to pop the colliders using lastframe location and current location
+    let mut post_fix: Vec<Vec<usize>> = Vec::with_capacity(cc1.len());
+
+    for c1_index in 0..cc1.len() {
+        let c1 = &cc1[c1_index];
+
+        let mut current_post_fix: Vec<usize> = Vec::new();
+        for c2_index in 0..cc2.len() {
+            let c2 = &cc2[c2_index];
             if is_colliding(c1, t1, c2, t2) {
                 //println!("Colliding!");
                 has_colided = true;
-
-                solve_colliding(c1, rb1, t1, c2, rb2, t2);
-
                 debug_assert_finite!(rb1.velocity);
                 debug_assert_finite!(rb2.velocity);
                 debug_assert_finite!(rb1.angular_velocity);
@@ -179,9 +189,75 @@ pub fn collide(
                 rb2.is_active = true;
                 rb1.is_active_time = 0.0;
                 rb2.is_active_time = 0.0;
+                //solve_colliding(c1, rb1, t1, c2, rb2, t2);
+                match (c1, c2) {
+                    (Collider::BoxColider(_), Collider::BoxColider(_)) => {
+                        current_post_fix.push(c2_index);
+                    }
+                    _ => {
+                        solve_colliding(c1, rb1, t1, c2, rb2, t2);
+                    }
+                }
             }
         }
+        post_fix.push(current_post_fix);
     }
+
+    // binary searches the col point
+
+    const BINARY_ITTERATIONS: i32 = 8;
+    // TODO ADD ROTATION
+
+    let t1_pre = rb1.last_frame_location;
+    let t2_pre = rb2.last_frame_location;
+
+    for c1_index in 0..cc1.len() {
+        if post_fix[c1_index].is_empty() {
+            continue;
+        }
+
+        let c1 = &cc1[c1_index];
+        let mut search_location = 0.5f32;
+        let mut search_length = 0.5f32;
+
+        let mut is_not_touching = 0.0f32;
+        let mut is_touching = 1.0f32;
+
+        for _ in 0..BINARY_ITTERATIONS {
+            t1.position = t1_post * search_location + t1_pre * (1.0 - search_location);
+            t2.position = t2_post * search_location + t2_pre * (1.0 - search_location);
+
+            search_length *= 0.5;
+
+            let mut colliding = false;
+            for c2_index in &post_fix[c1_index] {
+                let c2 = &cc2[*c2_index];
+                if is_colliding(c1, t1, c2, t2) {
+                    colliding = true;
+                    break;
+                }
+            }
+            if !colliding {
+                is_not_touching = search_location;
+            }
+            else {
+                is_touching = search_location;
+            }
+            search_location += search_length * if colliding { -1.0 } else { 1.0 };
+        }
+  
+        t1.position = t1_post * is_touching + t1_pre * (1.0 - is_touching);
+        t2.position = t2_post * is_touching + t2_pre * (1.0 - is_touching);
+
+        for c2_index in &post_fix[c1_index] {
+            let c2 = &cc2[*c2_index];
+
+            solve_colliding(c1, rb1, t1, c2, rb2, t2);
+        }
+        t1.position = t1_post * is_not_touching + t1_pre * (1.0 - is_not_touching);
+        t2.position = t2_post * is_not_touching + t2_pre * (1.0 - is_not_touching);
+    }
+
     has_colided
 }
 
@@ -265,8 +341,15 @@ pub fn update(
 
         let (trans_first, trans_last) = transforms.split_at_mut(i + 1);
 
+        // update last frame location
+        phx_first[i].rb.last_frame_location = trans_first[i].position;
+
+        // simulate one step in the simulation
         phx_first[i].rb.step(real_dt, &mut trans_first[i]);
+
         let mut has_colided = false;
+
+        // pop coliders and apply force on all colliding objects
         for (transform, phx_obj) in trans_last.iter_mut().zip(phx_last.iter_mut()) {
             if collide(
                 &mut phx_first[i].rb,
@@ -279,6 +362,7 @@ pub fn update(
                 has_colided = true;
             }
         }
+
         if has_colided {
             *is_paused = true;
         }
