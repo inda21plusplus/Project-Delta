@@ -1,5 +1,7 @@
 use std::{ops::ControlFlow, time::Instant};
 
+use anyhow::Context as _;
+
 use egui::Context as EguiContext;
 use egui_winit::State as EguiWinitState;
 
@@ -40,17 +42,22 @@ impl Editor {
     pub fn new() -> anyhow::Result<(EventLoop<()>, Self)> {
         let event_loop = EventLoop::new();
 
-        let icon = image::open("res/icon.png")?.into_rgba8();
+        let icon = image::open("res/icon.png")
+            .with_context(|| format!("failed to open icon.png"))?
+            .into_rgba8();
         let (icon_width, icon_height) = icon.dimensions();
-        let icon = winit::window::Icon::from_rgba(icon.into_raw(), icon_width, icon_height)?;
+        let icon = winit::window::Icon::from_rgba(icon.into_raw(), icon_width, icon_height)
+            .with_context(|| format!("failed to convert the icon image into an icon"))?;
 
-        let window = Window::new(&event_loop, Some(icon))?;
+        let window = Window::new(&event_loop, Some(icon))
+            .with_context(|| format!("failed to open the winit window"))?;
         let mut context = Context {
             renderer: Renderer::new(
                 window.raw_window_handle(),
                 window.inner_size(),
                 [0.229, 0.507, 0.921],
-            )?,
+            )
+            .with_context(|| format!("failed to create the renderer"))?,
         };
 
         let camera_controller = CameraController::new(
@@ -60,10 +67,16 @@ impl Editor {
             Vec2::new(-0.3, 135f32.to_radians()),
         );
 
-        let scene = ExampleScene::new(&mut context)?;
+        let scene =
+            ExampleScene::new(&mut context).with_context(|| "failed to create the scene")?;
         let state = EguiWinitState::new(4096, &window.winit_window());
         let egui_context = EguiContext::default();
-
+        {
+            let mut opts = egui_context.tessellation_options();
+            //opts.debug_paint_clip_rects = true;
+            opts.anti_alias = false;
+            //opts.debug_paint_text_rects = true;
+        }
         Ok((
             event_loop,
             Self {
@@ -93,6 +106,7 @@ impl Editor {
                 event: WindowEvent::Resized(winit::dpi::PhysicalSize { width, height }),
                 window_id,
             } if window_id == self.window.winit_window().id() => {
+                log::info!("Resized window, new size: ({}, {})", width, height);
                 self.context.renderer.resize((width, height));
                 self.window.update_size();
             }
@@ -161,16 +175,24 @@ impl Editor {
         let full_output = self.egui_context.run(raw_input, |ctx| {
             egui::Window::new("my_area").auto_sized().show(&ctx, |ui| {
                 ui.label("Hello world!");
+                //ui.label("More texttttt");
                 if ui.button("Click me").clicked() {
                     ui.label("lmao");
                 }
             });
         });
 
-        self.context
-            .renderer
-            .render(&lines, &self.egui_context, full_output)
-            .unwrap_or_else(|err| log::error!("Failed to render: {}", err))
+        if self.window.inner_size() != (0, 0) {
+            match self.context.renderer.render(
+                &lines,
+                &self.egui_context,
+                full_output,
+                self.egui_context.pixels_per_point(),
+            ) {
+                Ok(_) => (),
+                Err(e) => log::error!("Failed to render: {}", e),
+            };
+        }
     }
 }
 
@@ -178,8 +200,14 @@ impl ExampleScene {
     pub fn new(context: &mut Context) -> anyhow::Result<Self> {
         Ok(Self {
             start_time: Instant::now(),
-            cube_model: context.renderer.load_model("res/cube.obj")?,
-            ball_model: context.renderer.load_model("res/ball.obj")?,
+            cube_model: context
+                .renderer
+                .load_model("res/cube.obj")
+                .with_context(|| "failed to open cube.obj")?,
+            ball_model: context
+                .renderer
+                .load_model("res/ball.obj")
+                .with_context(|| "failed to open ball.obj")?,
             transforms: Self::create_transforms(),
         })
     }
