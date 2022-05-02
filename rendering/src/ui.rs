@@ -56,6 +56,7 @@ pub struct Painter {
     vertex_buf_size: wgpu::BufferAddress,
     index_buffer: wgpu::Buffer,
     index_buf_size: wgpu::BufferAddress,
+    local_buffer: wgpu::Buffer,
     local_bind_group: wgpu::BindGroup,
     texture_bind_group_layout: wgpu::BindGroupLayout,
 }
@@ -219,6 +220,7 @@ impl Painter {
             vertex_buf_size,
             index_buffer,
             index_buf_size,
+            local_buffer,
             local_bind_group,
             texture_bind_group_layout,
         }
@@ -232,7 +234,7 @@ impl Painter {
         queue: &wgpu::Queue,
         pass: &mut wgpu::RenderPass<'a>,
         meshes: Vec<egui::ClippedMesh>,
-        scale_factor: f32,
+        pixels_per_point: f32,
         physical_height: u32,
         physical_width: u32,
     ) {
@@ -285,46 +287,20 @@ impl Painter {
                 );
             };
 
-            // code from https://github.com/hasenbanck/egui_wgpu_backend
-            // I don't really know how to properly translate the rects
-            // in light of logical pixel sizes etc., so I can't verify
-            // correctness of this.
-            // this is also "important" for not rendering UI that
-            // shouldn't be rendered I believe.
-            // Transform clip rect to physical pixels.
-            let clip_min_x = scale_factor * clip_rect.min.x;
-            let clip_min_y = scale_factor * clip_rect.min.y;
-            let clip_max_x = scale_factor * clip_rect.max.x;
-            let clip_max_y = scale_factor * clip_rect.max.y;
-
-            // Make sure clip rect can fit within an `u32`.
-            let clip_min_x = clip_min_x.clamp(0.0, physical_width as f32);
-            let clip_min_y = clip_min_y.clamp(0.0, physical_height as f32);
-            let clip_max_x = clip_max_x.clamp(clip_min_x, physical_width as f32);
-            let clip_max_y = clip_max_y.clamp(clip_min_y, physical_height as f32);
-
-            let clip_min_x = clip_min_x.round() as u32;
-            let clip_min_y = clip_min_y.round() as u32;
-            let clip_max_x = clip_max_x.round() as u32;
-            let clip_max_y = clip_max_y.round() as u32;
-
-            let width = (clip_max_x - clip_min_x).max(1);
-            let height = (clip_max_y - clip_min_y).max(1);
-
             {
-                // Clip scissor rectangle to target size.
-                let x = clip_min_x.min(physical_width);
-                let y = clip_min_y.min(physical_height);
-                let width = width.min(physical_width - x);
-                let height = height.min(physical_height - y);
-
+                let ScissorRect { x, y, w, h } = transform_rect_to_ndc(
+                    clip_rect,
+                    pixels_per_point,
+                    physical_height,
+                    physical_width,
+                );
                 // Skip rendering with zero-sized clip areas.
-                if width == 0 || height == 0 {
+                if w == 0 || h == 0 {
                     continue;
                 }
-
-                pass.set_scissor_rect(x, y, width, height);
+                pass.set_scissor_rect(x, y, w, h);
             }
+
             queue.write_buffer(&self.index_buffer, 0, bytemuck::cast_slice(&mesh.indices));
             queue.write_buffer(&self.vertex_buffer, 0, bytemuck::cast_slice(&mesh.vertices));
 
@@ -334,6 +310,14 @@ impl Painter {
             pass.draw_indexed(0..mesh.indices.len() as u32, 0, 0..1);
         }
         // TODO: see if we need to reset the scissor to it's previous values
+    }
+
+    pub fn resize(&self, queue: &wgpu::Queue, width: u32, height: u32) {
+        queue.write_buffer(
+            &self.local_buffer,
+            0,
+            bytemuck::cast_slice(&[width as f32, height as f32]),
+        );
     }
 
     // create a new texture if it didn't exist earlier
@@ -478,4 +462,51 @@ impl Painter {
             self.textures.remove(&id);
         }
     }
+}
+
+struct ScissorRect {
+    x: u32,
+    y: u32,
+    w: u32,
+    h: u32,
+}
+
+fn transform_rect_to_ndc(
+    clip_rect: egui::Rect,
+    pixels_per_point: f32,
+    physical_height: u32,
+    physical_width: u32,
+) -> ScissorRect {
+    // code from https://github.com/hasenbanck/egui_wgpu_backend
+
+    // Transform clip rect to physical pixels.
+    let clip_min_x = pixels_per_point * clip_rect.min.x;
+    let clip_min_y = pixels_per_point * clip_rect.min.y;
+    let clip_max_x = pixels_per_point * clip_rect.max.x;
+    let clip_max_y = pixels_per_point * clip_rect.max.y;
+
+    // Make sure clip rect can fit within an `u32`.
+    let clip_min_x = clip_min_x.clamp(0.0, physical_width as f32);
+    let clip_min_y = clip_min_y.clamp(0.0, physical_height as f32);
+    let clip_max_x = clip_max_x.clamp(clip_min_x, physical_width as f32);
+    let clip_max_y = clip_max_y.clamp(clip_min_y, physical_height as f32);
+
+    // original code uses .round(), for now we're being conservative and using
+    // maximum rect instead (albeit this difference should at most cause single-pixel)
+    // errors in the rendering
+    let clip_min_x = clip_min_x.floor() as u32;
+    let clip_min_y = clip_min_y.floor() as u32;
+    let clip_max_x = clip_max_x.ceil() as u32;
+    let clip_max_y = clip_max_y.ceil() as u32;
+
+    let width = (clip_max_x - clip_min_x).max(1);
+    let height = (clip_max_y - clip_min_y).max(1);
+
+    // Clip scissor rectangle to target size.
+    let x = clip_min_x.min(physical_width);
+    let y = clip_min_y.min(physical_height);
+    let w = width.min(physical_width - x);
+    let h = height.min(physical_height - y);
+
+    ScissorRect { x, y, w, h }
 }

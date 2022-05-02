@@ -10,7 +10,7 @@ pub enum RenderingError {
     NoAdapter,
     #[error("couldn't get a device from the adapter")]
     NoDevice(#[from] wgpu::RequestDeviceError),
-    #[error("TODO: idk what to write here")]
+    #[error("Error rendering to surface: {0}")]
     SurfaceError(#[from] wgpu::SurfaceError),
 }
 

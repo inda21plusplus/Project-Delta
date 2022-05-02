@@ -1,3 +1,6 @@
+#[macro_use]
+extern crate wgpu;
+
 pub mod camera;
 pub mod model;
 pub mod texture;

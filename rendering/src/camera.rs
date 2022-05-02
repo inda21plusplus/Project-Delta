@@ -2,6 +2,7 @@ use std::mem;
 
 use common::{Mat4, Vec3};
 
+#[derive(Debug, Copy, Clone)]
 pub struct Camera {
     pub eye: Vec3,
     pub target: Vec3,
