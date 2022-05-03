@@ -220,10 +220,15 @@ impl ExampleScene {
             obj.rotation.rotate_y(obj.position.x * 0.03 * dt);
         }
 
-        ctx.renderer.update_instances(&[
-            (self.cube_model, &self.transforms[..8]),
-            (self.ball_model, &self.transforms[8..]),
-        ]);
+        {
+            let mut mgr = ctx.renderer.get_models_mut();
+            mgr.set_transforms(self.cube_model, self.transforms[..8].to_vec());
+            mgr.set_transforms(self.ball_model, self.transforms[8..].to_vec());
+        }
+        // ctx.renderer.update_instances(&[
+        //     (self.cube_model, &self.transforms[..8]),
+        //     (self.ball_model, &self.transforms[8..]),
+        // ]);
     }
 
     fn create_transforms() -> Vec<Transform> {

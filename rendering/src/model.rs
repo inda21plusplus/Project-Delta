@@ -1,11 +1,14 @@
+use std::collections::HashMap;
 use std::mem;
-use std::ops::Range;
+use std::ops::{Range, RangeBounds};
 use std::path::Path;
+
 use tobj::LoadOptions;
 use wgpu::util::DeviceExt;
 
 use super::texture;
 use crate::error::LoadError;
+use crate::range::range as slice_range;
 use crate::renderer::RawTranslationMatrix;
 
 use common::Transform;
@@ -103,7 +106,7 @@ impl Model {
 
             let normal_path = mat.normal_texture;
             let normal_texture = if normal_path == "" {
-                let mut img = image::Rgb32FImage::from_pixel(1, 1, image::Rgb([0.0, 0.0, 1.0]));
+                let img = image::Rgb32FImage::from_pixel(1, 1, image::Rgb([0.0, 0.0, 1.0]));
                 texture::Texture::from_image(
                     device,
                     queue,
@@ -260,18 +263,64 @@ where
 }
 
 #[derive(Debug, Default)]
-pub struct ModelManager {
+pub struct ModelStorage {
     models: Vec<Model>,
     instances: Vec<Vec<Transform>>,
     instance_buffers: Vec<wgpu::Buffer>,
 }
 
-impl ModelManager {
+#[derive(Debug)]
+pub struct ModelManager<'a> {
+    device: &'a wgpu::Device,
+    queue: &'a wgpu::Queue,
+    storage: &'a mut ModelStorage,
+    pending_writes: HashMap<ModelIndex, Vec<Transform>>,
+}
+
+impl<'a> ModelManager<'a> {
+    pub fn get_transforms_mut<R: RangeBounds<usize>>(
+        &mut self,
+        model: ModelIndex,
+        range: R,
+    ) -> &mut [Transform] {
+        self.pending_writes
+            .entry(model)
+            .or_insert_with(|| self.storage.get_transforms(model, range).to_vec())
+    }
+
+    pub fn set_transforms(&mut self, model: ModelIndex, transforms: Vec<Transform>) {
+        self.pending_writes.insert(model, transforms);
+    }
+}
+
+impl<'a> Drop for ModelManager<'a> {
+    fn drop(&mut self) {
+        for (model, data) in &mut self.pending_writes.drain() {
+            self.storage
+                .set_transforms(self.device, self.queue, model, data);
+        }
+    }
+}
+
+impl ModelStorage {
     pub fn new() -> Self {
         Self {
             models: vec![],
             instances: vec![],
             instance_buffers: vec![],
+        }
+    }
+
+    pub fn get_manager<'a>(
+        &'a mut self,
+        device: &'a wgpu::Device,
+        queue: &'a wgpu::Queue,
+    ) -> ModelManager<'a> {
+        ModelManager {
+            device,
+            queue,
+            storage: self,
+            pending_writes: HashMap::new(),
         }
     }
 
@@ -295,28 +344,33 @@ impl ModelManager {
         idx
     }
 
-    pub fn get_transforms(&self, model: ModelIndex, range: Range<usize>) -> &[Transform] {
-        &self.instances[model][range]
+    pub fn get_transforms<R: RangeBounds<usize>>(
+        &self,
+        model: ModelIndex,
+        range: R,
+    ) -> &[Transform] {
+        &self.instances[model][slice_range(range, ..self.instances[model].len())]
     }
 
-    pub fn modify_transforms_with<F>(
+    pub fn modify_transforms_with<F, R: RangeBounds<usize>>(
         &mut self,
         model: ModelIndex,
-        range: Range<usize>,
+        range: R,
         f: F,
         queue: &wgpu::Queue,
     ) where
         F: FnOnce(&mut [Transform]),
     {
-        f(&mut self.instances[model][range.clone()]);
-        let raw: Vec<_> = self.instances[model][range.clone()]
+        let Range { start, end } = slice_range(range, ..self.instances[model].len());
+        f(&mut self.instances[model][start..end]);
+        let raw: Vec<_> = self.instances[model][start..end]
             .iter()
             .copied()
             .map(RawTranslationMatrix::new)
             .collect();
         queue.write_buffer(
             &self.instance_buffers[model],
-            range.start as u64 * mem::size_of::<RawTranslationMatrix>() as u64,
+            start as u64 * mem::size_of::<RawTranslationMatrix>() as u64,
             bytemuck::cast_slice(&raw[..]),
         );
     }

@@ -3,7 +3,7 @@ use wgpu::util::DeviceExt;
 use super::{Line, RawLine};
 use crate::camera::{Camera, CameraUniform};
 use crate::error::RenderingError;
-use crate::model::{DrawModel, Model, ModelIndex, ModelManager, ModelVertex, Vertex};
+use crate::model::{DrawModel, Model, ModelIndex, ModelManager, ModelStorage, ModelVertex, Vertex};
 use crate::renderer::Renderer;
 use crate::texture;
 
@@ -15,13 +15,13 @@ pub struct World {
     line_vertex_buffer: wgpu::Buffer,
     n_lines: u32,
     render_pipeline: wgpu::RenderPipeline,
-    model_manager: ModelManager,
+    model_storage: ModelStorage,
     texture_bind_group_layout: wgpu::BindGroupLayout,
     camera_bind_group: wgpu::BindGroup,
     camera_uniform: CameraUniform,
     camera_buffer: wgpu::Buffer,
     pub camera: Camera,
-    depth_texture: texture::Texture,
+    pub(crate) depth_texture: texture::Texture,
     clear_color: [f64; 3],
 }
 
@@ -46,7 +46,7 @@ impl World {
             label: Some("camera_bind_group"),
         });
 
-        let model_manager = ModelManager::new();
+        let model_storage = ModelStorage::new();
 
         let n_lines = 32;
 
@@ -200,7 +200,7 @@ impl World {
             line_vertex_buffer,
             n_lines,
             render_pipeline,
-            model_manager,
+            model_storage,
             camera_bind_group,
             camera_uniform,
             camera_buffer,
@@ -217,12 +217,12 @@ impl World {
         lines_to_draw: u32,
         render_pass: &mut wgpu::RenderPass<'a>,
     ) {
-        for (c, obj_model) in self.model_manager.models().iter().enumerate() {
-            render_pass.set_vertex_buffer(1, self.model_manager.instance_buffers()[c].slice(..));
+        for (c, obj_model) in self.model_storage.models().iter().enumerate() {
+            render_pass.set_vertex_buffer(1, self.model_storage.instance_buffers()[c].slice(..));
             render_pass.set_pipeline(&self.render_pipeline);
             render_pass.draw_model_instanced(
                 obj_model,
-                0..self.model_manager.instances()[c].len() as u32,
+                0..self.model_storage.instances()[c].len() as u32,
                 &self.camera_bind_group,
             );
         }
@@ -284,13 +284,17 @@ impl World {
     ) -> Result<ModelIndex, RenderingError> {
         let model = Model::load(device, queue, &self.texture_bind_group_layout, path)?;
 
-        let idx = self.model_manager.add_model(device, model, 16);
+        let idx = self.model_storage.add_model(device, model, 16);
 
         Ok(idx)
     }
 
-    pub fn get_models_mut(&mut self) -> &mut ModelManager {
-        &mut self.model_manager
+    pub(crate) fn get_models_mut<'a>(
+        &'a mut self,
+        device: &'a wgpu::Device,
+        queue: &'a wgpu::Queue,
+    ) -> ModelManager<'a> {
+        self.model_storage.get_manager(device, queue)
     }
 
     pub fn update_camera(&mut self, queue: &wgpu::Queue) {
@@ -310,7 +314,7 @@ impl World {
         instances: &[(ModelIndex, &[super::Transform])],
     ) {
         for (idx, data) in instances {
-            self.model_manager
+            self.model_storage
                 .set_transforms(device, queue, *idx, data.to_vec());
         }
     }

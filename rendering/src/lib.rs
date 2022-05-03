@@ -7,6 +7,7 @@ pub mod texture;
 pub mod ui;
 
 mod error;
+mod range;
 mod renderer;
 
 pub use camera::Camera;

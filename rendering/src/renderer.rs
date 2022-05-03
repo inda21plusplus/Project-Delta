@@ -334,8 +334,8 @@ impl Renderer {
         self.worlds[0].load_model(&self.device, &self.queue, path)
     }
 
-    pub fn get_models_mut(&mut self) -> &mut ModelManager {
-        self.worlds[0].get_models_mut()
+    pub fn get_models_mut(&mut self) -> ModelManager {
+        self.worlds[0].get_models_mut(&self.device, &self.queue)
     }
 
     pub fn update_camera(&mut self) {
