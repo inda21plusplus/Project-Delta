@@ -4,12 +4,10 @@ use egui::{
     epaint::{ImageDelta, Mesh, Vertex},
     TextureId,
 };
-use wgpu::{self, util::DeviceExt};
+use wgpu;
 
 use std::mem;
 
-// not sure if it's a better idea to use texture::Texture
-// TODO: look into it
 pub struct UiTexture {
     pub tex: texture::Texture,
     pub bind_group: wgpu::BindGroup,

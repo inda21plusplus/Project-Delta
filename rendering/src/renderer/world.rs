@@ -226,13 +226,7 @@ impl World {
         }
     }
 
-    fn do_render_rpass<'a>(
-        &'a self,
-        device: &wgpu::Device,
-        queue: &wgpu::Queue,
-        lines_to_draw: u32,
-        render_pass: &mut wgpu::RenderPass<'a>,
-    ) {
+    fn do_render_rpass<'a>(&'a self, lines_to_draw: u32, render_pass: &mut wgpu::RenderPass<'a>) {
         for (c, obj_model) in self.model_storage.models().iter().enumerate() {
             render_pass.set_vertex_buffer(1, self.model_storage.instance_buffers()[c].slice(..));
             render_pass.set_pipeline(&self.render_pipeline);
@@ -286,7 +280,7 @@ impl World {
         render_pass: &mut wgpu::RenderPass<'a>,
     ) -> Result<(), RenderingError> {
         self.upload_lines(device, queue, lines);
-        self.do_render_rpass(device, queue, lines.len() as u32, render_pass);
+        self.do_render_rpass(lines.len() as u32, render_pass);
 
         Ok(())
     }
@@ -371,7 +365,7 @@ impl World {
                 }),
             });
 
-            self.do_render_rpass(device, queue, lines.len() as u32, &mut render_pass);
+            self.do_render_rpass(lines.len() as u32, &mut render_pass);
         }
         queue.submit(std::iter::once(encoder.finish()));
 

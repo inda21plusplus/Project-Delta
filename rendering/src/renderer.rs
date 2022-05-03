@@ -7,7 +7,7 @@ use raw_window_handle::HasRawWindowHandle;
 
 use crate::model::ModelIndex;
 use crate::model::ModelManager;
-use crate::{camera, texture, Camera, RenderingError};
+use crate::{texture, Camera, RenderingError};
 use common::{Mat3, Mat4, Transform, Vec3, Vec4};
 
 pub mod world;
