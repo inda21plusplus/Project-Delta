@@ -35,7 +35,7 @@ impl Texture {
             depth_or_array_layers: 1,
         };
         let desc = wgpu::TextureDescriptor {
-            label: Some("depth texture"),
+            label: Some("render target texture"),
             size,
             mip_level_count: 1,
             sample_count: 1,
@@ -52,7 +52,7 @@ impl Texture {
             mag_filter: wgpu::FilterMode::Linear,
             min_filter: wgpu::FilterMode::Linear,
             mipmap_filter: wgpu::FilterMode::Nearest,
-            compare: Some(wgpu::CompareFunction::LessEqual),
+            compare: None,
             lod_min_clamp: -100.0,
             lod_max_clamp: 100.0,
             ..Default::default()

@@ -4,17 +4,15 @@ use egui::{
     epaint::{ImageDelta, Mesh, Vertex},
     TextureId,
 };
-use wgpu;
+use wgpu::{self, util::DeviceExt};
 
 use std::mem;
 
 // not sure if it's a better idea to use texture::Texture
 // TODO: look into it
-struct Texture {
-    tex: wgpu::Texture,
-    _sampler: wgpu::Sampler,
-    _view: wgpu::TextureView,
-    bind_group: wgpu::BindGroup,
+pub struct UiTexture {
+    pub tex: texture::Texture,
+    pub bind_group: wgpu::BindGroup,
 }
 
 // in glsl:
@@ -50,7 +48,8 @@ fn egui_vertex_desc<'a>() -> wgpu::VertexBufferLayout<'a> {
 }
 
 pub struct Painter {
-    textures: AHashMap<egui::TextureId, Texture>,
+    textures: AHashMap<egui::TextureId, UiTexture>,
+    render_texture: Option<(egui::TextureId, UiTexture)>,
     pipeline: wgpu::RenderPipeline,
     vertex_buffer: wgpu::Buffer,
     vertex_buf_size: wgpu::BufferAddress,
@@ -215,6 +214,7 @@ impl Painter {
 
         Painter {
             textures: AHashMap::new(),
+            render_texture: None,
             pipeline,
             vertex_buffer,
             vertex_buf_size,
@@ -224,6 +224,33 @@ impl Painter {
             local_bind_group,
             texture_bind_group_layout,
         }
+    }
+
+    pub fn make_ui_texture(&self, device: &wgpu::Device, tex: texture::Texture) -> UiTexture {
+        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            label: Some("render target bind group"),
+            layout: &self.texture_bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: wgpu::BindingResource::TextureView(&tex.view),
+                },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: wgpu::BindingResource::Sampler(&tex.sampler),
+                },
+            ],
+        });
+
+        UiTexture { tex, bind_group }
+    }
+
+    pub fn set_render_texture(&mut self, id: egui::TextureId, tex: UiTexture) {
+        self.render_texture = Some((id, tex));
+    }
+
+    pub fn get_render_texture(&self) -> Option<&(TextureId, UiTexture)> {
+        self.render_texture.as_ref()
     }
 
     // weird lifetimes, self must outlive renderpass
@@ -244,16 +271,21 @@ impl Painter {
         // of looping through it an extra time is minimal compared to
         // the rest of what we're doing
         // in case of performance issues: verify this claim
+        // ***IMPORTANT***: the above is very false, but left up as a
+        // historical artefact. Since rendering all takes place after
+        // all commands have been recorded, we overwrite the proper data
+        // in our vertex/index buffer over and over, leaving us with garbage
+        // when the render is actually performed.
+        // So instead we allocate enough space for all the meshes, and write
+        // them sequentially
         let max_verts = meshes
             .iter()
             .map(|egui::ClippedMesh(_, Mesh { vertices, .. })| vertices.len())
-            .max()
-            .unwrap_or(0);
-        let max_indices = meshes
+            .sum::<usize>();
+        let max_indices: usize = meshes
             .iter()
             .map(|egui::ClippedMesh(_, Mesh { indices, .. })| indices.len())
-            .max()
-            .unwrap_or(0);
+            .sum::<usize>();
 
         if max_verts as wgpu::BufferAddress > self.vertex_buf_size {
             self.vertex_buffer = device.create_buffer(&wgpu::BufferDescriptor {
@@ -277,14 +309,16 @@ impl Painter {
         pass.set_pipeline(&self.pipeline);
         pass.set_bind_group(0, &self.local_bind_group, &[]);
 
+        let mut idx_buf_start = 0;
+        let mut vtx_buf_start = 0;
         for egui::ClippedMesh(clip_rect, mesh) in meshes {
-            let texture = if let Some(texture) = self.textures.get(&mesh.texture_id) {
-                texture
-            } else {
-                panic!(
+            let texture = match (self.textures.get(&mesh.texture_id), &self.render_texture) {
+                (Some(tex), _) => tex,
+                (_, &Some((id, ref tex))) if id == mesh.texture_id => tex,
+                _ => panic!(
                     "Couldn't find the texture id specified ({:?})",
                     mesh.texture_id
-                );
+                ),
             };
 
             {
@@ -301,23 +335,53 @@ impl Painter {
                 pass.set_scissor_rect(x, y, w, h);
             }
 
-            queue.write_buffer(&self.index_buffer, 0, bytemuck::cast_slice(&mesh.indices));
-            queue.write_buffer(&self.vertex_buffer, 0, bytemuck::cast_slice(&mesh.vertices));
+            let idx_bytes: &[u8] = bytemuck::cast_slice(&mesh.indices[..]);
+            let vtx_bytes: &[u8] = bytemuck::cast_slice(&mesh.vertices[..]);
+            let idx_end = idx_buf_start + idx_bytes.len() as wgpu::BufferAddress;
+            let vtx_end = vtx_buf_start + vtx_bytes.len() as wgpu::BufferAddress;
 
+            queue.write_buffer(&self.index_buffer, idx_buf_start, idx_bytes);
+            queue.write_buffer(&self.vertex_buffer, vtx_buf_start, vtx_bytes);
             pass.set_bind_group(1, &texture.bind_group, &[]);
-            pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
-            pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
+            pass.set_index_buffer(
+                self.index_buffer.slice(idx_buf_start..idx_end),
+                wgpu::IndexFormat::Uint32,
+            );
+            pass.set_vertex_buffer(0, self.vertex_buffer.slice(vtx_buf_start..vtx_end));
             pass.draw_indexed(0..mesh.indices.len() as u32, 0, 0..1);
+
+            idx_buf_start = idx_end;
+            vtx_buf_start = vtx_end;
         }
         // TODO: see if we need to reset the scissor to it's previous values
     }
 
-    pub fn resize(&self, queue: &wgpu::Queue, width: u32, height: u32) {
+    pub fn resize(
+        &mut self,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        config: &wgpu::SurfaceConfiguration,
+    ) {
+        let &wgpu::SurfaceConfiguration {
+            width,
+            height,
+            format,
+            ..
+        } = config;
+
+        let new_tex = self.make_ui_texture(
+            device,
+            texture::Texture::new_render_target(device, (width, height), format),
+        );
+
         queue.write_buffer(
             &self.local_buffer,
             0,
             bytemuck::cast_slice(&[width as f32, height as f32]),
         );
+        if let Some((_, ref mut tex)) = self.render_texture.as_mut() {
+            *tex = new_tex;
+        }
     }
 
     // create a new texture if it didn't exist earlier
@@ -327,7 +391,7 @@ impl Painter {
         id: egui::TextureId,
         device: &wgpu::Device,
         size: wgpu::Extent3d,
-    ) -> Texture {
+    ) -> UiTexture {
         let tex_name = format!("egui texture {:?}", id);
         let bind_group_name = format!("egui texture {:?} bind group", id);
 
@@ -367,10 +431,12 @@ impl Painter {
             ],
         });
 
-        Texture {
-            tex: texture,
-            _view: view,
-            _sampler: sampler,
+        UiTexture {
+            tex: texture::Texture {
+                texture,
+                view,
+                sampler,
+            },
             bind_group,
         }
     }
@@ -383,6 +449,12 @@ impl Painter {
         set: AHashMap<TextureId, ImageDelta>,
     ) {
         for (id, delta) in set {
+            // special case the render texture
+            match self.render_texture {
+                Some((r_id, _)) if r_id == id => continue,
+                _ => {}
+            }
+
             let (size, data) = match delta.image {
                 egui::epaint::image::ImageData::Color(img) => (img.size, img.pixels),
                 // this has worked for now, but I think there might be a better
@@ -433,7 +505,7 @@ impl Painter {
             // TODO: Check that this is actually correct and won't blow up in our faces
             queue.write_texture(
                 wgpu::ImageCopyTexture {
-                    texture: &texture,
+                    texture: &texture.texture,
                     mip_level: 0,
                     origin: wgpu::Origin3d::ZERO,
                     aspect: wgpu::TextureAspect::All,

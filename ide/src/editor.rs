@@ -28,6 +28,7 @@ pub struct Editor {
     camera_controller: CameraController,
     scene: ExampleScene,
     last_frame: Instant,
+    render_texture: egui::TextureHandle,
 }
 
 // TODO: Things in here should exist in the ECS
@@ -77,6 +78,8 @@ impl Editor {
             opts.anti_alias = false;
             //opts.debug_paint_text_rects = true;
         }
+        let render_texture = context.renderer.make_egui_render_target(&egui_context);
+
         Ok((
             event_loop,
             Self {
@@ -87,6 +90,7 @@ impl Editor {
                 camera_controller,
                 scene,
                 last_frame: Instant::now(),
+                render_texture,
             },
         ))
     }
@@ -176,9 +180,7 @@ impl Editor {
             egui::Window::new("my_area").auto_sized().show(&ctx, |ui| {
                 ui.label("Hello world!");
                 //ui.label("More texttttt");
-                if ui.button("Click me").clicked() {
-                    ui.label("lmao");
-                }
+                ui.image(&self.render_texture, (400.0, 300.0));
             });
         });
 

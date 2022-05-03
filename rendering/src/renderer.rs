@@ -98,7 +98,6 @@ pub struct Renderer {
     camera_bind_group_layout: wgpu::BindGroupLayout,
     depth_texture: texture::Texture,
     worlds: Vec<World>,
-    egui_texture: Option<egui::TextureHandle>,
     clear_color: [f64; 3],
 }
 
@@ -234,6 +233,22 @@ impl Renderer {
                         ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                         count: None,
                     },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 2,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Texture {
+                            multisampled: false,
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        },
+                        count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 3,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                        count: None,
+                    },
                 ],
                 label: Some("texture bind group layout"),
             });
@@ -305,7 +320,6 @@ impl Renderer {
             depth_texture,
             clear_color,
             worlds: vec![],
-            egui_texture: None,
             painter,
         };
 
@@ -322,7 +336,12 @@ impl Renderer {
             self.size = (width, height);
             self.surface.configure(&self.device, &self.config);
             self.depth_texture = texture::Texture::new_depth_texture(&self.device, &self.config);
-            self.painter.resize(&self.queue, width, height);
+            self.painter.resize(&self.device, &self.queue, &self.config);
+
+            for world in &mut self.worlds {
+                world.depth_texture =
+                    texture::Texture::new_depth_texture(&self.device, &self.config)
+            }
         }
     }
 
@@ -348,6 +367,32 @@ impl Renderer {
         self.worlds[0].update_instances(&self.device, &self.queue, instances)
     }
 
+    pub fn make_egui_render_target(&mut self, ctx: &egui::Context) -> egui::TextureHandle {
+        let tex_mgr = ctx.tex_manager();
+        let id = {
+            let mut lock = tex_mgr.write();
+            lock.alloc(
+                "scene render texture".to_string(),
+                egui::ImageData::Color(egui::ColorImage::new(
+                    [self.config.width as usize, self.config.height as usize],
+                    egui::Color32::BLACK,
+                )),
+            )
+        };
+        let handle = egui::TextureHandle::new(tex_mgr, id);
+
+        let render_texture = texture::Texture::new_render_target(
+            &self.device,
+            (self.config.width, self.config.height),
+            self.config.format,
+        );
+
+        let ui_tex = self.painter.make_ui_texture(&self.device, render_texture);
+        self.painter.set_render_texture(id, ui_tex);
+
+        handle
+    }
+
     // TODO: pass some kind of Scene object to renderer instead, or make it a part of renderer
     // this would help in allowing the renderer to be more configurable, and would alleviate
     // some of the potential creep in just getting more and more arguments.
@@ -371,7 +416,9 @@ impl Renderer {
                 label: Some("Render Encoder"),
             });
 
-        {
+        if let Some((_, render_tex)) = self.painter.get_render_texture() {
+            self.worlds[0].render(&self.device, lines, &render_tex.tex.view, None, &self.queue)?;
+        } else {
             let [r, g, b] = self.clear_color;
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Render Pass"),
