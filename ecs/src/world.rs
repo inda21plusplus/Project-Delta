@@ -1,6 +1,11 @@
+use std::cell::RefCell;
+use std::mem;
+use std::rc::Rc;
+
+use crate::commands::CommandBuffer;
 use crate::component::{ComponentId, ComponentRegistry};
 use crate::query::QueryResponse;
-use crate::{BorrowMutError, Entities, Entity, Query};
+use crate::{BorrowMutError, Commands, Entities, Entity, Query};
 
 pub struct ResourceId(ComponentId);
 
@@ -14,6 +19,7 @@ pub struct World {
     // resources, but this is at least very simple. NOTE however that iterating through all
     // entities would also yield this one which is not desirable.
     resource_holder: Entity,
+    command_buffers: Vec<Rc<RefCell<CommandBuffer>>>,
 }
 
 impl Default for World {
@@ -24,11 +30,37 @@ impl Default for World {
             entities,
             component_registry: Default::default(),
             resource_holder,
+            command_buffers: vec![],
         }
     }
 }
 
 impl World {
+    /// Retrieves a `Commands` which can be used to issue commands to be run on this `World` when
+    /// possible, which is when `maintain` is called.
+    /// After `maintain` is called, issuing more commands to the `Commands` will result in a panic.
+    pub fn commands(&mut self) -> Commands {
+        let (buffer, commands) = Commands::new();
+
+        self.command_buffers.push(buffer);
+
+        commands
+    }
+
+    /// Must be called after every frame.
+    /// At the moment this runs all deferred commands, but more will be done in the future.
+    pub fn maintain(&mut self) {
+        // Temporarily take the vec here to we can let the command borrow the world mutably
+        let mut buffers = mem::take(&mut self.command_buffers);
+        for command_buffer in buffers.drain(..) {
+            for command in command_buffer.borrow_mut().take() {
+                command.execute(self);
+            }
+        }
+        // This is just to avoid some allocations
+        self.command_buffers = buffers;
+    }
+
     pub fn spawn(&mut self) -> Entity {
         self.entities.spawn()
     }

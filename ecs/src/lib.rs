@@ -1,5 +1,6 @@
 #![deny(warnings)]
 
+mod commands;
 pub mod component;
 mod entity;
 mod error;
@@ -7,6 +8,7 @@ mod error;
 mod query;
 mod world;
 
+pub use commands::Commands;
 pub use entity::{Entities, Entity};
 pub use error::BorrowMutError;
 pub use query::{as_mut_lt, as_ref_lt, ComponentQuery, Query};
@@ -670,5 +672,47 @@ mod tests {
         world.get::<usize>(entity);
         // While the first borrow still exists
         mem::drop(q);
+    }
+
+    #[test]
+    fn command_buffer_despawn_entities() {
+        struct Health(u8);
+
+        let mut world = World::default();
+        let a = world.spawn();
+        world.add(a, Health(100));
+        let b = world.spawn();
+        world.add(b, Health(10));
+        let c = world.spawn();
+        world.add(c, Health(100));
+        let d = world.spawn();
+        world.add(d, Health(10));
+
+        let mut commands = world.commands();
+        query_iter!(world, (entity: Entity, health: mut Health) => {
+            health.0 -= 10;
+            if health.0 == 0 {
+                commands.despawn(entity);
+            }
+        });
+        assert!(world.entities().exists(a));
+        assert!(world.entities().exists(b));
+        assert!(world.entities().exists(c));
+        assert!(world.entities().exists(d));
+        world.maintain();
+        assert!(world.entities().exists(a));
+        assert!(!world.entities().exists(b));
+        assert!(world.entities().exists(c));
+        assert!(!world.entities().exists(d));
+    }
+
+    #[test]
+    #[should_panic]
+    fn command_buffer_panics_when_used_after_maintain() {
+        let mut world = World::default();
+        let mut commands = world.commands();
+        commands.spawn();
+        world.maintain();
+        commands.spawn();
     }
 }
