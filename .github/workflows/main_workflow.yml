@@ -13,7 +13,7 @@ jobs:
       - name: Checkout sources
         uses: actions/checkout@v2
 
-      - name: Cache
+      - name: Cache dependencies
         uses: actions/cache@v3
         with:
           path: |
@@ -50,7 +50,7 @@ jobs:
       - name: Checkout sources
         uses: actions/checkout@v2
 
-      - name: Cache
+      - name: Cache dependencies
         uses: actions/cache@v3
         with:
           path: |
@@ -87,7 +87,7 @@ jobs:
       - name: Checkout sources
         uses: actions/checkout@v2
 
-      - name: Cache
+      - name: Cache dependencies
         uses: actions/cache@v3
         with:
           path: |
@@ -124,7 +124,7 @@ jobs:
       - name: Checkout sources
         uses: actions/checkout@v2
 
-      - name: Cache
+      - name: Cache dependencies
         uses: actions/cache@v3
         with:
           path: |
@@ -162,7 +162,7 @@ jobs:
       - name: Checkout sources
         uses: actions/checkout@v2
 
-      - name: Cache
+      - name: Cache dependencies
         uses: actions/cache@v3
         with:
           path: |
