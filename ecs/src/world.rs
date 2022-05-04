@@ -52,6 +52,7 @@ impl World {
     pub fn maintain(&mut self) {
         // Temporarily take the vec here to we can let the command borrow the world mutably
         let mut buffers = mem::take(&mut self.command_buffers);
+        eprintln!("Running {:?}", buffers);
         for command_buffer in buffers.drain(..) {
             for command in command_buffer.borrow_mut().take() {
                 command.execute(self);
@@ -65,12 +66,8 @@ impl World {
         self.entities.spawn()
     }
 
-    pub fn register_component<T: 'static>(&mut self) -> ComponentId {
-        self.component_registry.register::<T>()
-    }
-
     pub fn add_resource<T: 'static>(&mut self, resource: T) -> ResourceId {
-        let resource_id = self.register_component::<T>();
+        let resource_id = self.component_registry.register::<T>();
         self.add(self.resource_holder, resource);
         ResourceId(resource_id)
     }
@@ -102,6 +99,29 @@ impl World {
                 self.component_registry[comp_id]
                     .storage
                     .set::<T>(id as usize, component)
+            })
+            .unwrap_or(false)
+    }
+
+    /// The component type must already be registered in the component registry.
+    /// Returns `true` if `entity` did not have this kind of component
+    /// before and `entity` exists.
+    /// If this returns `true`, ownership of `component` is transferred to the world and must
+    /// therefore not be dropped or used after this call.
+    /// If this returns `false`, ownership is kept by the caller and must be dropped or used.
+    /// TODO: better documentation
+    pub unsafe fn add_raw(
+        &mut self,
+        entity: Entity,
+        component: *mut u8,
+        component_id: ComponentId,
+    ) -> bool {
+        self.entities
+            .id(entity)
+            .map(|id| {
+                self.component_registry[component_id]
+                    .storage
+                    .set_ptr(id as usize, component)
             })
             .unwrap_or(false)
     }
@@ -183,5 +203,10 @@ impl World {
     /// Get a reference to the world's entities.
     pub fn entities(&self) -> &Entities {
         &self.entities
+    }
+
+    /// Get a mutable reference to the world's component registry.
+    pub fn component_registry_mut(&mut self) -> &mut ComponentRegistry {
+        &mut self.component_registry
     }
 }

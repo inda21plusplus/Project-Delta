@@ -1,4 +1,11 @@
-use std::{cell::RefCell, rc::Rc};
+use std::{
+    alloc::Layout,
+    any::{self, TypeId},
+    borrow::Cow,
+    cell::RefCell,
+    ptr,
+    rc::Rc,
+};
 
 mod command;
 mod command_buffer;
@@ -28,5 +35,23 @@ impl Commands {
 
     pub fn despawn(&mut self, entity: Entity) {
         self.inner.borrow_mut().push(Command::Despawn(entity));
+    }
+
+    pub fn add<T: 'static>(&mut self, entity: Entity, component: T) {
+        unsafe fn drop<T: 'static>(ptr: *mut u8) {
+            eprintln!("Dropping {:?} of type {}", ptr, any::type_name::<T>());
+            ptr::drop_in_place(ptr as *mut T);
+        }
+        let component = Box::new(component);
+        let component = Box::into_raw(component);
+        let component = component as *mut u8;
+        self.inner.borrow_mut().push(Command::AddComponent {
+            entity,
+            type_id: TypeId::of::<T>(),
+            name: Cow::Borrowed(any::type_name::<T>()),
+            component,
+            layout: Layout::new::<T>(),
+            drop: drop::<T>,
+        });
     }
 }
