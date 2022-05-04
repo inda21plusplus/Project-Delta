@@ -3,7 +3,6 @@ use std::{
     any::{self, TypeId},
     borrow::Cow,
     cell::RefCell,
-    ptr,
     rc::Rc,
 };
 
@@ -39,8 +38,7 @@ impl Commands {
 
     pub fn add<T: 'static>(&mut self, entity: Entity, component: T) {
         unsafe fn drop<T: 'static>(ptr: *mut u8) {
-            eprintln!("Dropping {:?} of type {}", ptr, any::type_name::<T>());
-            ptr::drop_in_place(ptr as *mut T);
+            ptr.cast::<T>().drop_in_place();
         }
         let component = Box::new(component);
         let component = Box::into_raw(component);

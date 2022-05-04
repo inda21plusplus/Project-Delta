@@ -24,6 +24,10 @@ pub enum StorageType {
 }
 
 impl Storage {
+    /// Creates a new storage container for components with the given layout to be dropped by
+    /// `drop`.
+    /// # Safety
+    /// `drop` must be a valid drop implementation the type of component to be stored.
     pub unsafe fn new(storage_type: StorageType, layout: Layout, drop: unsafe fn(*mut u8)) -> Self {
         match storage_type {
             StorageType::VecStorage => Self::VecStorage(VecStorage::new(layout, drop)),

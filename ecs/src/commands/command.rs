@@ -44,12 +44,7 @@ impl Command {
                             .register_raw(type_id, name, layout, drop)
                     },
                 };
-                unsafe {
-                    if !world.add_raw(entity, component, comp_id) {
-                        println!("Could not add {:?}, dropping", component);
-                        drop(component);
-                    }
-                }
+                unsafe { world.add_raw(entity, component, comp_id) };
             }
         }
     }

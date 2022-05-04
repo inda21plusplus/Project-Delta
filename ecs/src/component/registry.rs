@@ -121,6 +121,8 @@ impl ComponentRegistry {
             ptr.cast::<T>().drop_in_place();
         }
 
+        // Safety: if the type id and layout do not match here or `drop_ptr` is invalid, thats on
+        // Rust, not us.
         unsafe {
             self.register_raw(
                 TypeId::of::<T>(),
@@ -131,6 +133,11 @@ impl ComponentRegistry {
         }
     }
 
+    /// Registeres a rust type as a component kind. A rust type must *not* be registered twice in
+    /// the same registry.
+    /// # Safety
+    /// The `type_id` and `layout` must match and `drop` must be a valid drop function for the
+    /// given `type_id`.
     pub unsafe fn register_raw(
         &mut self,
         type_id: TypeId,

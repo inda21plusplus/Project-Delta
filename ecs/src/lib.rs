@@ -718,23 +718,32 @@ mod tests {
     #[test]
     fn add_component_through_commands() {
         let mut world = World::default();
-        let e = world.spawn();
+        let e1 = world.spawn();
+        let e2 = world.spawn();
         let counter = Rc::new(Cell::new(0));
         let mut commands = world.commands();
 
-        commands.add(e, Counter::new(counter.clone()));
+        commands.add(e1, Counter::named(counter.clone(), "a"));
         assert_eq!(counter.get(), 1);
-        commands.add(e, Counter::new(counter.clone()));
+        commands.add(e1, Counter::named(counter.clone(), "b"));
         assert_eq!(counter.get(), 2);
+        commands.add(e1, Counter::named(counter.clone(), "c"));
+        assert_eq!(counter.get(), 3);
+        commands.despawn(e2);
+        assert_eq!(counter.get(), 3);
         world.maintain();
         assert_eq!(counter.get(), 1);
     }
 
-    struct Counter(Rc<Cell<usize>>);
+    #[derive(Debug)]
+    struct Counter(Rc<Cell<usize>>, &'static str);
     impl Counter {
         fn new(rc: Rc<Cell<usize>>) -> Self {
+            Self::named(rc, "")
+        }
+        fn named(rc: Rc<Cell<usize>>, name: &'static str) -> Self {
             rc.set(rc.get() + 1);
-            Self(rc)
+            Self(rc, name)
         }
     }
     impl Drop for Counter {

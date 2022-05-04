@@ -52,7 +52,6 @@ impl World {
     pub fn maintain(&mut self) {
         // Temporarily take the vec here to we can let the command borrow the world mutably
         let mut buffers = mem::take(&mut self.command_buffers);
-        eprintln!("Running {:?}", buffers);
         for command_buffer in buffers.drain(..) {
             for command in command_buffer.borrow_mut().take() {
                 command.execute(self);
@@ -86,7 +85,8 @@ impl World {
 
     /// Adds a component to an entity. If the type is not registered as a component, it gets
     /// registered automatically. Returns `true` if `entity` did not have this kind of component
-    /// before and `entity` exists.
+    /// before and `entity` exists. It `entity` exists and the component was already present,
+    /// the old component is dropped and replaced with the new one.
     pub fn add<T: 'static>(&mut self, entity: Entity, component: T) -> bool {
         let comp_id = self
             .component_registry
@@ -104,12 +104,11 @@ impl World {
     }
 
     /// The component type must already be registered in the component registry.
-    /// Returns `true` if `entity` did not have this kind of component
-    /// before and `entity` exists.
-    /// If this returns `true`, ownership of `component` is transferred to the world and must
-    /// therefore not be dropped or used after this call.
-    /// If this returns `false`, ownership is kept by the caller and must be dropped or used.
-    /// TODO: better documentation
+    /// Returns `true` if `entity` did not have this kind of component before and `entity` exists.
+    /// Ownership of the component is transferred to the world in either case.
+    /// # Safety
+    /// The pointer must be a valid pointer to a component with the given id.
+    /// It must also not be used after this call.
     pub unsafe fn add_raw(
         &mut self,
         entity: Entity,
