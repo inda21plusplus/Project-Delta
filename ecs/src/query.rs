@@ -169,7 +169,7 @@ impl<'w, 'q> QueryResponse<'w, 'q> {
     /// Same as `try_get` but panics if `None` would be returned.
     /// # Safety
     /// See documentation for `try_get`
-    pub unsafe fn get(&self, entity: Entity) -> Vec<NonNull<u8>> {
+    pub unsafe fn get(&mut self, entity: Entity) -> Vec<NonNull<u8>> {
         self.try_get(entity)
             .expect("The given entity does not match the query or has been despawned")
     }
@@ -181,11 +181,11 @@ impl<'w, 'q> QueryResponse<'w, 'q> {
     /// All pointers returned are technically mutable **BUT** modifying the pointers to components
     /// not marked as mutable in the query is undefined behaviour.
     /// The pointers must not outlive this `QueryResponse`
-    pub unsafe fn try_get(&self, entity: Entity) -> Option<Vec<NonNull<u8>>> {
+    pub unsafe fn try_get(&mut self, entity: Entity) -> Option<Vec<NonNull<u8>>> {
         self.try_get_by_index(entity.get_id_unchecked())
     }
 
-    unsafe fn try_get_by_index(&self, index: u32) -> Option<Vec<NonNull<u8>>> {
+    unsafe fn try_get_by_index(&mut self, index: u32) -> Option<Vec<NonNull<u8>>> {
         let mut res = Vec::with_capacity(self.entries.len());
         for (e, _) in self.entries.iter().zip(self.query.components().iter()) {
             res.push(NonNull::new(
@@ -201,7 +201,7 @@ impl<'w, 'q> QueryResponse<'w, 'q> {
 }
 
 pub struct Iter<'a, 'w, 'q> {
-    res: &'a QueryResponse<'w, 'q>,
+    res: &'a mut QueryResponse<'w, 'q>,
     entity_iter: EntityIter<'w>,
 }
 

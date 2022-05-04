@@ -388,12 +388,12 @@ mod tests {
         ])
         .unwrap();
         {
-            let res = world.query(&usize_query);
+            let mut res = world.query(&usize_query);
             assert_eq!(*unsafe { res.get(a)[0].cast::<usize>().as_ref() }, 0);
             assert_eq!(*unsafe { res.get(b)[0].cast::<usize>().as_ref() }, 1);
         }
         {
-            let res = world.query(&both_query);
+            let mut res = world.query(&both_query);
             assert!(unsafe { res.try_get(a) }.is_none());
             let (int, float) = unsafe {
                 if let [int, float] = res.get(b)[..] {
@@ -406,7 +406,7 @@ mod tests {
             assert_eq!(2., *float);
         }
         {
-            let res = world.query(&usize_query);
+            let mut res = world.query(&usize_query);
             assert_eq!(*unsafe { res.get(a)[0].cast::<usize>().as_ref() }, 0);
             assert_eq!(*unsafe { res.get(b)[0].cast::<usize>().as_ref() }, 3);
         }
