@@ -119,7 +119,7 @@ impl World {
                 None => return Err(BorrowMutError::new(c.id)),
             }
         }
-        Ok(QueryResponse::new(&self.component_registry, query, entries))
+        Ok(QueryResponse::new(self, query, entries))
     }
 
     /// Tries to query for a set of components. If thats not possible (see `try_query`) this
@@ -146,5 +146,10 @@ impl World {
                 .storage
                 .get_mut(id as usize)
         })
+    }
+
+    /// Get a reference to the world's entities.
+    pub fn entities(&self) -> &Entities {
+        &self.entities
     }
 }

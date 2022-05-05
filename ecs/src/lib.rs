@@ -3,12 +3,13 @@
 pub mod component;
 mod entity;
 mod error;
+#[macro_use]
 mod query;
 mod world;
 
 pub use entity::{Entities, Entity};
 pub use error::BorrowMutError;
-pub use query::{ComponentQuery, Query};
+pub use query::{as_mut_lt, as_ref_lt, ComponentQuery, Query};
 pub use world::World;
 
 #[cfg(test)]
@@ -509,6 +510,57 @@ mod tests {
     }
 
     #[test]
+    fn type_safe_macros() {
+        let mut world = World::default();
+        struct Name(String);
+        struct Speed(f32);
+        let sanic = world.spawn();
+        world.add(sanic, Name("Sanic".into()));
+        world.add(sanic, Speed(100.0));
+        let mario = world.spawn();
+        world.add(mario, Name("Mario".into()));
+        world.add(mario, Speed(200.0)); // copilot thinks mario is faster than sanic
+
+        query_iter!(world, (name: Name, speed: mut Speed) => {
+            match name.0.as_ref() {
+                "Mario" => assert_eq!(speed.0, 200.0),
+                "Sanic" => {
+                    assert_eq!(speed.0, 100.0);
+                    speed.0 = 300.0; // copilot thinks he's faster than mario
+                }
+                _ => panic!("Unexpected name"),
+            }
+        });
+
+        query_iter!(world, (entity: Entity, name: Name, speed: Speed) => {
+            match name.0.as_ref() {
+                "Mario" => {
+                    assert_eq!(entity, mario);
+                    assert_eq!(speed.0, 200.0)
+                }
+                "Sanic" => {
+                    assert_eq!(entity, sanic);
+                    assert_eq!(speed.0, 300.0);
+                }
+                _ => panic!("Unexpected name"),
+            }
+        });
+
+        let mut found_sanic = false;
+        let mut found_mario = false;
+        query_iter!(world, (entity: Entity) => {
+            if found_sanic {
+                assert_eq!(entity, mario);
+                found_mario = true;
+            } else {
+                assert_eq!(entity, sanic);
+                found_sanic = true;
+            }
+        });
+        assert!(found_sanic && found_mario);
+    }
+
+    #[test]
     fn iterate_over_query() {
         let mut world = World::default();
         struct Position(f32);
@@ -535,7 +587,7 @@ mod tests {
         .unwrap();
         let mut q = world.query(&q);
         for (pos, vel) in unsafe {
-            q.iter().map(|comps| {
+            q.iter().map(|(_e, comps)| {
                 if let [pos, vel] = comps[..] {
                     (
                         pos.cast::<Position>().as_mut(),
@@ -558,7 +610,7 @@ mod tests {
         let mut q = world.query(&q);
         for (i, pos) in unsafe {
             q.iter()
-                .map(|comps| {
+                .map(|(_e, comps)| {
                     if let [pos] = comps[..] {
                         pos.cast::<Position>().as_ref()
                     } else {

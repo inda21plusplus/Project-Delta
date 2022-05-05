@@ -119,6 +119,11 @@ impl<'e> Iter<'e> {
             unused_ids: entities.unused_ids.iter().copied().collect(),
         }
     }
+
+    /// Get the iter's entities.
+    pub fn entities(&self) -> &Entities {
+        self.entities
+    }
 }
 
 impl<'e> Iterator for Iter<'e> {
