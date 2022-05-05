@@ -687,7 +687,7 @@ mod tests {
         let d = world.spawn();
         world.add(d, Health(10));
 
-        let mut commands = world.commands();
+        let mut commands = Commands::new();
         query_iter!(world, (entity: Entity, health: mut Health) => {
             health.0 -= 10;
             if health.0 == 0 {
@@ -698,21 +698,11 @@ mod tests {
         assert!(world.entities().exists(b));
         assert!(world.entities().exists(c));
         assert!(world.entities().exists(d));
-        world.maintain();
+        commands.apply(&mut world);
         assert!(world.entities().exists(a));
         assert!(!world.entities().exists(b));
         assert!(world.entities().exists(c));
         assert!(!world.entities().exists(d));
-    }
-
-    #[test]
-    #[should_panic]
-    fn command_buffer_panics_when_used_after_maintain() {
-        let mut world = World::default();
-        let mut commands = world.commands();
-        commands.spawn();
-        world.maintain();
-        commands.spawn();
     }
 
     #[test]
@@ -721,7 +711,7 @@ mod tests {
         let e1 = world.spawn();
         let e2 = world.spawn();
         let counter = Rc::new(Cell::new(0));
-        let mut commands = world.commands();
+        let mut commands = Commands::new();
 
         commands.add(e1, Counter::named(counter.clone(), "a"));
         assert_eq!(counter.get(), 1);
@@ -731,7 +721,7 @@ mod tests {
         assert_eq!(counter.get(), 3);
         commands.despawn(e2);
         assert_eq!(counter.get(), 3);
-        world.maintain();
+        commands.apply(&mut world);
         assert_eq!(counter.get(), 1);
     }
 
@@ -739,7 +729,7 @@ mod tests {
     fn add_component_to_newly_created_entity_through_commands() {
         let mut world = World::default();
         let counter = Rc::new(Cell::new(0));
-        let mut commands = world.commands();
+        let mut commands = Commands::new();
 
         let e1 = commands.spawn();
         commands.add(e1, Counter::named(counter.clone(), "a"));
@@ -749,10 +739,10 @@ mod tests {
 
         let e2 = commands.spawn();
         commands.add(e2, Counter::named(counter.clone(), "c"));
-        assert_eq!(counter.get(), 3);
         commands.despawn(e2);
+        assert_eq!(counter.get(), 3);
 
-        world.maintain();
+        commands.apply(&mut world);
         assert_eq!(counter.get(), 1);
         query_iter!(world, (c: Counter) => {
             assert_eq!(c.1, "b");
