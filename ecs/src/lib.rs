@@ -716,7 +716,7 @@ mod tests {
     }
 
     #[test]
-    fn add_component_through_commands() {
+    fn add_component_to_old_entity_through_commands() {
         let mut world = World::default();
         let e1 = world.spawn();
         let e2 = world.spawn();
@@ -727,12 +727,36 @@ mod tests {
         assert_eq!(counter.get(), 1);
         commands.add(e1, Counter::named(counter.clone(), "b"));
         assert_eq!(counter.get(), 2);
-        commands.add(e1, Counter::named(counter.clone(), "c"));
+        commands.add(e2, Counter::named(counter.clone(), "c"));
         assert_eq!(counter.get(), 3);
         commands.despawn(e2);
         assert_eq!(counter.get(), 3);
         world.maintain();
         assert_eq!(counter.get(), 1);
+    }
+
+    #[test]
+    fn add_component_to_newly_created_entity_through_commands() {
+        let mut world = World::default();
+        let counter = Rc::new(Cell::new(0));
+        let mut commands = world.commands();
+
+        let e1 = commands.spawn();
+        commands.add(e1, Counter::named(counter.clone(), "a"));
+        assert_eq!(counter.get(), 1);
+        commands.add(e1, Counter::named(counter.clone(), "b"));
+        assert_eq!(counter.get(), 2);
+
+        let e2 = commands.spawn();
+        commands.add(e2, Counter::named(counter.clone(), "c"));
+        assert_eq!(counter.get(), 3);
+        commands.despawn(e2);
+
+        world.maintain();
+        assert_eq!(counter.get(), 1);
+        query_iter!(world, (c: Counter) => {
+            assert_eq!(c.1, "b");
+        });
     }
 
     #[derive(Debug)]

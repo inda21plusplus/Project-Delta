@@ -53,9 +53,7 @@ impl World {
         // Temporarily take the vec here to we can let the command borrow the world mutably
         let mut buffers = mem::take(&mut self.command_buffers);
         for command_buffer in buffers.drain(..) {
-            for command in command_buffer.borrow_mut().take() {
-                command.execute(self);
-            }
+            command_buffer.borrow_mut().execute(self);
         }
         // This is just to avoid some allocations
         self.command_buffers = buffers;

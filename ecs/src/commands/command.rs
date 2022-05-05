@@ -1,15 +1,17 @@
 use std::{alloc::Layout, any::TypeId, borrow::Cow};
 
-use crate::{Entity, World};
+use crate::World;
+
+use super::{EntityRef, ExecutionContext};
 
 #[derive(Debug)]
 pub enum Command {
-    Spawn, // TODO: add components to spawned entity
-    Despawn(Entity),
+    Spawn,
+    Despawn(EntityRef),
     AddComponent {
-        entity: Entity,
+        entity: EntityRef,
         type_id: TypeId,
-        component: *mut u8, // TODO: watch out for memory leak
+        component: *mut u8, // TODO: watch out for memory leak?
         name: Cow<'static, str>,
         layout: Layout,
         drop: unsafe fn(*mut u8),
@@ -17,12 +19,16 @@ pub enum Command {
 }
 
 impl Command {
-    pub fn execute(self, world: &mut World) {
+    pub(super) fn execute(self, world: &mut World, ctx: &mut ExecutionContext) {
         match self {
             Command::Spawn => {
-                world.spawn();
+                ctx.entities_created.push(world.spawn());
             }
             Command::Despawn(entity) => {
+                let entity = match entity {
+                    EntityRef::Entity(entity) => entity,
+                    EntityRef::New(index) => ctx.entities_created[index],
+                };
                 world.despawn(entity);
             }
             Command::AddComponent {
@@ -33,6 +39,10 @@ impl Command {
                 layout,
                 drop,
             } => {
+                let entity = match entity {
+                    EntityRef::Entity(entity) => entity,
+                    EntityRef::New(index) => ctx.entities_created[index],
+                };
                 let comp_id = match world
                     .component_registry_mut()
                     .component_id_from_type_id(type_id)

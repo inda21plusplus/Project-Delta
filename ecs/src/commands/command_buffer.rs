@@ -1,5 +1,6 @@
-use super::Command;
-use std::vec::Drain;
+use crate::World;
+
+use super::{Command, ExecutionContext};
 
 #[derive(Debug)]
 pub(crate) struct CommandBuffer {
@@ -14,10 +15,22 @@ enum Owner {
 }
 
 impl CommandBuffer {
-    pub(crate) fn new() -> Self {
+    pub fn new() -> Self {
         Self {
             owner: Owner::Commands,
             commands: Vec::new(),
+        }
+    }
+
+    pub fn execute(&mut self, world: &mut World) {
+        if self.owner == Owner::World {
+            panic!("Cannot take command buffer twice");
+        }
+        self.owner = Owner::World;
+
+        let mut ctx = ExecutionContext::default();
+        for command in self.commands.drain(..) {
+            command.execute(world, &mut ctx);
         }
     }
 
@@ -26,13 +39,5 @@ impl CommandBuffer {
             panic!("Cannot push command after taking the command buffer");
         }
         self.commands.push(command);
-    }
-
-    pub fn take(&mut self) -> Drain<Command> {
-        if self.owner == Owner::World {
-            panic!("Cannot take command buffer twice");
-        }
-        self.owner = Owner::World;
-        self.commands.drain(..)
     }
 }
