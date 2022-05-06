@@ -204,7 +204,7 @@ impl Editor {
                     ui.label("Light color");
                     egui::widgets::color_picker::color_edit_button_rgb(ui, &mut self.light.color);
                     //ui.image(&self.render_texture, (400.0, 300.0));
-            });
+                });
         });
 
         let mut lights = Vec::with_capacity(self.scene.lights.len() + 1);
@@ -256,18 +256,6 @@ impl ExampleScene {
             let mut mgr = ctx.renderer.get_models_mut();
             mgr.set_transforms(self.cube_model, self.transforms[..cutoff].to_vec());
             mgr.set_transforms(self.ball_model, self.transforms[cutoff..].to_vec());
-            mgr.set_transforms(
-                self.light_cube,
-                self.lights
-                    .iter()
-                    .map(|l| Transform {
-                        position: l.pos,
-                        rotation: Quaternion::identity(),
-                        scale: Vec3::from(0.5),
-                    })
-                    .collect(),
-            );
-            mgr.set_transforms(self.light_cube, vec![]);
         }
     }
 
