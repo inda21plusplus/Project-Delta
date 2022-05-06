@@ -21,6 +21,9 @@ pub fn is_colliding(c1: &Collider, t1: &Transform, c2: &Collider, t2: &Transform
     let w1 = get_position(t1, c1);
     let w2 = get_position(t2, c2);
 
+    debug_assert_finite!(w1);
+    debug_assert_finite!(w2);
+
     match c1 {
         Collider::SphereColider(sc1) => match c2 {
             Collider::SphereColider(sc2) => is_colliding_sphere_vs_sphere(w1, w2, sc1, t1, sc2, t2),
@@ -53,6 +56,10 @@ fn standard_elastic_collision_3(m1: f32, v1: &Vec3, m2: f32, v2: &Vec3) -> (Vec3
     (Vec3::new(v1x, v1y, v1z), Vec3::new(v2x, v2y, v2z))
 }
 
+pub fn bounce(input: Vec3, normal: Vec3) -> Vec3 {
+    return input - 2.0 * proj(normal, input);
+}
+
 pub fn standard_collision(
     normal: Vec3,
     rb1: &mut RidgidBody,
@@ -80,13 +87,13 @@ pub fn standard_collision(
     let real_v1 = proj(normal, v1);
     let real_v2 = proj(normal, v2);
 
-    let bouncy_ness = 0.6;
-    let friction = 0.7;
+    //let bouncy_ness = 0.6;
+    //let friction = 0.7;
     if rb1.is_static {
-        rb2.velocity = (v2 - (1.0 + bouncy_ness) * real_v2) * friction;
+        rb2.velocity = bounce(v2, -normal) * _re2 + (1.0 - _re2) * (v2 - real_v2); 
         return;
     } else if rb2.is_static {
-        rb1.velocity = (v1 - (1.0 + bouncy_ness) * real_v1) * friction;
+        rb1.velocity = bounce(v1, normal) * _re1 + (1.0 - _re1) * (v1 - real_v1); 
         return;
     }
 
@@ -134,6 +141,7 @@ pub fn solve_colliding(
     c2: &Collider,
     rb2: &mut RidgidBody,
     t2: &mut Transform,
+    dt: f32,
 ) {
     let w1 = get_position(t1, c1);
     let w2 = get_position(t2, c2);
@@ -146,10 +154,12 @@ pub fn solve_colliding(
             Collider::SphereColider(b2) => {
                 collide_sphere_vs_sphere(b1, rb1, t1, w1, b2, rb2, t2, w2)
             }
-            Collider::BoxColider(b2) => collide_sphere_vs_box(b1, rb1, t1, w1, b2, rb2, t2, w2),
+            Collider::BoxColider(b2) => collide_sphere_vs_box(b1, rb1, t1, w1, b2, rb2, t2, w2, dt),
         },
         Collider::BoxColider(b1) => match c2 {
-            Collider::SphereColider(b2) => collide_sphere_vs_box(b2, rb2, t2, w2, b1, rb1, t1, w1),
+            Collider::SphereColider(b2) => {
+                collide_sphere_vs_box(b2, rb2, t2, w2, b1, rb1, t1, w1, dt)
+            }
             Collider::BoxColider(b2) => collide_box_vs_box(b1, rb1, t1, w1, b2, rb2, t2, w2),
         },
     }
@@ -162,6 +172,7 @@ pub fn collide(
     t2: &mut Transform,
     rb2: &mut RidgidBody,
     cc2: &Vec<Collider>,
+    dt: f32,
 ) -> bool {
     let t1_post = t1.position;
     let t2_post = t2.position;
@@ -178,7 +189,6 @@ pub fn collide(
         for c2_index in 0..cc2.len() {
             let c2 = &cc2[c2_index];
             if is_colliding(c1, t1, c2, t2) {
-                //println!("Colliding!");
                 has_colided = true;
                 debug_assert_finite!(rb1.velocity);
                 debug_assert_finite!(rb2.velocity);
@@ -195,7 +205,7 @@ pub fn collide(
                         current_post_fix.push(c2_index);
                     }
                     _ => {
-                        solve_colliding(c1, rb1, t1, c2, rb2, t2);
+                        solve_colliding(c1, rb1, t1, c2, rb2, t2, dt);
                     }
                 }
             }
@@ -239,24 +249,27 @@ pub fn collide(
             }
             if !colliding {
                 is_not_touching = search_location;
-            }
-            else {
+            } else {
                 is_touching = search_location;
             }
             search_location += search_length * if colliding { -1.0 } else { 1.0 };
         }
-  
+
         t1.position = t1_post * is_touching + t1_pre * (1.0 - is_touching);
         t2.position = t2_post * is_touching + t2_pre * (1.0 - is_touching);
 
         for c2_index in &post_fix[c1_index] {
             let c2 = &cc2[*c2_index];
 
-            solve_colliding(c1, rb1, t1, c2, rb2, t2);
+            solve_colliding(c1, rb1, t1, c2, rb2, t2, dt);
+            has_colided = true;
         }
         t1.position = t1_post * is_not_touching + t1_pre * (1.0 - is_not_touching);
         t2.position = t2_post * is_not_touching + t2_pre * (1.0 - is_not_touching);
     }
+
+    rb1.is_colliding_this_frame = has_colided || rb1.is_colliding_this_frame;
+    rb2.is_colliding_this_frame = has_colided || rb2.is_colliding_this_frame;
 
     has_colided
 }
@@ -277,8 +290,6 @@ impl RidgidBody {
             return;
         }
 
-        // Bullet Block Explained! https://youtu.be/BLYoyLcdGPc no velocity is lost due to angular velocity irl,
-        // so it is not removed here
         self.velocity += velocity;
 
         //https://en.wikipedia.org/wiki/Angular_velocity
@@ -304,10 +315,34 @@ impl RidgidBody {
         // TODO idk what angular_velocity is
     }
 
+    pub fn apply_forces(&self) -> Vec3 {
+        let grav_acc = Vec3::new(0.0, -9.81, 0.0); // 9.81m/s^2 down in the Z-axis // TODO MAKE CONSTANT
+        let drag_force = 0.5 * self.drag * (self.velocity * self.velocity.magnitude()); // D = 0.5 * (rho * C * Area * vel^2)
+        let drag_acc = drag_force / self.mass; // a = F/m
+        return grav_acc - drag_acc;
+    }
+
     pub fn step(&mut self, dt: f32, transform: &mut Transform) {
         if self.is_static {
             return;
         }
+
+        //https://en.wikipedia.org/wiki/Verlet_integration
+        transform.position += self.velocity * dt + self.acceleration * (dt * dt * 0.5);
+        debug_assert_finite!(transform.position);
+        self.acceleration = self.apply_forces();
+        debug_assert_finite!(self.acceleration);
+
+        self.velocity += (self.acceleration + self.acceleration) * (dt * 0.5);
+
+        // apply rotation
+        transform.rotation.rotate_x(self.angular_velocity.x * dt);
+        transform.rotation.rotate_y(self.angular_velocity.y * dt);
+        transform.rotation.rotate_z(self.angular_velocity.z * dt);
+
+        self.is_active_time += dt;
+
+        /*
 
         // apply acceleration
         self.velocity += self.acceleration * dt;
@@ -321,7 +356,7 @@ impl RidgidBody {
         // update position
         transform.position += self.velocity * dt;
 
-        self.is_active_time += dt;
+        self.is_active_time += dt;*/
     }
 }
 
@@ -331,8 +366,18 @@ pub fn update(
     transforms: &mut Vec<Transform>,
     phx_objects: &mut Vec<PhysicsObject>,
 ) {
-    let real_dt = dt;
+    let real_dt = dt ;
     let phx_length = phx_objects.len();
+
+    for i in 0..phx_length {
+        phx_objects[i].rb.is_colliding_this_frame = false;
+
+        // update last frame location
+        phx_objects[i].rb.last_frame_location = transforms[i].position;
+
+        // simulate one step in the simulation
+        phx_objects[i].rb.step(real_dt, &mut transforms[i]);
+    }
     for i in 0..phx_length {
         let (phx_first, phx_last) = phx_objects.split_at_mut(i + 1);
         //if phx_first[i].rb.is_static || !phx_first[i].rb.is_active {
@@ -340,12 +385,6 @@ pub fn update(
         //}
 
         let (trans_first, trans_last) = transforms.split_at_mut(i + 1);
-
-        // update last frame location
-        phx_first[i].rb.last_frame_location = trans_first[i].position;
-
-        // simulate one step in the simulation
-        phx_first[i].rb.step(real_dt, &mut trans_first[i]);
 
         let mut has_colided = false;
 
@@ -358,13 +397,25 @@ pub fn update(
                 transform,
                 &mut phx_obj.rb,
                 &phx_obj.colliders,
+                dt,
             ) {
+                //if i == 3 {
+                // println!("col >> {} = {} | {}",i, phx_first[i].rb.is_colliding_this_frame, phx_obj.rb.is_colliding_this_frame);
+                // }
                 has_colided = true;
             }
         }
-
+        // if i == 3 {
+        // println!("col {}",phx_first[i].rb.is_colliding_this_frame);
+        //}
         if has_colided {
             *is_paused = true;
         }
+    }
+    for i in 0..phx_length {
+        // if phx_objects[i].rb.is_colliding_this_frame {
+        //     println!("col >> {} = {}",i, phx_objects[i].rb.is_colliding_this_frame);
+        //}
+        phx_objects[i].rb.is_colliding = phx_objects[i].rb.is_colliding_this_frame;
     }
 }

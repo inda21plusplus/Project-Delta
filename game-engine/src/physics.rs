@@ -8,6 +8,8 @@ pub mod sphere;
 
 pub type Vec3 = vek::vec::repr_c::Vec3<f32>;
 pub type Quaternion = vek::quaternion::repr_c::Quaternion<f32>;
+pub type Mat3 = vek::mat::repr_c::row_major::mat3::Mat3<f32>;
+pub type Mat4 = vek::mat::repr_c::row_major::mat4::Mat4<f32>;
 type Tri = [Vec3; 3];
 type Ray = vek::Ray<f32>;
 
@@ -78,7 +80,7 @@ pub struct RidgidBody {
     pub acceleration: Vec3, // can be used for gravity
 
     pub angular_velocity: Vec3, // Spin angular velocity in rad per seconds around that axis (Quaternion::rotate_3d)
-    pub torque: Vec3,           // torque to angular_velocity is what acceleration is to velocity
+    //pub torque: Vec3,           // torque to angular_velocity is what acceleration is to velocity
 
     pub center_of_mass_offset: Vec3, // also used for instant center of rotation https://en.wikipedia.org/wiki/Instant_centre_of_rotation
     pub is_active_time: f32,
@@ -87,6 +89,9 @@ pub struct RidgidBody {
     //is_trigger : bool,
     pub is_static: bool,
     pub is_active: bool, // TODO after object is not moving then it becomes disabled to oprimize
+    pub is_colliding : bool,
+    pub is_colliding_this_frame : bool,
+    pub drag : f32,
 }
 
 impl RidgidBody {
@@ -101,8 +106,11 @@ impl RidgidBody {
             is_active_time: 0.0f32,
             center_of_mass_offset: Vec3::zero(),
             is_static: false,
-            torque: Vec3::zero(),
+            //torque: Vec3::zero(),
             last_frame_location : Vec3::zero(),
+            is_colliding : false,
+            is_colliding_this_frame : false,
+            drag : 0.5, // TODO make public
         }
     }
 }

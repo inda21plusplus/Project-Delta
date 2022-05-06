@@ -61,8 +61,8 @@ fn main() {
 
     let mut instances = vec![Transform {
         position: Vec3::new(0.0, 0.0, 0.0),
-        rotation: Quaternion::identity(),
-        scale: Vec3::new(10.0, 1.0, 10.0),
+        rotation: Quaternion::rotation_x(0.0),
+        scale: Vec3::new(100.0, 1.0, 100.0),
     }];
     let cubes = 15;
     let spheres = 15;
@@ -73,16 +73,17 @@ fn main() {
         instances.push(Transform {
             position: Vec3::new(
                 rng.gen_range(-10.0..10.0),
-                rng.gen_range(4.0..20.0),
+                rng.gen_range(14.0..30.0),
                 rng.gen_range(-10.0..10.0),
             ),
             rotation: Quaternion::identity(),
             scale: Vec3::new(scale, scale, scale),
         })
     }
+
     let physics_material = PhysicsMaterial {
         friction: 1.0,
-        restfullness: 1.0,
+        restfullness: 0.0,
     };
 
     let gravity = Vec3::new(0.0, -9.82, 0.0);
@@ -97,7 +98,7 @@ fn main() {
         Collider::BoxColider(BoxColider::new(Vec3::new(1.0, 1.0, 1.0), physics_material)),
     );
     obj1.rb.is_static = true;
-
+    
     let mut physics_objects: Vec<PhysicsObject> = vec![obj1]; //obj3, obj4 vec![obj1.clone(); 16];
     let vel = 1.0;
     let angle = 0.0001;
