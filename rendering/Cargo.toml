@@ -10,7 +10,7 @@ common = { path = "../common" }
 raw-window-handle = "0.4"
 wgpu = "0.12"
 pollster = "0.2"
-tobj = "3.2"
+tobj = "3.2.2"
 image = "0.24"
 bytemuck = { version = "1.4", features = ["derive"] }
 thiserror = "1.0"

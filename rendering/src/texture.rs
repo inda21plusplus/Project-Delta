@@ -25,6 +25,7 @@ impl Texture {
     }
 
     pub fn new_render_target(
+        name: &'static str,
         device: &wgpu::Device,
         resolution: (u32, u32),
         format: wgpu::TextureFormat,
@@ -35,7 +36,7 @@ impl Texture {
             depth_or_array_layers: 1,
         };
         let desc = wgpu::TextureDescriptor {
-            label: Some("render target texture"),
+            label: Some(name),
             size,
             mip_level_count: 1,
             sample_count: 1,
@@ -49,8 +50,8 @@ impl Texture {
             address_mode_u: wgpu::AddressMode::ClampToEdge,
             address_mode_v: wgpu::AddressMode::ClampToEdge,
             address_mode_w: wgpu::AddressMode::ClampToEdge,
-            mag_filter: wgpu::FilterMode::Linear,
-            min_filter: wgpu::FilterMode::Linear,
+            mag_filter: wgpu::FilterMode::Nearest,
+            min_filter: wgpu::FilterMode::Nearest,
             mipmap_filter: wgpu::FilterMode::Nearest,
             compare: None,
             lod_min_clamp: -100.0,
@@ -65,7 +66,11 @@ impl Texture {
         }
     }
 
-    pub fn new_depth_texture(device: &wgpu::Device, config: &wgpu::SurfaceConfiguration) -> Self {
+    pub fn new_depth_texture(
+        device: &wgpu::Device,
+        config: &wgpu::SurfaceConfiguration,
+        compare: bool,
+    ) -> Self {
         let size = wgpu::Extent3d {
             width: config.width,
             height: config.height,
@@ -89,7 +94,11 @@ impl Texture {
             mag_filter: wgpu::FilterMode::Linear,
             min_filter: wgpu::FilterMode::Linear,
             mipmap_filter: wgpu::FilterMode::Nearest,
-            compare: Some(wgpu::CompareFunction::LessEqual),
+            compare: if compare {
+                Some(wgpu::CompareFunction::LessEqual)
+            } else {
+                None
+            },
             lod_min_clamp: -100.0,
             lod_max_clamp: 100.0,
             ..Default::default()

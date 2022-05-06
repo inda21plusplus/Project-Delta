@@ -16,6 +16,7 @@ raw-window-handle = "0.4"
 anyhow = "1.0"
 egui = "0.17"
 egui-winit = "0.17"
+rand = "0.8.5"
 
 [dependencies.winit]
 version = "0.26"

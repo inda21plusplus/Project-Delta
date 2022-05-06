@@ -48,6 +48,7 @@ fn egui_vertex_desc<'a>() -> wgpu::VertexBufferLayout<'a> {
 pub struct Painter {
     textures: AHashMap<egui::TextureId, UiTexture>,
     render_texture: Option<(egui::TextureId, UiTexture)>,
+    pub last_aspect: Option<f32>,
     pipeline: wgpu::RenderPipeline,
     vertex_buffer: wgpu::Buffer,
     vertex_buf_size: wgpu::BufferAddress,
@@ -159,8 +160,16 @@ impl Painter {
                     // we don't want any transparent UI to replace
                     // other elements of the scene.
                     blend: Some(wgpu::BlendState {
-                        color: wgpu::BlendComponent::OVER,
-                        alpha: wgpu::BlendComponent::OVER,
+                        color: wgpu::BlendComponent {
+                            src_factor: wgpu::BlendFactor::One,
+                            dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
+                            operation: wgpu::BlendOperation::Add,
+                        },
+                        alpha: wgpu::BlendComponent {
+                            src_factor: wgpu::BlendFactor::OneMinusDstAlpha,
+                            dst_factor: wgpu::BlendFactor::One,
+                            operation: wgpu::BlendOperation::Add,
+                        },
                     }),
                     write_mask: wgpu::ColorWrites::ALL,
                 }],
@@ -213,6 +222,7 @@ impl Painter {
         Painter {
             textures: AHashMap::new(),
             render_texture: None,
+            last_aspect: None,
             pipeline,
             vertex_buffer,
             vertex_buf_size,
@@ -309,10 +319,23 @@ impl Painter {
 
         let mut idx_buf_start = 0;
         let mut vtx_buf_start = 0;
+        self.last_aspect = None;
         for egui::ClippedMesh(clip_rect, mesh) in meshes {
             let texture = match (self.textures.get(&mesh.texture_id), &self.render_texture) {
                 (Some(tex), _) => tex,
-                (_, &Some((id, ref tex))) if id == mesh.texture_id => tex,
+                (_, &Some((id, ref tex))) if id == mesh.texture_id => {
+                    let (xs, ys): (Vec<_>, Vec<_>) =
+                        mesh.vertices.iter().map(|p| (p.pos.x, p.pos.y)).unzip();
+                    let f = |a: &&f32, b: &&f32| a.partial_cmp(b).unwrap();
+                    let x_max = xs.iter().max_by(f).unwrap();
+                    let x_min = xs.iter().min_by(f).unwrap();
+                    let y_max = ys.iter().max_by(f).unwrap();
+                    let y_min = ys.iter().min_by(f).unwrap();
+                    let w = x_max - x_min;
+                    let h = y_max - y_min;
+                    self.last_aspect = Some(w / h);
+                    tex
+                }
                 _ => panic!(
                     "Couldn't find the texture id specified ({:?})",
                     mesh.texture_id
@@ -341,15 +364,19 @@ impl Painter {
             queue.write_buffer(&self.index_buffer, idx_buf_start, idx_bytes);
             queue.write_buffer(&self.vertex_buffer, vtx_buf_start, vtx_bytes);
             pass.set_bind_group(1, &texture.bind_group, &[]);
-            pass.set_index_buffer(
-                self.index_buffer.slice(idx_buf_start..idx_end),
-                wgpu::IndexFormat::Uint32,
-            );
-            pass.set_vertex_buffer(0, self.vertex_buffer.slice(vtx_buf_start..vtx_end));
-            pass.draw_indexed(0..mesh.indices.len() as u32, 0, 0..1);
+            if idx_buf_start != idx_end {
+                pass.set_index_buffer(
+                    self.index_buffer.slice(idx_buf_start..idx_end),
+                    wgpu::IndexFormat::Uint32,
+                );
+                idx_buf_start = idx_end;
+            }
 
-            idx_buf_start = idx_end;
-            vtx_buf_start = vtx_end;
+            if vtx_buf_start != vtx_end {
+                pass.set_vertex_buffer(0, self.vertex_buffer.slice(vtx_buf_start..vtx_end));
+                pass.draw_indexed(0..mesh.indices.len() as u32, 0, 0..1);
+                vtx_buf_start = vtx_end;
+            }
         }
         // TODO: see if we need to reset the scissor to it's previous values
     }
@@ -369,7 +396,7 @@ impl Painter {
 
         let new_tex = self.make_ui_texture(
             device,
-            texture::Texture::new_render_target(device, (width, height), format),
+            texture::Texture::new_render_target("egui ui texture", device, (width, height), format),
         );
 
         queue.write_buffer(
@@ -493,11 +520,15 @@ impl Painter {
             // I think offset is just an index into the image buffer?
             // if it isn't then this is **completely** wrong,
             // and this entire part needs to be rewritten
-            let offset = if let Some(pos) = delta.pos {
-                pos[0] * pos[1] * 4
+            let origin = if let Some([x, y]) = delta.pos {
+                wgpu::Origin3d {
+                    x: x as u32,
+                    y: y as u32,
+                    z: 0,
+                }
             } else {
-                0
-            } as u64;
+                wgpu::Origin3d::ZERO
+            };
 
             // still assuming offset is just into the flat buffer...
             // TODO: Check that this is actually correct and won't blow up in our faces
@@ -505,7 +536,7 @@ impl Painter {
                 wgpu::ImageCopyTexture {
                     texture: &texture.texture,
                     mip_level: 0,
-                    origin: wgpu::Origin3d::ZERO,
+                    origin,
                     aspect: wgpu::TextureAspect::All,
                 },
                 bytemuck::cast_slice(
@@ -515,7 +546,7 @@ impl Painter {
                         .collect::<Vec<_>>(),
                 ),
                 wgpu::ImageDataLayout {
-                    offset,
+                    offset: 0,
                     bytes_per_row: std::num::NonZeroU32::new(4 * size[0] as u32),
                     rows_per_image: std::num::NonZeroU32::new(size[1] as u32),
                 },

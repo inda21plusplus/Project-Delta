@@ -7,7 +7,7 @@ use egui_winit::State as EguiWinitState;
 
 use common::{Quaternion, Transform, Vec2, Vec3};
 use game_engine::{
-    rendering::{model::ModelIndex, Line, Renderer},
+    rendering::{model::ModelIndex, Light, Line, Renderer},
     Context,
 };
 use winit::{
@@ -20,6 +20,8 @@ use crate::{
     window::{Window, WindowMode},
 };
 
+use rand::Rng;
+
 pub struct Editor {
     window: Window,
     state: EguiWinitState,
@@ -28,7 +30,8 @@ pub struct Editor {
     camera_controller: CameraController,
     scene: ExampleScene,
     last_frame: Instant,
-    render_texture: egui::TextureHandle,
+    // render_texture: egui::TextureHandle,
+    light: Light,
 }
 
 // TODO: Things in here should exist in the ECS
@@ -37,6 +40,7 @@ pub struct ExampleScene {
     cube_model: ModelIndex,
     ball_model: ModelIndex,
     transforms: Vec<Transform>,
+    lights: Vec<Light>,
 }
 
 impl Editor {
@@ -74,11 +78,9 @@ impl Editor {
         let egui_context = EguiContext::default();
         {
             let mut opts = egui_context.tessellation_options();
-            //opts.debug_paint_clip_rects = true;
-            opts.anti_alias = false;
-            //opts.debug_paint_text_rects = true;
+            opts.debug_paint_clip_rects = false;
         }
-        let render_texture = context.renderer.make_egui_render_target(&egui_context);
+        //let render_texture = context.renderer.make_egui_render_target(&egui_context);
 
         Ok((
             event_loop,
@@ -90,7 +92,14 @@ impl Editor {
                 camera_controller,
                 scene,
                 last_frame: Instant::now(),
-                render_texture,
+                //render_texture,
+                light: Light {
+                    pos: Vec3::new(0.0, 0.0, 0.0),
+                    color: [1.0; 3],
+                    k_constant: 1.0,
+                    k_linear: 0.35,
+                    k_quadratic: 0.44,
+                },
             },
         ))
     }
@@ -175,21 +184,40 @@ impl Editor {
             lines.push(Line { start, end, color });
         }
 
+        let pos_r = || -10.0..=10.0;
+        let k_r = || 0.0..=1.0;
+
         let raw_input = self.state.take_egui_input(&self.window.winit_window());
         let full_output = self.egui_context.run(raw_input, |ctx| {
-            egui::Window::new("my_area").auto_sized().show(&ctx, |ui| {
-                ui.label("Hello world!");
-                //ui.label("More texttttt");
-                ui.image(&self.render_texture, (400.0, 300.0));
+            egui::Window::new("Light controls")
+                .auto_sized()
+                .show(&ctx, |ui| {
+                    ui.label("Light position");
+                    ui.spacing_mut().slider_width *= 2.0;
+                    ui.add(slider("x", &mut self.light.pos.x, pos_r()));
+                    ui.add(slider("y", &mut self.light.pos.y, pos_r()));
+                    ui.add(slider("z", &mut self.light.pos.z, pos_r()));
+                    ui.label("Light attenuation factors");
+                    ui.add(slider("k_c", &mut self.light.k_constant, k_r()));
+                    ui.add(slider("k_l", &mut self.light.k_linear, k_r()));
+                    ui.add(slider("k_q", &mut self.light.k_quadratic, k_r()));
+                    ui.label("Light color");
+                    egui::widgets::color_picker::color_edit_button_rgb(ui, &mut self.light.color);
+                    //ui.image(&self.render_texture, (400.0, 300.0));
             });
         });
+
+        let mut lights = Vec::with_capacity(self.scene.lights.len() + 1);
+        lights.push(self.light);
 
         if self.window.inner_size() != (0, 0) {
             match self.context.renderer.render(
                 &lines,
+                &lights,
                 &self.egui_context,
                 full_output,
                 self.egui_context.pixels_per_point(),
+                true,
             ) {
                 Ok(_) => (),
                 Err(e) => log::error!("Failed to render: {}", e),
@@ -211,6 +239,7 @@ impl ExampleScene {
                 .load_model("res/ball.obj")
                 .with_context(|| "failed to open ball.obj")?,
             transforms: Self::create_transforms(),
+            lights: Self::create_lights(),
         })
     }
 
@@ -223,14 +252,86 @@ impl ExampleScene {
         }
 
         {
+            let cutoff = self.transforms.len() / 2;
             let mut mgr = ctx.renderer.get_models_mut();
-            mgr.set_transforms(self.cube_model, self.transforms[..8].to_vec());
-            mgr.set_transforms(self.ball_model, self.transforms[8..].to_vec());
+            mgr.set_transforms(self.cube_model, self.transforms[..cutoff].to_vec());
+            mgr.set_transforms(self.ball_model, self.transforms[cutoff..].to_vec());
+            mgr.set_transforms(
+                self.light_cube,
+                self.lights
+                    .iter()
+                    .map(|l| Transform {
+                        position: l.pos,
+                        rotation: Quaternion::identity(),
+                        scale: Vec3::from(0.5),
+                    })
+                    .collect(),
+            );
+            mgr.set_transforms(self.light_cube, vec![]);
         }
-        // ctx.renderer.update_instances(&[
-        //     (self.cube_model, &self.transforms[..8]),
-        //     (self.ball_model, &self.transforms[8..]),
-        // ]);
+    }
+
+    fn create_lights() -> Vec<Light> {
+        const N_LIGHTS: usize = 6;
+        const SPACING: f32 = 10.0;
+        const SPACING_FACTOR: f32 = 4.0;
+
+        let y_range = || 2.0..=4.0;
+        let xz_range = || -SPACING / SPACING_FACTOR..=SPACING / SPACING_FACTOR;
+        let strengths = [
+            (0.7, 1.8),
+            (0.35, 0.44),
+            (0.22, 0.20),
+            (0.14, 0.07),
+            (0.09, 0.032),
+            (0.07, 0.017),
+        ];
+
+        const MAX_STRENGTH: usize = 4;
+
+        let grid_points: Vec<_> = (0..N_LIGHTS)
+            .flat_map(|z| {
+                (0..N_LIGHTS).map(move |x| {
+                    let x = SPACING * (x as f32 - N_LIGHTS as f32);
+                    let z = SPACING * (z as f32 - N_LIGHTS as f32);
+
+                    Vec3::new(x, 0.0, z)
+                })
+            })
+            .collect();
+        let mut lights = Vec::new();
+        let mut rng = rand::thread_rng();
+
+        let saturation = 0.0;
+        let value = 1.0;
+
+        for mut grid_point in grid_points {
+            let shift_x = rng.gen_range(xz_range());
+            let shift_z = rng.gen_range(xz_range());
+
+            grid_point.x += shift_x;
+            grid_point.z += shift_z;
+            grid_point.y = rng.gen_range(y_range());
+
+            // we want more small lights than big ones
+            let att_factors = strengths[rng
+                .gen_range(0.0..(MAX_STRENGTH * MAX_STRENGTH) as f64)
+                .sqrt()
+                .trunc() as usize];
+
+            let hue = rng.gen_range(0.0..=1.0);
+            let rgb = egui::color::rgb_from_hsv((hue, saturation, value));
+
+            lights.push(Light {
+                pos: grid_point,
+                color: rgb,
+                k_constant: 1.0,
+                k_linear: att_factors.0,
+                k_quadratic: att_factors.1,
+            })
+        }
+
+        lights
     }
 
     fn create_transforms() -> Vec<Transform> {
@@ -260,4 +361,8 @@ impl ExampleScene {
             })
             .collect::<Vec<_>>()
     }
+}
+
+fn slider<'a>(name: &str, v: &'a mut f32, r: std::ops::RangeInclusive<f32>) -> egui::Slider<'a> {
+    egui::Slider::new(v, r).text(name)
 }

@@ -27,17 +27,22 @@ impl Camera {
 #[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct CameraUniform {
     view_proj: [[f32; 4]; 4],
+    world_pos: [f32; 3],
+    _padding: u32,
 }
 
 impl CameraUniform {
     pub fn new(camera: &Camera) -> Self {
         Self {
             view_proj: Self::get_view_proj(camera),
+            world_pos: camera.eye.into_array(),
+            _padding: 0,
         }
     }
 
     pub fn update_view_proj(&mut self, camera: &Camera) {
         self.view_proj = Self::get_view_proj(camera);
+        self.world_pos = camera.eye.into_array();
     }
 
     fn get_view_proj(camera: &Camera) -> [[f32; 4]; 4] {

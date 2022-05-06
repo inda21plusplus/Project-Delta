@@ -10,6 +10,7 @@ use crate::model::ModelManager;
 use crate::{texture, Camera, RenderingError};
 use common::{Mat3, Mat4, Transform, Vec3, Vec4};
 
+pub mod gbuffer;
 pub mod world;
 use world::World;
 
@@ -96,6 +97,7 @@ pub struct Renderer {
     shader: wgpu::ShaderModule,
     render_pipeline_layout: wgpu::PipelineLayout,
     camera_bind_group_layout: wgpu::BindGroupLayout,
+    light_bind_group_layout: wgpu::BindGroupLayout,
     depth_texture: texture::Texture,
     worlds: Vec<World>,
     clear_color: [f64; 3],
@@ -260,14 +262,14 @@ impl Renderer {
             aspect: config.width as f32 / config.height as f32,
             fovy: 45f32.to_radians(),
             znear: 0.1,
-            zfar: 100.0,
+            zfar: 2000.0,
         };
 
         let camera_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                 entries: &[wgpu::BindGroupLayoutEntry {
                     binding: 0,
-                    visibility: wgpu::ShaderStages::VERTEX,
+                    visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
                     ty: wgpu::BindingType::Buffer {
                         ty: wgpu::BufferBindingType::Uniform,
                         has_dynamic_offset: false,
@@ -276,6 +278,21 @@ impl Renderer {
                     count: None,
                 }],
                 label: Some("camera_bind_group_layout"),
+            });
+
+        let light_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                entries: &[wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                }],
+                label: Some("light_bind_group_layout"),
             });
 
         let shader = device.create_shader_module(&wgpu::ShaderModuleDescriptor {
@@ -287,12 +304,16 @@ impl Renderer {
             source: wgpu::ShaderSource::Wgsl(include_str!("../line_shader.wgsl").into()),
         });
 
-        let depth_texture = texture::Texture::new_depth_texture(&device, &config);
+        let depth_texture = texture::Texture::new_depth_texture(&device, &config, true);
 
         let render_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Render Pipeline Layout"),
-                bind_group_layouts: &[&texture_bind_group_layout, &camera_bind_group_layout],
+                bind_group_layouts: &[
+                    &texture_bind_group_layout,
+                    &camera_bind_group_layout,
+                    &light_bind_group_layout,
+                ],
                 push_constant_ranges: &[],
             });
 
@@ -317,6 +338,7 @@ impl Renderer {
             line_render_pipeline_layout,
             camera,
             camera_bind_group_layout,
+            light_bind_group_layout,
             depth_texture,
             clear_color,
             worlds: vec![],
@@ -335,12 +357,12 @@ impl Renderer {
             self.camera.aspect = width as f32 / height as f32;
             self.size = (width, height);
             self.surface.configure(&self.device, &self.config);
-            self.depth_texture = texture::Texture::new_depth_texture(&self.device, &self.config);
+            self.depth_texture =
+                texture::Texture::new_depth_texture(&self.device, &self.config, true);
             self.painter.resize(&self.device, &self.queue, &self.config);
 
             for world in &mut self.worlds {
-                world.depth_texture =
-                    texture::Texture::new_depth_texture(&self.device, &self.config)
+                world.resize(&self.device, &self.config);
             }
         }
     }
@@ -359,7 +381,7 @@ impl Renderer {
 
     pub fn update_camera(&mut self) {
         self.worlds[0].camera = self.camera.clone();
-        self.worlds[0].update_camera(&self.queue)
+        self.worlds[0].update_camera(&self.queue, self.painter.last_aspect);
     }
 
     #[deprecated = "use the model manager for this functionality instead"]
@@ -382,6 +404,7 @@ impl Renderer {
         let handle = egui::TextureHandle::new(tex_mgr, id);
 
         let render_texture = texture::Texture::new_render_target(
+            "egui ui texture",
             &self.device,
             (self.config.width, self.config.height),
             self.config.format,
@@ -401,9 +424,11 @@ impl Renderer {
     pub fn render(
         &mut self,
         lines: &[Line],
+        lights: &[world::Light],
         ui: &egui::Context,
         egui_output: egui::FullOutput,
         pixels_per_point: f32,
+        deferred: bool,
     ) -> Result<(), RenderingError> {
         let output = self.surface.get_current_texture()?;
         let view = output
@@ -416,35 +441,20 @@ impl Renderer {
                 label: Some("Render Encoder"),
             });
 
-        if let Some((_, render_tex)) = self.painter.get_render_texture() {
-            self.worlds[0].render(&self.device, lines, &render_tex.tex.view, None, &self.queue)?;
+        let render_tex = if let Some((_, render_tex)) = self.painter.get_render_texture() {
+            &render_tex.tex.view
         } else {
-            let [r, g, b] = self.clear_color;
-            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("Render Pass"),
-                color_attachments: &[wgpu::RenderPassColorAttachment {
-                    view: &view,
-                    resolve_target: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color { r, g, b, a: 1.0 }),
-                        store: true,
-                    },
-                }],
-                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
-                    view: &self.depth_texture.view,
-                    depth_ops: Some(wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(1.0),
-                        store: true,
-                    }),
-                    stencil_ops: None,
-                }),
-            });
-
-            self.worlds[0].render_rpass(&self.device, &self.queue, lines, &mut render_pass)?;
+            &view
+        };
+        if deferred {
+            self.worlds[0].render_deferred(&self.device, lines, lights, render_tex, &self.queue)?;
+        } else {
+            self.worlds[0].render(&self.device, lines, render_tex, None, &self.queue)?;
         }
+
         {
             let mut ui_render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("Render Pass"),
+                label: Some("UI render pass"),
                 color_attachments: &[wgpu::RenderPassColorAttachment {
                     view: &view,
                     resolve_target: None,

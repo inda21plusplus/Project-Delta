@@ -81,5 +81,7 @@ fn vs_conv_main(
 
 [[stage(fragment)]]
 fn fs_main(in: VertexOutput) -> [[location(0)]] vec4<f32> {
-    return in.color * textureSample(r_tex_color, r_tex_sampler, in.tex_coord);
+    var v_color = in.color;
+    var t_color = textureSample(r_tex_color, r_tex_sampler, in.tex_coord);
+    return v_color * t_color;
 }

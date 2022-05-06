@@ -1097,6 +1097,7 @@ dependencies = [
  "game-engine",
  "image",
  "log",
+ "rand",
  "raw-window-handle",
  "thiserror",
  "winit",
@@ -2216,9 +2217,9 @@ checksum = "cda74da7e1a664f795bb1f8a87ec406fb89a02522cf6e50620d016add6dbbf5c"
 
 [[package]]
 name = "tobj"
-version = "3.2.1"
+version = "3.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cdf98397d0f69a48a868afaecca753955050ffb62f37d4ec08d1d227921441a4"
+checksum = "33477e8d090573560f104bb924ce29e92442a064404b21be6ea59a05c95e0e66"
 dependencies = [
  "ahash 0.7.6",
 ]
