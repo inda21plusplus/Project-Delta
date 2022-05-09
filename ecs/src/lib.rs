@@ -755,6 +755,22 @@ mod tests {
         });
     }
 
+    #[test]
+    fn drop_command_buffer_while_it_owns_components() {
+        let world = World::default();
+        let counter = Rc::new(Cell::new(0));
+        {
+            let mut command_buffer = CommandBuffer::new();
+            let mut commands = Commands::new(&mut command_buffer, world.entities());
+
+            let e1 = commands.spawn();
+            commands.add(e1, Counter::named(counter.clone(), "a"));
+            assert_eq!(counter.get(), 1);
+        }
+
+        assert_eq!(counter.get(), 0);
+    }
+
     #[derive(Debug)]
     struct Counter(Rc<Cell<usize>>, &'static str);
     impl Counter {
