@@ -955,6 +955,8 @@ dependencies = [
 name = "game-engine"
 version = "0.1.0"
 dependencies = [
+ "common",
+ "lazy_static",
  "log",
  "rendering",
  "thiserror",

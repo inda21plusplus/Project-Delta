@@ -216,7 +216,7 @@ impl Editor {
                 &self.egui_context,
                 full_output,
                 self.egui_context.pixels_per_point(),
-                true,
+                false,
             ) {
                 Ok(_) => (),
                 Err(e) => log::error!("Failed to render: {}", e),

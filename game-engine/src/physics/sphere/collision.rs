@@ -139,16 +139,11 @@ pub fn collide_sphere_vs_box(
 
     let point_of_contact = closest_point;
 
-    let alpha = (normal
-        .dot(gravity_vector)
-        .div(normal.magnitude() * gravity_vector.magnitude()))
-    .acos();
-
     let r_1 = point_of_contact - w1;
     let r_2 = point_of_contact - w2;
 
     standard_collision(
-        normal,
+        -normal,
         (rb1, rb2),
         (&t1, &t2),
         (c1.inv_inertia_tensor(), c2.inv_inertia_tensor()),
