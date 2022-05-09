@@ -1,10 +1,7 @@
-use crate::{
-    physics::{
-        collision::{pop_coliders, standard_collision},
-        sphere::SphereColider,
-        Collider, Ray, RidgidBody, Vec3,
-    },
-    renderer::Transform,
+use crate::physics::{
+    collision::{pop_coliders, standard_collision},
+    sphere::SphereColider,
+    Collider, RidgidBody,
 };
 
 use super::{
@@ -12,6 +9,8 @@ use super::{
     sat::{get_axis_and_verts, proj_has_overlap},
     BoxColider,
 };
+
+use common::{Ray, Transform, Vec3};
 
 pub fn is_colliding_box_vs_box(
     w1: Vec3,
@@ -97,7 +96,7 @@ pub fn collide_box_vs_box(
                     standard_collision(
                         normal,
                         (rb1, rb2),
-                        (&Collider::BoxColider(*c1), &Collider::BoxColider(*c2)),
+                        //(&Collider::BoxColider(*c1), &Collider::BoxColider(*c2)),
                         (&*t1, &*t2),
                         (c1.inv_inertia_tensor(), c2.inv_inertia_tensor()),
                         (point_of_contact - w1, point_of_contact - w2),

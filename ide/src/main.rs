@@ -4,6 +4,7 @@ use editor::Editor;
 
 mod camera_controller;
 mod editor;
+mod physics_context;
 mod window;
 
 fn main() -> anyhow::Result<()> {

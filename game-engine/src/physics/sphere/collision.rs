@@ -3,16 +3,15 @@ use std::{
     ops::Div,
 };
 
-use crate::{
-    physics::{
-        collision::{pop_coliders, standard_collision},
-        macros::{debug_assert_finite, squared},
-        proj,
-        r#box::{get_closest_point, BoxColider},
-        Collider, Mat3, RidgidBody, Vec3,
-    },
-    renderer::Transform,
+use crate::physics::{
+    collision::{pop_coliders, standard_collision},
+    macros::{debug_assert_finite, squared},
+    proj,
+    r#box::{get_closest_point, BoxColider},
+    Collider, RidgidBody,
 };
+
+use common::{Mat3, Transform, Vec3};
 
 use super::SphereColider;
 
@@ -86,7 +85,7 @@ pub fn collide_sphere_vs_sphere(
     standard_collision(
         normal,
         (rb1, rb2),
-        (&Collider::SphereColider(*c1), &Collider::SphereColider(*c2)),
+        //(&Collider::SphereColider(*c1), &Collider::SphereColider(*c2)),
         (&*t1, &*t2),
         (c1.inv_inertia_tensor(), c2.inv_inertia_tensor()),
         (normal * r1, normal * r2),
@@ -145,14 +144,28 @@ pub fn collide_sphere_vs_box(
         .div(normal.magnitude() * gravity_vector.magnitude()))
     .acos();
 
+    let r_1 = point_of_contact - w1;
+    let r_2 = point_of_contact - w2;
+
+    standard_collision(
+        normal,
+        (rb1, rb2),
+        (&t1, &t2),
+        (c1.inv_inertia_tensor(), c2.inv_inertia_tensor()),
+        (r_1, r_2),
+        0.0,
+        0.0,
+    );
+
+    pop_coliders(normal * overlap_distance, t1, t2, &rb1, &rb2);
+
+    return;
+
     let r = c1.get_radius(t1.scale);
     let i = 2.0 * rb1.mass * r * r / 5.0;
 
     let v_2 = rb2.velocity();
     let v_1 = rb1.velocity();
-
-    let r_1 = point_of_contact - w1;
-    let r_2 = point_of_contact - w2;
 
     let i_1_bodyspace = c1.inv_inertia_tensor();
     let rot_1 = Mat3::from(t1.rotation);

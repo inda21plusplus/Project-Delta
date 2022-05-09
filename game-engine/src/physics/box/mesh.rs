@@ -1,9 +1,8 @@
-use crate::{
-    physics::{PhysicsMaterial, Quaternion, Ray, Tri, Vec3},
-    renderer::Transform,
-};
+use crate::physics::{PhysicsMaterial, Tri};
 
 use super::BoxColider;
+
+use common::{Quaternion, Ray, Transform, Vec3};
 
 // TODO FIX using get_verts
 pub fn get_vertex(w: &Vec3, t: &Transform, c: &BoxColider) -> Vec<Vec3> {

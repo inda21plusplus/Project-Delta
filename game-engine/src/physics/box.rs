@@ -1,12 +1,10 @@
-use crate::{
-    physics::{clamp, macros::debug_assert_finite},
-    renderer::Transform,
-};
+use crate::physics::{clamp, macros::debug_assert_finite};
 pub(crate) mod collision;
 pub(crate) mod mesh;
 pub(crate) mod sat;
 
-use super::{Mat3, PhysicsMaterial, Quaternion, Vec3};
+use super::PhysicsMaterial;
+use common::{Mat3, Quaternion, Transform, Vec3};
 
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub struct BoxColider {
@@ -79,12 +77,12 @@ impl BoxColider {
     pub fn inv_inertia_tensor(&self) -> Mat3 {
         // https://www.wolframalpha.com/input?i=inertia+tensor+box
         let d = self.scale * self.scale;
-        
+
         let x = d.y + d.z;
         let y = d.x + d.z;
         let z = d.x + d.y;
 
-        Mat3::with_diagonal(1.0/12.0 * Vec3 { x, y, z })
+        Mat3::with_diagonal(1.0 / 12.0 * Vec3 { x, y, z })
     }
 }
 

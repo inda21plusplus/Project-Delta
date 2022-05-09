@@ -1,4 +1,5 @@
-use super::{Mat3, PhysicsMaterial, Vec3};
+use super::PhysicsMaterial;
+use common::{Mat3, Vec3};
 pub(crate) mod collision;
 
 #[derive(Debug, PartialEq, Clone, Copy)]
@@ -24,7 +25,8 @@ impl SphereColider {
         self.radius * scale
     }
 
-    pub(crate) fn inv_inertia_tensor(&self) -> vek::Mat3<f32> {
+    // TODO: pay attention to scale
+    pub(crate) fn inv_inertia_tensor(&self) -> Mat3 {
         Mat3::broadcast_diagonal(((2.0 / 5.0) * self.radius * self.radius).recip())
     }
 }

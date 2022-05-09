@@ -1030,6 +1030,31 @@ impl World {
                 0..lights.len() as u32,
             );
         }
+        {
+            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("Render Pass"),
+                color_attachments: &[wgpu::RenderPassColorAttachment {
+                    view: &render_target,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: true,
+                    },
+                }],
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: &self.depth_texture.view,
+                    depth_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(1.0),
+                        store: true,
+                    }),
+                    stencil_ops: None,
+                }),
+            });
+            render_pass.set_pipeline(&self.line_render_pipeline);
+            render_pass.set_vertex_buffer(0, self.line_vertex_buffer.slice(..));
+            render_pass.set_bind_group(0, &self.camera_bind_group, &[]);
+            render_pass.draw(0..lines.len() as u32, 0..1);
+        }
         queue.submit(std::iter::once(encoder.finish()));
 
         Ok(())

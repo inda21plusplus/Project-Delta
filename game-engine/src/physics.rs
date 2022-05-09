@@ -1,4 +1,6 @@
-use crate::{physics::macros::debug_assert_finite, renderer::Transform};
+use std::sync::atomic::{AtomicUsize, Ordering};
+
+use crate::physics::macros::debug_assert_finite;
 
 use self::{r#box::BoxColider, sphere::SphereColider};
 
@@ -6,12 +8,9 @@ pub mod r#box;
 pub mod collision;
 pub mod sphere;
 
-pub type Vec3 = vek::vec::repr_c::Vec3<f32>;
-pub type Quaternion = vek::quaternion::repr_c::Quaternion<f32>;
-pub type Mat3 = vek::mat::repr_c::column_major::mat3::Mat3<f32>;
-pub type Mat4 = vek::mat::repr_c::row_major::mat4::Mat4<f32>;
+use common::{Mat3, Quaternion, Ray, Transform, Vec3};
+
 type Tri = [Vec3; 3];
-type Ray = vek::Ray<f32>;
 
 mod macros {
     macro_rules! assert_delta {
@@ -78,8 +77,11 @@ pub struct RayCastHit {
     pub normal: Vec3, // normalized
 }
 
+static BODY_ID: AtomicUsize = AtomicUsize::new(0);
+
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub struct RidgidBody {
+    pub id: usize,
     pub last_frame_location: Vec3, // used for lerp location
     //pub velocity: Vec3,
     pub acceleration: Vec3, // can be used for gravity
@@ -111,6 +113,7 @@ impl Default for RidgidBody {
 impl RidgidBody {
     pub fn new(velocity: Vec3, acceleration: Vec3, angular_velocity: Vec3, mass: f32) -> Self {
         Self {
+            id: BODY_ID.fetch_add(1, Ordering::SeqCst),
             //velocity,
             acceleration,
             mass,
@@ -134,7 +137,7 @@ impl RidgidBody {
         self.linear_momentum * self.mass.recip()
     }
 
-    pub fn angular_velocity(&self, inv_tensor_world: Mat3) -> vek::Vec3<f32> {
+    pub fn angular_velocity(&self, inv_tensor_world: Mat3) -> Vec3 {
         inv_tensor_world * self.angular_momentum
     }
 }
@@ -224,7 +227,7 @@ pub struct PhysicsMaterial {
     pub restfullness: f32, // bounciness
 }
 impl Collider {
-    pub fn inv_inertia_tensor(&self) -> vek::Mat3<f32> {
+    pub fn inv_inertia_tensor(&self) -> Mat3 {
         match self {
             Collider::SphereColider(a) => a.inv_inertia_tensor(),
             Collider::BoxColider(a) => a.inv_inertia_tensor(),

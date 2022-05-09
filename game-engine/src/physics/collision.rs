@@ -1,21 +1,24 @@
+use crate::rendering::Line;
 use std::collections::HashMap;
+use std::sync::Mutex;
 
-type Mat3 = vek::Mat3<f32>;
+lazy_static! {
+    pub static ref LINE_ATLAS: Mutex<HashMap<String, Line>> = Mutex::new(HashMap::new());
+}
 
 use super::{
     get_position,
     r#box::{collision::is_colliding_box_vs_box, BoxColider},
     sphere::collision::{is_colliding_sphere_vs_box, is_colliding_sphere_vs_sphere},
-    Collider, PhysicsObject, RidgidBody, Vec3,
+    Collider, PhysicsObject, RidgidBody,
 };
 use crate::physics::sphere::collision::collide_sphere_vs_sphere;
-use crate::{
-    physics::{
-        is_finite, macros::debug_assert_finite, proj, r#box::collision::collide_box_vs_box,
-        sphere::collision::collide_sphere_vs_box,
-    },
-    renderer::Transform,
+use crate::physics::{
+    is_finite, macros::debug_assert_finite, proj, r#box::collision::collide_box_vs_box,
+    sphere::collision::collide_sphere_vs_box,
 };
+
+use common::{Mat3, Transform, Vec3};
 
 /// Returns true if 2 objects are colliding
 #[must_use]
@@ -65,7 +68,7 @@ pub fn bounce(input: Vec3, normal: Vec3) -> Vec3 {
 pub fn standard_collision(
     normal: Vec3,
     rb: (&mut RidgidBody, &mut RidgidBody),
-    coll: (&Collider, &Collider),
+    //coll: (&Collider, &Collider),
     trans: (&Transform, &Transform),
     // inverted inertia matrices
     inertia: (Mat3, Mat3),
@@ -80,12 +83,12 @@ pub fn standard_collision(
     // lowercase omega is substituted with w in this code.
     // https://en.wikipedia.org/wiki/Collision_response#Impulse-Based_Reaction_Model
 
-    match coll {
+    /*match coll {
         (Collider::SphereColider(_), Collider::SphereColider(_)) => {}
         (Collider::SphereColider(_), Collider::BoxColider(_)) => {}
         (Collider::BoxColider(_), Collider::SphereColider(_)) => {}
         (Collider::BoxColider(_), Collider::BoxColider(_)) => {}
-    }
+    }*/
 
     let normal = -normal;
 
@@ -177,13 +180,44 @@ pub fn standard_collision(
         rb.0.angular_momentum += j_r * cross(r.0, normal);
 
         do_friction(rb.0, t1, i_1, v_r, f_e1);
+
+        let vel = rb.0.velocity();
+
+        set_line(
+            rb.0.id,
+            "vel",
+            Line {
+                start: trans.0.position,
+                end: trans.0.position + vel,
+                color: Vec3::new(1.0, 0.0, 0.0),
+            },
+        );
     }
     if !rb.1.is_static {
         rb.1.linear_momentum += -j_r * normal;
         rb.1.angular_momentum += j_r * cross(r.1, normal);
 
         do_friction(rb.1, t2, i_2, v_r, f_e2);
+
+        let vel = rb.1.velocity();
+
+        set_line(
+            rb.1.id,
+            "vel",
+            Line {
+                start: trans.1.position,
+                end: trans.1.position + vel,
+                color: Vec3::new(1.0, 0.0, 0.0),
+            },
+        );
     }
+}
+
+pub fn set_line(id: usize, key: &str, line: Line) {
+    LINE_ATLAS
+        .lock()
+        .unwrap()
+        .insert(format!("{} {}", id, key), line);
 }
 
 /// where normal_distance is the normal pointing at c1 from c2 with the length of the intercetion

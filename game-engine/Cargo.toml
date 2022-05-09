@@ -9,3 +9,5 @@ edition = "2021"
 thiserror = "1.0"
 log = "0.4"
 rendering = { path = "../rendering" }
+common = { path = "../common" }
+lazy_static = "1.4.0"
