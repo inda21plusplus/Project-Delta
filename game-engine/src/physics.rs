@@ -118,7 +118,7 @@ impl RidgidBody {
             acceleration,
             mass,
             angular_momentum: Vec3::zero(),
-            linear_momentum: velocity / mass,
+            linear_momentum: Vec3::zero(),
             //angular_velocity,
             is_active: true,
             is_using_global_gravity: false,

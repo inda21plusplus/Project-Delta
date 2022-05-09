@@ -180,36 +180,12 @@ pub fn standard_collision(
         rb.0.angular_momentum += j_r * cross(r.0, normal);
 
         do_friction(rb.0, t1, i_1, v_r, f_e1);
-
-        let vel = rb.0.velocity();
-
-        set_line(
-            rb.0.id,
-            "vel",
-            Line {
-                start: trans.0.position,
-                end: trans.0.position + vel,
-                color: Vec3::new(1.0, 0.0, 0.0),
-            },
-        );
     }
     if !rb.1.is_static {
         rb.1.linear_momentum += -j_r * normal;
         rb.1.angular_momentum += j_r * cross(r.1, normal);
 
         do_friction(rb.1, t2, i_2, v_r, f_e2);
-
-        let vel = rb.1.velocity();
-
-        set_line(
-            rb.1.id,
-            "vel",
-            Line {
-                start: trans.1.position,
-                end: trans.1.position + vel,
-                color: Vec3::new(1.0, 0.0, 0.0),
-            },
-        );
     }
 }
 
@@ -406,37 +382,11 @@ impl RidgidBody {
 
         //debug_assert!(velocity.magnitude_squared() != 0.0, "velocity is too close to 0 = {}", velocity);
 
-        // TODO: can we please remove this
-        // if zero velocity is applied then nothing happends
-        if impulse.magnitude_squared() == 0.0 {
-            return;
-        }
-
         self.linear_momentum += impulse;
         let r = location - pos;
         self.angular_momentum += r.cross(impulse);
 
         //https://en.wikipedia.org/wiki/Angular_velocity
-
-        // just random shit
-        return;
-        let offset = self.center_of_mass_offset + location;
-        let normal = offset;
-
-        let rotation_around = -(normal.normalized().cross(impulse.normalized())).normalized();
-        debug_assert!(
-            is_finite(&rotation_around),
-            "rotation_around = {} normal {} velocity {}",
-            rotation_around,
-            normal,
-            impulse
-        );
-
-        let torque = rotation_around * 10.0; //velocity *  / offset.magnitude();
-
-        //self.angular_velocity += torque;
-
-        // TODO idk what angular_velocity is
     }
 
     pub fn apply_forces(&self) -> Vec3 {
@@ -560,5 +510,18 @@ pub fn update(
         //     println!("col >> {} = {}",i, phx_objects[i].rb.is_colliding_this_frame);
         //}
         phx_objects[i].rb.is_colliding = phx_objects[i].rb.is_colliding_this_frame;
+
+        if i == 1 {
+            println!("{}", phx_objects[i].rb.velocity());
+        }
+        set_line(
+            i,
+            "vel",
+            Line {
+                start: transforms[i].position,
+                end: transforms[i].position + phx_objects[i].rb.velocity(),
+                color: Vec3::new(1.0, 0.0, 0.0),
+            },
+        );
     }
 }

@@ -29,7 +29,7 @@ impl PhysicsScene {
             scale: Vec3::new(100.0, 1.0, 100.0),
         }];
         let cubes = 0;
-        let spheres = 15;
+        let spheres = 1;
         let mut rng = rand::thread_rng();
 
         for _ in 0..(cubes + spheres) {
