@@ -16,8 +16,11 @@ pub use world::World;
 mod tests {
     use std::{
         any,
+        cell::Cell,
         collections::HashSet,
-        mem,
+        collections::{HashMap, HashSet},
+        mem, mem, ptr,
+        rc::Rc,
         time::{Duration, Instant},
     };
 
@@ -50,6 +53,9 @@ mod tests {
     #[test]
     fn entities() {
         let mut entities = Entities::default();
+        let _resource_holder = entities.spawn(); // NOTE: the first entity is always the resource
+                                                 // holder in a `World` and `Entities::iter*` takes
+                                                 // this into account.
         let a = entities.spawn();
         assert!(entities.exists(a));
         assert!(entities.despawn(a));
@@ -670,5 +676,173 @@ mod tests {
         world.get::<usize>(entity);
         // While the first borrow still exists
         mem::drop(q);
+    }
+
+    #[test]
+    fn command_buffer_despawn_entities() {
+        struct Health(u8);
+
+        let mut world = World::default();
+        let a = world.spawn();
+        world.add(a, Health(100));
+        let b = world.spawn();
+        world.add(b, Health(10));
+        let c = world.spawn();
+        world.add(c, Health(100));
+        let d = world.spawn();
+        world.add(d, Health(10));
+
+        let mut command_buffer = CommandBuffer::new();
+        let mut commands = Commands::new(&mut command_buffer, world.entities());
+        query_iter!(world, (entity: Entity, health: mut Health) => {
+            health.0 -= 10;
+            if health.0 == 0 {
+                commands.despawn(entity);
+            }
+        });
+        assert!(world.entities().exists(a));
+        assert!(world.entities().exists(b));
+        assert!(world.entities().exists(c));
+        assert!(world.entities().exists(d));
+        command_buffer.apply(&mut world);
+        assert!(world.entities().exists(a));
+        assert!(!world.entities().exists(b));
+        assert!(world.entities().exists(c));
+        assert!(!world.entities().exists(d));
+    }
+
+    #[test]
+    fn add_component_to_old_entity_through_commands() {
+        let mut world = World::default();
+        let e1 = world.spawn();
+        let e2 = world.spawn();
+        let counter = Rc::new(Cell::new(0));
+        let mut command_buffer = CommandBuffer::new();
+        let mut commands = Commands::new(&mut command_buffer, world.entities());
+
+        commands.add(e1, Counter::named(counter.clone(), "a"));
+        assert_eq!(counter.get(), 1);
+        commands.add(e1, Counter::named(counter.clone(), "b"));
+        assert_eq!(counter.get(), 2);
+        commands.add(e2, Counter::named(counter.clone(), "c"));
+        assert_eq!(counter.get(), 3);
+        commands.despawn(e2);
+        assert_eq!(counter.get(), 3);
+        command_buffer.apply(&mut world);
+        assert_eq!(counter.get(), 1);
+    }
+
+    #[test]
+    fn add_component_to_newly_created_entity_through_commands() {
+        let mut world = World::default();
+        let counter = Rc::new(Cell::new(0));
+        let mut command_buffer = CommandBuffer::new();
+        let mut commands = Commands::new(&mut command_buffer, world.entities());
+
+        let e1 = commands.spawn();
+        commands.add(e1, Counter::named(counter.clone(), "a"));
+        assert_eq!(counter.get(), 1);
+        commands.add(e1, Counter::named(counter.clone(), "b"));
+        assert_eq!(counter.get(), 2);
+
+        let e2 = commands.spawn();
+        commands.add(e2, Counter::named(counter.clone(), "c"));
+        commands.despawn(e2);
+        assert_eq!(counter.get(), 3);
+
+        command_buffer.apply(&mut world);
+        assert_eq!(counter.get(), 1);
+        query_iter!(world, (c: Counter) => {
+            assert_eq!(c.1, "b");
+        });
+    }
+
+    #[test]
+    fn entity_iter_combinations() {
+        let mut world = World::default();
+        const N: usize = 10;
+        for _ in 0..N {
+            world.spawn();
+        }
+
+        let mut counter = 0;
+        let mut counters = HashMap::new();
+        for (a, b) in world.entities().iter_combinations() {
+            *counters.entry(a).or_insert(0) += 1;
+            *counters.entry(b).or_insert(0) += 1;
+            counter += 1;
+        }
+        assert_eq!(counter, N * (N - 1) / 2);
+        assert_eq!(counters.into_values().collect::<Vec<_>>(), vec![N - 1; N]);
+
+        let mut counter = 0;
+        let mut counters = HashMap::new();
+        query_iter_combs!(world, ((a, b): Entity) => {
+            *counters.entry(a).or_insert(0) += 1;
+            *counters.entry(b).or_insert(0) += 1;
+            counter += 1;
+        });
+        assert_eq!(counter, N * (N - 1) / 2);
+        assert_eq!(counters.into_values().collect::<Vec<_>>(), vec![N - 1; N]);
+    }
+
+    #[test]
+    fn query_combinations() {
+        #[derive(Debug, PartialEq, Eq)]
+        struct Pos(i32, i32);
+        struct Vel(i32, i32);
+
+        let mut world = World::default();
+
+        let e1 = world.spawn();
+        let e2 = world.spawn();
+        let e3 = world.spawn();
+        let e4 = world.spawn();
+
+        world.add(e1, Pos(5, 0));
+        world.add(e2, Pos(0, 5));
+        world.add(e3, Pos(-5, 0));
+        world.add(e4, Pos(0, -5));
+
+        world.add(e1, Vel(0, 0));
+        world.add(e2, Vel(0, 0));
+        world.add(e3, Vel(0, 0));
+        world.add(e4, Vel(0, 0));
+
+        query_iter_combs!(world, ((p1, p2): Pos, (v1, v2): mut Vel) => {
+            let dx = (p2.0 - p1.0).signum();
+            let dy = (p2.1 - p1.1).signum();
+            v1.0 += dx;
+            v1.1 += dy;
+            v2.0 -= dx;
+            v2.1 -= dy;
+        });
+
+        query_iter!(world, (p: mut Pos, v: Vel) => {
+            p.0 += v.0;
+            p.1 += v.1;
+        });
+
+        assert_eq!(world.get::<Pos>(e1), Some(&Pos(2, 0)));
+        assert_eq!(world.get::<Pos>(e2), Some(&Pos(0, 2)));
+        assert_eq!(world.get::<Pos>(e3), Some(&Pos(-2, 0)));
+        assert_eq!(world.get::<Pos>(e4), Some(&Pos(0, -2)));
+    }
+
+    #[derive(Debug)]
+    struct Counter(Rc<Cell<usize>>, &'static str);
+    impl Counter {
+        fn new(rc: Rc<Cell<usize>>) -> Self {
+            Self::named(rc, "")
+        }
+        fn named(rc: Rc<Cell<usize>>, name: &'static str) -> Self {
+            rc.set(rc.get() + 1);
+            Self(rc, name)
+        }
+    }
+    impl Drop for Counter {
+        fn drop(&mut self) {
+            self.0.set(self.0.get() - 1)
+        }
     }
 }
