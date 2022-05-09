@@ -1,4 +1,7 @@
-use std::collections::HashSet;
+use std::{
+    cell::{Cell, RefCell},
+    collections::HashSet,
+};
 
 type EntityId = u32;
 type Generation = u32;
@@ -22,8 +25,9 @@ impl Entity {
 /// these are exceeded there will be a panic.
 #[derive(Debug, Default)]
 pub struct Entities {
-    generations: Vec<Generation>,
-    unused_ids: Vec<EntityId>,
+    // TODO: optimize
+    generations: RefCell<Vec<Cell<Generation>>>,
+    unused_ids: RefCell<Vec<EntityId>>,
 }
 
 impl Entities {
@@ -32,9 +36,9 @@ impl Entities {
     /// *O*(1) (ammortized).
     /// The current implementation keeps a `Vec` of all entities' *generations* which might have to
     /// grow.
-    pub fn spawn(&mut self) -> Entity {
-        if let Some(id) = self.unused_ids.pop() {
-            let gen = self.generations[id as usize];
+    pub fn spawn(&self) -> Entity {
+        if let Some(id) = self.unused_ids.borrow_mut().pop() {
+            let gen = self.generations.borrow()[id as usize].get();
             Entity { id, gen }
         } else {
             Entity {
@@ -60,14 +64,14 @@ impl Entities {
     /// Despawns the entity with id `id`. Does not check generation or if `id` is already currently
     /// despawned.
     pub fn despawn_unchecked(&mut self, id: EntityId) {
-        let gen = &mut self.generations[id as usize];
-        if *gen == Generation::MAX {
+        let gen = &self.generations.borrow()[id as usize];
+        if gen.get() == Generation::MAX {
             // TODO: we're not doomed in this scenario. We can still mark this id as no longer
             // usable somehow.
             panic!("Generation counter for entity id {} has overflown.", id);
         }
-        *gen += 1;
-        self.unused_ids.push(id);
+        gen.set(gen.get() + 1);
+        self.unused_ids.borrow_mut().push(id);
     }
 
     /// Indicates whether `entity` still is alive.
@@ -75,7 +79,7 @@ impl Entities {
     /// *O*(1)
     pub fn exists(&self, entity: Entity) -> bool {
         let Entity { id, gen } = entity;
-        self.generations[id as usize] == gen
+        self.generations.borrow()[id as usize].get() == gen
     }
 
     /// Returns the id of `entity` if `entity` is still alive.
@@ -112,7 +116,7 @@ impl Entities {
             // The bookkeeping alone for all those entities would require more than 17 GB so this
             // shouldn'n be an issue.
             .expect("Max entity count (4 294 967 296) exceeded");
-        self.generations.push(0);
+        g.push(Cell::new(0));
         id
     }
 }
@@ -128,7 +132,7 @@ impl<'e> Iter<'e> {
         Self {
             curr: 1, // skip the resource holder
             entities,
-            unused_ids: entities.unused_ids.iter().copied().collect(),
+            unused_ids: entities.unused_ids.borrow().iter().copied().collect(),
         }
     }
 
@@ -142,13 +146,13 @@ impl<'e> Iterator for Iter<'e> {
     type Item = Entity;
 
     fn next(&mut self) -> Option<Self::Item> {
-        while (self.curr as usize) < self.entities.generations.len() {
+        while (self.curr as usize) < self.entities.generations.borrow().len() {
             let curr = self.curr;
             self.curr += 1;
             if self.unused_ids.contains(&curr) {
                 continue;
             } else {
-                let gen = self.entities.generations[curr as usize];
+                let gen = self.entities.generations.borrow()[curr as usize].get();
                 return Some(Entity { id: curr, gen });
             }
         }

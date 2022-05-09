@@ -1,5 +1,6 @@
 #![deny(warnings)]
 
+mod commands;
 pub mod component;
 mod entity;
 mod error;
@@ -7,6 +8,7 @@ mod error;
 mod query;
 mod world;
 
+pub use commands::Commands;
 pub use entity::{Entities, Entity};
 pub use error::BorrowMutError;
 pub use query::{as_mut_lt, as_ref_lt, ComponentQuery, Query};
@@ -15,16 +17,19 @@ pub use world::World;
 #[cfg(test)]
 mod tests {
     use std::{
+        alloc::Layout,
         any,
         cell::Cell,
-        collections::HashSet,
         collections::{HashMap, HashSet},
-        mem, mem, ptr,
+        mem, ptr,
         rc::Rc,
         time::{Duration, Instant},
     };
 
-    use crate::component::{ComponentRegistry, Storage, StorageType};
+    use crate::{
+        commands::CommandBuffer,
+        component::{ComponentRegistry, Storage, StorageType},
+    };
 
     use super::*;
 
@@ -103,25 +108,21 @@ mod tests {
 
     #[test]
     fn vec_storage() {
-        use std::{cell::Cell, rc::Rc};
-
-        struct Counter(Rc<Cell<usize>>);
-        impl Counter {
-            fn new(rc: Rc<Cell<usize>>) -> Self {
-                rc.set(rc.get() + 1);
-                Self(rc)
-            }
-        }
-        impl Drop for Counter {
-            fn drop(&mut self) {
-                self.0.set(self.0.get() - 1)
-            }
-        }
         let counter = Rc::new(Cell::new(0));
 
+        unsafe fn drop_counter(counter: *mut u8) {
+            ptr::drop_in_place(counter as *mut Counter)
+        }
+
         {
-            let mut storage = Storage::new::<Counter>(StorageType::VecStorage);
-            let mut entities = Entities::default();
+            let mut storage = unsafe {
+                Storage::new(
+                    StorageType::VecStorage,
+                    Layout::new::<Counter>(),
+                    drop_counter,
+                )
+            };
+            let entities = Entities::default();
             let es: Vec<_> = (0..100).map(|_| entities.spawn()).collect();
             for i in (0..100).step_by(2) {
                 assert_eq!(i / 2, counter.get());
@@ -473,8 +474,8 @@ mod tests {
         let mut world = World::default();
         struct Name(String);
         struct Health(u8);
-        let name_id = world.register_component::<Name>();
-        let health_id = world.register_component::<Health>();
+        let name_id = world.component_registry_mut().register::<Name>();
+        let health_id = world.component_registry_mut().register::<Health>();
 
         let q1 = Query::new(vec![
             ComponentQuery {
@@ -571,8 +572,8 @@ mod tests {
         let mut world = World::default();
         struct Position(f32);
         struct Velocity(f32);
-        let pos_id = world.register_component::<Position>();
-        let vel_id = world.register_component::<Velocity>();
+        let pos_id = world.component_registry_mut().register::<Position>();
+        let vel_id = world.component_registry_mut().register::<Velocity>();
 
         for i in 0..1000 {
             let entity = world.spawn();
@@ -666,7 +667,7 @@ mod tests {
     #[should_panic]
     fn borrowing_borrowed_component_panics() {
         let mut world = World::default();
-        let id = world.register_component::<usize>();
+        let id = world.component_registry_mut().register::<usize>();
         let entity = world.spawn();
 
         let q = Query::new(vec![ComponentQuery { id, mutable: true }]).unwrap();

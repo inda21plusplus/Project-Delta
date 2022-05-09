@@ -18,7 +18,7 @@ pub struct World {
 
 impl Default for World {
     fn default() -> Self {
-        let mut entities = Entities::default();
+        let entities = Entities::default();
         let resource_holder = entities.spawn();
         Self {
             entities,
@@ -33,12 +33,8 @@ impl World {
         self.entities.spawn()
     }
 
-    pub fn register_component<T: 'static>(&mut self) -> ComponentId {
-        self.component_registry.register::<T>()
-    }
-
     pub fn add_resource<T: 'static>(&mut self, resource: T) -> ResourceId {
-        let resource_id = self.register_component::<T>();
+        let resource_id = self.component_registry.register::<T>();
         self.add(self.resource_holder, resource);
         ResourceId(resource_id)
     }
@@ -57,7 +53,8 @@ impl World {
 
     /// Adds a component to an entity. If the type is not registered as a component, it gets
     /// registered automatically. Returns `true` if `entity` did not have this kind of component
-    /// before and `entity` exists.
+    /// before and `entity` exists. It `entity` exists and the component was already present,
+    /// the old component is dropped and replaced with the new one.
     pub fn add<T: 'static>(&mut self, entity: Entity, component: T) -> bool {
         let comp_id = self
             .component_registry
@@ -70,6 +67,28 @@ impl World {
                 self.component_registry[comp_id]
                     .storage
                     .set::<T>(id as usize, component)
+            })
+            .unwrap_or(false)
+    }
+
+    /// The component type must already be registered in the component registry.
+    /// Returns `true` if `entity` did not have this kind of component before and `entity` exists.
+    /// Ownership of the component is transferred to the world in either case.
+    /// # Safety
+    /// The pointer must be a valid pointer to a component with the given id.
+    /// It must also not be used after this call.
+    pub unsafe fn add_raw(
+        &mut self,
+        entity: Entity,
+        component: *mut u8,
+        component_id: ComponentId,
+    ) -> bool {
+        self.entities
+            .id(entity)
+            .map(|id| {
+                self.component_registry[component_id]
+                    .storage
+                    .set_ptr(id as usize, component)
             })
             .unwrap_or(false)
     }
@@ -151,5 +170,10 @@ impl World {
     /// Get a reference to the world's entities.
     pub fn entities(&self) -> &Entities {
         &self.entities
+    }
+
+    /// Get a mutable reference to the world's component registry.
+    pub fn component_registry_mut(&mut self) -> &mut ComponentRegistry {
+        &mut self.component_registry
     }
 }

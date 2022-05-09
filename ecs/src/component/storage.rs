@@ -24,15 +24,13 @@ pub enum StorageType {
 }
 
 impl Storage {
-    pub fn new<T: 'static>(storage_type: StorageType) -> Self {
-        unsafe fn drop_ptr<T>(ptr: *mut u8) {
-            ptr.cast::<T>().drop_in_place();
-        }
-
+    /// Creates a new storage container for components with the given layout to be dropped by
+    /// `drop`.
+    /// # Safety
+    /// `drop` must be a valid drop implementation the type of component to be stored.
+    pub unsafe fn new(storage_type: StorageType, layout: Layout, drop: unsafe fn(*mut u8)) -> Self {
         match storage_type {
-            StorageType::VecStorage => {
-                Self::VecStorage(VecStorage::new(Layout::new::<T>(), drop_ptr::<T>))
-            }
+            StorageType::VecStorage => Self::VecStorage(VecStorage::new(layout, drop)),
         }
     }
 

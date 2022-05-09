@@ -1,5 +1,7 @@
 use std::{
+    alloc::Layout,
     any::{self, TypeId},
+    borrow::Cow,
     cell::RefCell,
     collections::HashMap,
     fmt, ops,
@@ -14,7 +16,7 @@ pub struct ComponentId(u16);
 /// Basic metadata about a kind of component.
 #[derive(Debug, PartialEq, Eq)]
 pub struct ComponentInfo {
-    name: String,
+    name: Cow<'static, str>,
     type_id: Option<TypeId>,
     id: ComponentId,
     // TODO: maybe add some sort of is_thread_safe bool or require `Send + Sync` for all
@@ -115,23 +117,55 @@ impl ComponentRegistry {
     where
         T: 'static,
     {
-        let type_id = TypeId::of::<T>();
+        unsafe fn drop_ptr<T>(ptr: *mut u8) {
+            ptr.cast::<T>().drop_in_place();
+        }
+
+        // Safety: if the type id and layout do not match here or `drop_ptr` is invalid, thats on
+        // Rust, not us.
+        unsafe {
+            self.register_raw(
+                TypeId::of::<T>(),
+                Cow::Borrowed(any::type_name::<T>()),
+                Layout::new::<T>(),
+                drop_ptr::<T>,
+            )
+        }
+    }
+
+    /// Registeres a rust type as a component kind. A rust type must *not* be registered twice in
+    /// the same registry.
+    /// # Safety
+    /// The `type_id` and `layout` must match and `drop` must be a valid drop function for the
+    /// given `type_id`.
+    pub unsafe fn register_raw(
+        &mut self,
+        type_id: TypeId,
+        name: Cow<'static, str>,
+        layout: Layout,
+        drop: unsafe fn(*mut u8),
+    ) -> ComponentId {
         let id = ComponentId(self.entries.len().try_into().unwrap());
 
         debug_assert!(self.rust_types.insert(type_id, id).is_none());
         assert!(self.check_exclusive_access());
 
         let info = ComponentInfo {
-            name: any::type_name::<T>().to_string(),
+            name,
             type_id: Some(type_id),
             id,
         };
-        let storage = Storage::new::<T>(StorageType::VecStorage);
+        let storage = Storage::new(StorageType::VecStorage, layout, drop);
 
         self.entries.push(ComponentEntry::new(info, storage));
         self.borrowed.borrow_mut().push(BorrowStatus::default());
 
         id
+    }
+
+    // TODO: better name
+    pub fn component_id_from_type_id(&self, type_id: TypeId) -> Option<ComponentId> {
+        self.rust_types.get(&type_id).copied()
     }
 
     pub fn id<T>(&self) -> Option<ComponentId>
