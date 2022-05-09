@@ -25,6 +25,7 @@ impl Entity {
 /// these are exceeded there will be a panic.
 #[derive(Debug, Default)]
 pub struct Entities {
+    // TODO: optimize
     generations: RefCell<Vec<Cell<Generation>>>,
     unused_ids: RefCell<Vec<EntityId>>,
 }
