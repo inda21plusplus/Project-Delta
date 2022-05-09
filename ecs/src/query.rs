@@ -31,7 +31,7 @@ macro_rules! _query_definition {
     }};
     ( $world:expr, $vec:expr, ($name:ident: $type:ty, $($tail:tt)*) ) => {{
         $vec.push(ComponentQuery {
-            id: $world.component_id::<$type>().unwrap(),
+            id: $world.component_registry().id::<$type>().unwrap(),
             mutable: false,
         });
         _query_definition!($world, $vec, ($($tail)*));
@@ -48,13 +48,13 @@ macro_rules! _query_definition {
     ( $world:expr, $vec:expr, ($name:ident: Entity) ) => { };
     ( $world:expr, $vec:expr, ($name:ident: $type:ty) ) => {{
         $vec.push(ComponentQuery {
-            id: $world.component_id::<$type>().unwrap(),
+            id: $world.component_registry().id::<$type>().unwrap(),
             mutable: false,
         });
     }};
     ( $world:expr, $vec:expr, ($name:ident: mut $type:ty) ) => {{
         $vec.push(ComponentQuery {
-            id: $world.component_id::<$type>().unwrap(),
+            id: $world.component_registry().id::<$type>().unwrap(),
             mutable: true,
         });
     }};

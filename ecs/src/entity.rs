@@ -48,12 +48,15 @@ impl Entities {
         }
     }
 
+    // NOTE: this should not be called directly, since it does not remove the entities components
     /// Returns `true` if the `entity` was despawned and `false` if `entity` had been despawned
     /// previously.
     /// # Time complexity
     /// *O*(1) (ammortized).
     /// The current implementation keeps a `Vec` of currently unused id's which might have to grow.
-    pub fn despawn(&mut self, entity: Entity) -> bool {
+    // NOTE: this is used in a test
+    #[allow(dead_code)]
+    pub(crate) fn despawn(&mut self, entity: Entity) -> bool {
         self.id(entity)
             .map(|id| self.despawn_unchecked(id))
             .is_some()
@@ -61,7 +64,7 @@ impl Entities {
 
     /// Despawns the entity with id `id`. Does not check generation or if `id` is already currently
     /// despawned.
-    pub fn despawn_unchecked(&mut self, id: EntityId) {
+    pub(crate) fn despawn_unchecked(&mut self, id: EntityId) {
         let gen = &self.generations.borrow()[id as usize];
         if gen.get() == Generation::MAX {
             // TODO: we're not doomed in this scenario. We can still mark this id as no longer

@@ -22,18 +22,26 @@ pub struct Commands<'b, 'e> {
 }
 
 impl<'b, 'e> Commands<'b, 'e> {
+    /// Creates a wrapper for issuing commands to the command buffer. The commands will be issued
+    /// when `CommandBuffer::apply` is called.
     pub fn new(buffer: &'b mut CommandBuffer, entities: &'e Entities) -> Self {
         Self { buffer, entities }
     }
 
+    /// Creates a new `entity`. See `Entities::spawn` for more information.
     pub fn spawn(&mut self) -> Entity {
         self.entities.spawn()
     }
 
+    /// Despawns an entity, removing its components (if any).
     pub fn despawn(&mut self, entity: Entity) {
         self.buffer.add(Command::Despawn(entity));
     }
 
+    /// Adds a component to an entity. If the type is not registered as a component, it gets
+    /// registered automatically. Returns `true` if `entity` did not have this kind of component
+    /// before and `entity` exists. If `entity` exists and the component was already present,
+    /// the old component is dropped and replaced with the new one.
     pub fn add<T: 'static>(&mut self, entity: Entity, component: T) {
         unsafe fn drop<T: 'static>(ptr: *mut u8) {
             ptr.cast::<T>().drop_in_place();

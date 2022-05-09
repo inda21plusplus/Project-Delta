@@ -371,8 +371,8 @@ mod tests {
         let b = world.spawn();
         world.add(b, 1usize);
         world.add(b, 2f32);
-        let usize_id = world.component_id::<usize>().unwrap();
-        let f32_id = world.component_id::<f32>().unwrap();
+        let usize_id = world.component_registry().id::<usize>().unwrap();
+        let f32_id = world.component_registry().id::<f32>().unwrap();
 
         let usize_query = Query::new(vec![ComponentQuery {
             id: usize_id,
@@ -428,17 +428,17 @@ mod tests {
         world.add(ant, Health(8));
 
         let name_query = Query::new(vec![ComponentQuery {
-            id: world.component_id::<Name>().unwrap(),
+            id: world.component_registry().id::<Name>().unwrap(),
             mutable: false,
         }])
         .unwrap();
         let mut_name_query = Query::new(vec![ComponentQuery {
-            id: world.component_id::<Name>().unwrap(),
+            id: world.component_registry().id::<Name>().unwrap(),
             mutable: true,
         }])
         .unwrap();
         let health_query = Query::new(vec![ComponentQuery {
-            id: world.component_id::<Health>().unwrap(),
+            id: world.component_registry().id::<Health>().unwrap(),
             mutable: true,
         }])
         .unwrap();
@@ -454,12 +454,12 @@ mod tests {
         let r5 = world.query(&name_query);
         let r6 = world.query(&name_query);
         assert_eq!(
-            BorrowMutError::new(world.component_id::<Name>().unwrap()),
+            BorrowMutError::new(world.component_registry().id::<Name>().unwrap()),
             world.try_query(&mut_name_query).unwrap_err()
         );
         mem::drop(r6);
         assert_eq!(
-            BorrowMutError::new(world.component_id::<Name>().unwrap()),
+            BorrowMutError::new(world.component_registry().id::<Name>().unwrap()),
             world.try_query(&mut_name_query).unwrap_err()
         );
         mem::drop(r5);
