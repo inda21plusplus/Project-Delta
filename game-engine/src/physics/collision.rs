@@ -146,14 +146,14 @@ pub fn standard_collision(
     let t2 = compute_tangent(v_r2, normal, f_e2);
 
     let u = 0.5;
-
+    let epsilon = 0.001;
     // rb, tangent, inertia tensor, offset, forces
     let do_friction = |rb: &mut RidgidBody, t: Vec3, i: Mat3, r: Vec3, f_e: Vec3| {
         let relative_velocity = rb.velocity() + rb.angular_velocity(i).cross(r);
 
         let tangent_velocity = relative_velocity - normal * relative_velocity.dot(normal);
 
-        if tangent_velocity.magnitude_squared() < f32::EPSILON * f32::EPSILON {
+        if tangent_velocity.magnitude_squared() < epsilon * epsilon {
             return;
         }
 
@@ -374,6 +374,10 @@ impl RidgidBody {
         self.linear_momentum += force;
     }
 
+    pub fn add_acceleration(&mut self, acceleration: Vec3, dt: f32) {
+        self.linear_momentum += acceleration * self.mass * dt;
+    }
+
     pub fn add_impulse_at_location(&mut self, pos: Vec3, impulse: Vec3, location: Vec3) {
         debug_assert_finite!(impulse);
         debug_assert_finite!(location);
@@ -424,7 +428,8 @@ impl RidgidBody {
             * Mat3::from(transform.rotation).transposed();
         let angular_velocity = self.angular_velocity(i_inv);
 
-        self.add_impulse((self.acceleration + self.acceleration) * (dt * 0.5));
+        //self.add_impulse((self.acceleration + self.acceleration) * (dt * 0.5));
+        self.add_acceleration(self.acceleration, dt);
 
         // apply rotation
         transform.rotation.rotate_x(angular_velocity.x * dt);
