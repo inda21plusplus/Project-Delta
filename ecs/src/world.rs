@@ -18,7 +18,7 @@ pub struct World {
 
 impl Default for World {
     fn default() -> Self {
-        let mut entities = Entities::default();
+        let entities = Entities::default();
         let resource_holder = entities.spawn();
         Self {
             entities,

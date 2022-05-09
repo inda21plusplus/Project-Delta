@@ -26,7 +26,10 @@ mod tests {
         time::{Duration, Instant},
     };
 
-    use crate::component::{ComponentRegistry, Storage, StorageType};
+    use crate::{
+        commands::CommandBuffer,
+        component::{ComponentRegistry, Storage, StorageType},
+    };
 
     use super::*;
 
@@ -116,7 +119,7 @@ mod tests {
                     drop_counter,
                 )
             };
-            let mut entities = Entities::default();
+            let entities = Entities::default();
             let es: Vec<_> = (0..100).map(|_| entities.spawn()).collect();
             for i in (0..100).step_by(2) {
                 assert_eq!(i / 2, counter.get());
@@ -687,7 +690,8 @@ mod tests {
         let d = world.spawn();
         world.add(d, Health(10));
 
-        let mut commands = Commands::new();
+        let mut command_buffer = CommandBuffer::new();
+        let mut commands = Commands::new(&mut command_buffer, world.entities());
         query_iter!(world, (entity: Entity, health: mut Health) => {
             health.0 -= 10;
             if health.0 == 0 {
@@ -698,7 +702,7 @@ mod tests {
         assert!(world.entities().exists(b));
         assert!(world.entities().exists(c));
         assert!(world.entities().exists(d));
-        commands.apply(&mut world);
+        command_buffer.apply(&mut world);
         assert!(world.entities().exists(a));
         assert!(!world.entities().exists(b));
         assert!(world.entities().exists(c));
@@ -711,7 +715,8 @@ mod tests {
         let e1 = world.spawn();
         let e2 = world.spawn();
         let counter = Rc::new(Cell::new(0));
-        let mut commands = Commands::new();
+        let mut command_buffer = CommandBuffer::new();
+        let mut commands = Commands::new(&mut command_buffer, world.entities());
 
         commands.add(e1, Counter::named(counter.clone(), "a"));
         assert_eq!(counter.get(), 1);
@@ -721,7 +726,7 @@ mod tests {
         assert_eq!(counter.get(), 3);
         commands.despawn(e2);
         assert_eq!(counter.get(), 3);
-        commands.apply(&mut world);
+        command_buffer.apply(&mut world);
         assert_eq!(counter.get(), 1);
     }
 
@@ -729,7 +734,8 @@ mod tests {
     fn add_component_to_newly_created_entity_through_commands() {
         let mut world = World::default();
         let counter = Rc::new(Cell::new(0));
-        let mut commands = Commands::new();
+        let mut command_buffer = CommandBuffer::new();
+        let mut commands = Commands::new(&mut command_buffer, world.entities());
 
         let e1 = commands.spawn();
         commands.add(e1, Counter::named(counter.clone(), "a"));
@@ -742,7 +748,7 @@ mod tests {
         commands.despawn(e2);
         assert_eq!(counter.get(), 3);
 
-        commands.apply(&mut world);
+        command_buffer.apply(&mut world);
         assert_eq!(counter.get(), 1);
         query_iter!(world, (c: Counter) => {
             assert_eq!(c.1, "b");
