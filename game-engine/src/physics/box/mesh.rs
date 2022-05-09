@@ -1,4 +1,7 @@
-use crate::{physics::{Vec3, Ray, Tri, Quaternion, PhysicsMaterial}, renderer::Transform};
+use crate::{
+    physics::{PhysicsMaterial, Quaternion, Ray, Tri, Vec3},
+    renderer::Transform,
+};
 
 use super::BoxColider;
 

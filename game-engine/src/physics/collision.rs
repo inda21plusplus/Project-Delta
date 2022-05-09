@@ -1,5 +1,7 @@
 use std::collections::HashMap;
 
+type Mat3 = vek::Mat3<f32>;
+
 use super::{
     get_position,
     r#box::{collision::is_colliding_box_vs_box, BoxColider},
@@ -62,50 +64,126 @@ pub fn bounce(input: Vec3, normal: Vec3) -> Vec3 {
 
 pub fn standard_collision(
     normal: Vec3,
-    rb1: &mut RidgidBody,
-    rb2: &mut RidgidBody,
+    rb: (&mut RidgidBody, &mut RidgidBody),
+    coll: (&Collider, &Collider),
+    trans: (&Transform, &Transform),
+    // inverted inertia matrices
+    inertia: (Mat3, Mat3),
     // offset from point of contact
-    o1: Vec3,
-    o2: Vec3,
+    r: (Vec3, Vec3),
     // not used atm, restfullness
     _re1: f32,
     _re2: f32,
 ) {
     debug_assert_finite!(normal);
+    // see this link for explanation of all the math, variables are all named according to this article
+    // lowercase omega is substituted with w in this code.
+    // https://en.wikipedia.org/wiki/Collision_response#Impulse-Based_Reaction_Model
 
-    let v1 = rb1.velocity;
-    let v2 = rb2.velocity;
-
-    let m1 = rb1.mass;
-    let m2 = rb2.mass;
-
-    debug_assert!(m1 > 0.0);
-    debug_assert!(m2 > 0.0);
-
-    // proj the velocities on the normal, this way you can move the frame of
-    // refrence and think of the two objects are coliding head on
-    let real_v1 = proj(normal, v1);
-    let real_v2 = proj(normal, v2);
-
-    //let bouncy_ness = 0.6;
-    //let friction = 0.7;
-    if rb1.is_static {
-        rb2.velocity = bounce(v2, -normal) * _re2 + (1.0 - _re2) * (v2 - real_v2); 
-        return;
-    } else if rb2.is_static {
-        rb1.velocity = bounce(v1, normal) * _re1 + (1.0 - _re1) * (v1 - real_v1); 
-        return;
+    match coll {
+        (Collider::SphereColider(_), Collider::SphereColider(_)) => {}
+        (Collider::SphereColider(_), Collider::BoxColider(_)) => {}
+        (Collider::BoxColider(_), Collider::SphereColider(_)) => {}
+        (Collider::BoxColider(_), Collider::BoxColider(_)) => {}
     }
 
-    // using a perfectly elastic collision on each axis
-    let (new_v1, new_v2) = standard_elastic_collision_3(m1, &real_v1, m2, &real_v2);
+    let normal = -normal;
 
-    // inital velocity - velocity used to colide "head on" + velocity after coliding "head on"
-    rb1.velocity = v1 - real_v1;
-    rb2.velocity = v2 - real_v2;
+    let cross = |a, b| Vec3::cross(a, b);
+    let dot = |a, b| Vec3::dot(a, b);
 
-    rb1.add_impulse_at_location(new_v1, o1);
-    rb2.add_impulse_at_location(new_v2, o2);
+    // all these calculations are done the same way for the two objects, so it's separated out for clarity
+    // v_i, m_i, w_i, v_pi, inertia, inertia term
+    let do_calcs =
+        |rb: &mut RidgidBody, inertia: Mat3, rot: Mat3, r: Vec3| -> (f32, Vec3, Mat3, Vec3) {
+            let v = rb.velocity();
+            let m = rb.mass;
+            // inertia tensor in world space coordinates
+            let i = rot * inertia * rot.transposed();
+            let w = rb.angular_velocity(i);
+            let v_p = v + cross(w, r);
+            let i_term = cross(i * cross(r, normal), r);
+
+            (m, v_p, i, i_term)
+        };
+
+    let (m_1, v_p1, i_1, i_term_1) = do_calcs(rb.0, inertia.0, Mat3::from(trans.0.rotation), r.0);
+    let (m_2, v_p2, i_2, i_term_2) = do_calcs(rb.1, inertia.1, Mat3::from(trans.1.rotation), r.1);
+
+    let v_r = v_p1 - v_p2;
+
+    // the divisor in the j_r calculation (factored out for readability)
+    let divisor = (1.0 / m_1) + (1.0 / m_2) + dot(i_term_1 + i_term_2, normal);
+
+    let e = 0.01;
+
+    // impulse magnitude
+    let j_r = (dot(-(1.0 + e) * v_r, normal) / divisor);
+
+    // relative velocity, normal, sum of all external forces
+    fn compute_tangent(v_r: Vec3, n: Vec3, f_e: Vec3) -> Vec3 {
+        if !(v_r.dot(n).abs() < f32::EPSILON) {
+            let a = v_r - v_r.dot(n) * n;
+            a / a.magnitude()
+        } else if !(f_e.dot(n).abs() < f32::EPSILON) {
+            let a = f_e - f_e.dot(n) * n;
+            a / a.magnitude()
+        } else {
+            Vec3::zero()
+        }
+    }
+
+    let f_e1 = rb.0.acceleration * m_1;
+    let f_e2 = rb.1.acceleration * m_2;
+
+    let v_r1 = rb.0.velocity() + rb.0.angular_velocity(i_1).cross(r.0);
+    let v_r2 = rb.1.velocity() + rb.1.angular_velocity(i_1).cross(r.1);
+
+    let t1 = compute_tangent(v_r1, normal, f_e1);
+    let t2 = compute_tangent(v_r2, normal, f_e2);
+
+    let u = 0.5;
+
+    // rb, tangent, inertia tensor, offset, forces
+    let do_friction = |rb: &mut RidgidBody, t: Vec3, i: Mat3, r: Vec3, f_e: Vec3| {
+        let relative_velocity = rb.velocity() + rb.angular_velocity(i).cross(r);
+
+        let tangent_velocity = relative_velocity - normal * relative_velocity.dot(normal);
+
+        if tangent_velocity.magnitude_squared() < f32::EPSILON * f32::EPSILON {
+            return;
+        }
+
+        let diff = tangent_velocity.normalized() - t;
+        if diff.magnitude() > 0.01 {
+            //println!("tangent_vel: {}, t: {}", tangent_velocity.normalized(), t);
+        }
+
+        let t = tangent_velocity.normalized();
+
+        let vt = relative_velocity.dot(t);
+        let kt = rb.mass.recip() + r.cross(t).dot(i * r.cross(t));
+
+        let b = (u * j_r).abs();
+
+        let jt = (-vt / kt).clamp(-b, b);
+
+        rb.linear_momentum += jt * t;
+        rb.angular_momentum += jt * r.cross(t);
+    };
+
+    if !rb.0.is_static {
+        rb.0.linear_momentum += j_r;
+        rb.0.angular_momentum += j_r * cross(r.0, normal);
+
+        do_friction(rb.0, t1, i_1, v_r, f_e1);
+    }
+    if !rb.1.is_static {
+        rb.1.linear_momentum += -j_r * normal;
+        rb.1.angular_momentum += j_r * cross(r.1, normal);
+
+        do_friction(rb.1, t2, i_2, v_r, f_e2);
+    }
 }
 
 /// where normal_distance is the normal pointing at c1 from c2 with the length of the intercetion
@@ -190,10 +268,17 @@ pub fn collide(
             let c2 = &cc2[c2_index];
             if is_colliding(c1, t1, c2, t2) {
                 has_colided = true;
-                debug_assert_finite!(rb1.velocity);
-                debug_assert_finite!(rb2.velocity);
-                debug_assert_finite!(rb1.angular_velocity);
-                debug_assert_finite!(rb2.angular_velocity);
+
+                let rot_1 = Mat3::from(t1.rotation);
+                let rot_2 = Mat3::from(t2.rotation);
+
+                let i_1 = rot_1 * c1.inv_inertia_tensor() * rot_1.transposed();
+                let i_2 = rot_2 * c2.inv_inertia_tensor() * rot_2.transposed();
+
+                debug_assert_finite!(rb1.velocity());
+                debug_assert_finite!(rb2.velocity());
+                debug_assert_finite!(rb1.angular_velocity(i_1));
+                debug_assert_finite!(rb2.angular_velocity(i_2));
 
                 rb1.is_active = true;
                 rb2.is_active = true;
@@ -201,9 +286,9 @@ pub fn collide(
                 rb2.is_active_time = 0.0;
                 //solve_colliding(c1, rb1, t1, c2, rb2, t2);
                 match (c1, c2) {
-                    (Collider::BoxColider(_), Collider::BoxColider(_)) => {
-                        current_post_fix.push(c2_index);
-                    }
+                    // (Collider::BoxColider(_), Collider::BoxColider(_)) => {
+                    //     current_post_fix.push(c2_index);
+                    // }
                     _ => {
                         solve_colliding(c1, rb1, t1, c2, rb2, t2, dt);
                     }
@@ -276,21 +361,26 @@ pub fn collide(
 
 impl RidgidBody {
     pub fn add_impulse(&mut self, force: Vec3) {
-        self.velocity += force / self.mass;
+        self.linear_momentum += force;
     }
 
-    pub fn add_impulse_at_location(&mut self, velocity: Vec3, location: Vec3) {
-        debug_assert_finite!(velocity);
+    pub fn add_impulse_at_location(&mut self, pos: Vec3, impulse: Vec3, location: Vec3) {
+        debug_assert_finite!(impulse);
         debug_assert_finite!(location);
+
+        // TODO: fix this function to properly add angular/linear momentum
 
         //debug_assert!(velocity.magnitude_squared() != 0.0, "velocity is too close to 0 = {}", velocity);
 
+        // TODO: can we please remove this
         // if zero velocity is applied then nothing happends
-        if velocity.magnitude_squared() == 0.0 {
+        if impulse.magnitude_squared() == 0.0 {
             return;
         }
 
-        self.velocity += velocity;
+        self.linear_momentum += impulse;
+        let r = location - pos;
+        self.angular_momentum += r.cross(impulse);
 
         //https://en.wikipedia.org/wiki/Angular_velocity
 
@@ -299,46 +389,63 @@ impl RidgidBody {
         let offset = self.center_of_mass_offset + location;
         let normal = offset;
 
-        let rotation_around = -(normal.normalized().cross(velocity.normalized())).normalized();
+        let rotation_around = -(normal.normalized().cross(impulse.normalized())).normalized();
         debug_assert!(
             is_finite(&rotation_around),
             "rotation_around = {} normal {} velocity {}",
             rotation_around,
             normal,
-            velocity
+            impulse
         );
 
         let torque = rotation_around * 10.0; //velocity *  / offset.magnitude();
 
-        self.angular_velocity += torque;
+        //self.angular_velocity += torque;
 
         // TODO idk what angular_velocity is
     }
 
     pub fn apply_forces(&self) -> Vec3 {
         let grav_acc = Vec3::new(0.0, -9.81, 0.0); // 9.81m/s^2 down in the Z-axis // TODO MAKE CONSTANT
-        let drag_force = 0.5 * self.drag * (self.velocity * self.velocity.magnitude()); // D = 0.5 * (rho * C * Area * vel^2)
+        debug_assert!(self.drag.is_finite());
+        debug_assert_finite!(self.velocity());
+        debug_assert!(
+            self.velocity().magnitude().is_finite(),
+            "magnitude is infinite, velocity = {}",
+            self.velocity()
+        );
+        let drag_force = 0.5 * self.drag * (self.velocity() * self.velocity().magnitude()); // D = 0.5 * (rho * C * Area * vel^2)
+        debug_assert!(self.mass.is_finite() && self.mass != 0.0);
+        debug_assert_finite!(drag_force);
         let drag_acc = drag_force / self.mass; // a = F/m
+        debug_assert_finite!(drag_acc);
         return grav_acc - drag_acc;
     }
 
-    pub fn step(&mut self, dt: f32, transform: &mut Transform) {
+    pub fn step(&mut self, dt: f32, transform: &mut Transform, inv_inertia_tensor: Mat3) {
         if self.is_static {
             return;
         }
 
+        debug_assert_finite!(self.velocity());
+
         //https://en.wikipedia.org/wiki/Verlet_integration
-        transform.position += self.velocity * dt + self.acceleration * (dt * dt * 0.5);
+        transform.position += self.velocity() * dt + self.acceleration * (dt * dt * 0.5);
         debug_assert_finite!(transform.position);
         self.acceleration = self.apply_forces();
         debug_assert_finite!(self.acceleration);
 
-        self.velocity += (self.acceleration + self.acceleration) * (dt * 0.5);
+        let i_inv = Mat3::from(transform.rotation)
+            * inv_inertia_tensor
+            * Mat3::from(transform.rotation).transposed();
+        let angular_velocity = self.angular_velocity(i_inv);
+
+        self.add_impulse((self.acceleration + self.acceleration) * (dt * 0.5));
 
         // apply rotation
-        transform.rotation.rotate_x(self.angular_velocity.x * dt);
-        transform.rotation.rotate_y(self.angular_velocity.y * dt);
-        transform.rotation.rotate_z(self.angular_velocity.z * dt);
+        transform.rotation.rotate_x(angular_velocity.x * dt);
+        transform.rotation.rotate_y(angular_velocity.y * dt);
+        transform.rotation.rotate_z(angular_velocity.z * dt);
 
         self.is_active_time += dt;
 
@@ -366,7 +473,7 @@ pub fn update(
     transforms: &mut Vec<Transform>,
     phx_objects: &mut Vec<PhysicsObject>,
 ) {
-    let real_dt = dt ;
+    let real_dt = dt;
     let phx_length = phx_objects.len();
 
     for i in 0..phx_length {
@@ -375,8 +482,10 @@ pub fn update(
         // update last frame location
         phx_objects[i].rb.last_frame_location = transforms[i].position;
 
+        let tensor = phx_objects[i].colliders[0].inv_inertia_tensor();
+
         // simulate one step in the simulation
-        phx_objects[i].rb.step(real_dt, &mut transforms[i]);
+        phx_objects[i].rb.step(real_dt, &mut transforms[i], tensor);
     }
     for i in 0..phx_length {
         let (phx_first, phx_last) = phx_objects.split_at_mut(i + 1);

@@ -1,7 +1,17 @@
-use crate::{physics::{Vec3, sphere::SphereColider, RidgidBody, collision::{pop_coliders, standard_collision}, Ray}, renderer::Transform};
+use crate::{
+    physics::{
+        collision::{pop_coliders, standard_collision},
+        sphere::SphereColider,
+        Collider, Ray, RidgidBody, Vec3,
+    },
+    renderer::Transform,
+};
 
-use super::{BoxColider, sat::{get_axis_and_verts, proj_has_overlap}, mesh::{get_verts, get_rays_for_box, get_tris_for_box}};
-
+use super::{
+    mesh::{get_rays_for_box, get_tris_for_box, get_verts},
+    sat::{get_axis_and_verts, proj_has_overlap},
+    BoxColider,
+};
 
 pub fn is_colliding_box_vs_box(
     w1: Vec3,
@@ -12,8 +22,7 @@ pub fn is_colliding_box_vs_box(
     t2: &Transform,
 ) -> bool {
     let (axis, a_verts, b_verts) = get_axis_and_verts(&w1, &w2, &t1, &t2, bc1, bc2);
-    proj_has_overlap(&axis, &a_verts, &b_verts)
-        || proj_has_overlap(&axis, &b_verts, &a_verts)
+    proj_has_overlap(&axis, &a_verts, &b_verts) || proj_has_overlap(&axis, &b_verts, &a_verts)
 }
 
 pub fn collide_box_vs_box(
@@ -73,10 +82,9 @@ pub fn collide_box_vs_box(
                 }
 
                 let box_distance = (ray.direction * s1).magnitude();
-                
+
                 // ray hit is not outside the box
                 if ray_distance < box_distance {
-
                     let overlap = box_distance - ray_distance;
                     let normal = -(r2 * ray.direction).normalized();
                     let normal_overlap = normal * overlap;
@@ -88,10 +96,11 @@ pub fn collide_box_vs_box(
 
                     standard_collision(
                         normal,
-                        rb1,
-                        rb2,
-                        point_of_contact - w1,
-                        point_of_contact - w2,
+                        (rb1, rb2),
+                        (&Collider::BoxColider(*c1), &Collider::BoxColider(*c2)),
+                        (&*t1, &*t2),
+                        (c1.inv_inertia_tensor(), c2.inv_inertia_tensor()),
+                        (point_of_contact - w1, point_of_contact - w2),
                         re1,
                         re2,
                     );

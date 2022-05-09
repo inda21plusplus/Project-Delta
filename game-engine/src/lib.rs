@@ -1,6 +1,6 @@
-pub mod renderer;
-pub mod physics;
 pub mod context;
+pub mod physics;
+pub mod renderer;
 pub use context::Context;
 
 #[cfg(test)]

@@ -1,9 +1,12 @@
-use crate::{renderer::Transform, physics::{macros::debug_assert_finite, clamp}};
+use crate::{
+    physics::{clamp, macros::debug_assert_finite},
+    renderer::Transform,
+};
 pub(crate) mod collision;
-pub(crate) mod sat;
 pub(crate) mod mesh;
+pub(crate) mod sat;
 
-use super::{Vec3, Quaternion, PhysicsMaterial};
+use super::{Mat3, PhysicsMaterial, Quaternion, Vec3};
 
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub struct BoxColider {
@@ -22,7 +25,6 @@ impl BoxColider {
             material,
         }
     }
-
 
     #[inline]
     /// gets the distance from the box center acording to its bounds, can take non normalized input
@@ -72,6 +74,17 @@ impl BoxColider {
         } else {
             Vec3::new(0.0, 0.0, dir.z / z)
         }
+    }
+
+    pub fn inv_inertia_tensor(&self) -> Mat3 {
+        // https://www.wolframalpha.com/input?i=inertia+tensor+box
+        let d = self.scale * self.scale;
+        
+        let x = d.y + d.z;
+        let y = d.x + d.z;
+        let z = d.x + d.y;
+
+        Mat3::with_diagonal(1.0/12.0 * Vec3 { x, y, z })
     }
 }
 

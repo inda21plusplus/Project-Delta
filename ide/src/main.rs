@@ -10,6 +10,7 @@ use game_engine::{
 };
 use rand::Rng;
 
+use vek::Clamp;
 use winit::{
     dpi::LogicalPosition,
     event::{Event, KeyboardInput, WindowEvent},
@@ -64,7 +65,7 @@ fn main() {
         rotation: Quaternion::rotation_x(0.0),
         scale: Vec3::new(100.0, 1.0, 100.0),
     }];
-    let cubes = 15;
+    let cubes = 0;
     let spheres = 15;
     let mut rng = rand::thread_rng();
 
@@ -98,7 +99,7 @@ fn main() {
         Collider::BoxColider(BoxColider::new(Vec3::new(1.0, 1.0, 1.0), physics_material)),
     );
     obj1.rb.is_static = true;
-    
+
     let mut physics_objects: Vec<PhysicsObject> = vec![obj1]; //obj3, obj4 vec![obj1.clone(); 16];
     let vel = 1.0;
     let angle = 0.0001;
@@ -228,10 +229,16 @@ fn main() {
                 let _frame_rate = 1.0 / dt; // TODO render on screen
                 last_frame = std::time::Instant::now();
 
+                let clamp = |v: &mut Vec3, range: Vec3| *v = v.clamped(-range, range);
+
                 if allow_camera_update {
                     camera_controller.update_camera(dt, &mut context.renderer.camera);
                 }
                 if !pause_physics || !can_pause_phx {
+                    for obj in &mut physics_objects {
+                        //clamp(&mut obj.rb.angular_momentum, Vec3::from(10.0));
+                        //clamp(&mut obj.rb.linear_momentum, Vec3::from(100.0));
+                    }
                     update(&mut pause_physics, dt, &mut instances, &mut physics_objects);
                 }
 

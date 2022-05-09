@@ -8,7 +8,7 @@ pub mod sphere;
 
 pub type Vec3 = vek::vec::repr_c::Vec3<f32>;
 pub type Quaternion = vek::quaternion::repr_c::Quaternion<f32>;
-pub type Mat3 = vek::mat::repr_c::row_major::mat3::Mat3<f32>;
+pub type Mat3 = vek::mat::repr_c::column_major::mat3::Mat3<f32>;
 pub type Mat4 = vek::mat::repr_c::row_major::mat4::Mat4<f32>;
 type Tri = [Vec3; 3];
 type Ray = vek::Ray<f32>;
@@ -31,7 +31,12 @@ mod macros {
 
     macro_rules! debug_assert_finite {
         ($vec:expr) => {
-            debug_assert!($vec.x.is_finite() && $vec.y.is_finite() && $vec.z.is_finite(), "{} = {}", stringify!($vec), $vec)
+            debug_assert!(
+                $vec.x.is_finite() && $vec.y.is_finite() && $vec.z.is_finite(),
+                "{} = {}",
+                stringify!($vec),
+                $vec
+            )
         };
     }
 
@@ -75,13 +80,15 @@ pub struct RayCastHit {
 
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub struct RidgidBody {
-    pub last_frame_location : Vec3, // used for lerp location
-    pub velocity: Vec3,
+    pub last_frame_location: Vec3, // used for lerp location
+    //pub velocity: Vec3,
     pub acceleration: Vec3, // can be used for gravity
 
-    pub angular_velocity: Vec3, // Spin angular velocity in rad per seconds around that axis (Quaternion::rotate_3d)
-    //pub torque: Vec3,           // torque to angular_velocity is what acceleration is to velocity
+    pub angular_momentum: Vec3,
+    pub linear_momentum: Vec3,
 
+    //pub angular_velocity: Vec3, // Spin angular velocity in rad per seconds around that axis (Quaternion::rotate_3d)
+    //pub torque: Vec3,           // torque to angular_velocity is what acceleration is to velocity
     pub center_of_mass_offset: Vec3, // also used for instant center of rotation https://en.wikipedia.org/wiki/Instant_centre_of_rotation
     pub is_active_time: f32,
     pub mass: f32,
@@ -89,29 +96,46 @@ pub struct RidgidBody {
     //is_trigger : bool,
     pub is_static: bool,
     pub is_active: bool, // TODO after object is not moving then it becomes disabled to oprimize
-    pub is_colliding : bool,
-    pub is_colliding_this_frame : bool,
-    pub drag : f32,
+    pub is_colliding: bool,
+    pub is_colliding_this_frame: bool,
+    pub drag: f32,
+}
+
+impl Default for RidgidBody {
+    fn default() -> Self {
+        let v = Vec3::default();
+        RidgidBody::new(v, v, v, 1.0)
+    }
 }
 
 impl RidgidBody {
     pub fn new(velocity: Vec3, acceleration: Vec3, angular_velocity: Vec3, mass: f32) -> Self {
         Self {
-            velocity,
+            //velocity,
             acceleration,
             mass,
-            angular_velocity,
+            angular_momentum: Vec3::zero(),
+            linear_momentum: velocity / mass,
+            //angular_velocity,
             is_active: true,
             is_using_global_gravity: false,
             is_active_time: 0.0f32,
             center_of_mass_offset: Vec3::zero(),
             is_static: false,
             //torque: Vec3::zero(),
-            last_frame_location : Vec3::zero(),
-            is_colliding : false,
-            is_colliding_this_frame : false,
-            drag : 0.5, // TODO make public
+            last_frame_location: Vec3::zero(),
+            is_colliding: false,
+            is_colliding_this_frame: false,
+            drag: 0.5, // TODO make public
         }
+    }
+
+    pub fn velocity(&self) -> Vec3 {
+        self.linear_momentum * self.mass.recip()
+    }
+
+    pub fn angular_velocity(&self, inv_tensor_world: Mat3) -> vek::Vec3<f32> {
+        inv_tensor_world * self.angular_momentum
     }
 }
 
@@ -198,4 +222,12 @@ pub struct PhysicsMaterial {
     //static_friction: f32,
     pub friction: f32,
     pub restfullness: f32, // bounciness
+}
+impl Collider {
+    pub fn inv_inertia_tensor(&self) -> vek::Mat3<f32> {
+        match self {
+            Collider::SphereColider(a) => a.inv_inertia_tensor(),
+            Collider::BoxColider(a) => a.inv_inertia_tensor(),
+        }
+    }
 }

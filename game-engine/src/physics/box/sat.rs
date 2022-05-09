@@ -1,6 +1,9 @@
-use crate::{physics::{Vec3, overlap}, renderer::Transform};
+use crate::{
+    physics::{overlap, Vec3},
+    renderer::Transform,
+};
 
-use super::{BoxColider, mesh::get_vertex};
+use super::{mesh::get_vertex, BoxColider};
 
 /// SAT algo on 3d
 /// https://hitokageproduction.com/article/11
@@ -57,7 +60,6 @@ pub fn proj_has_overlap_extra(
     Some((min_overlap, penetration))
 }
 
-
 pub fn get_min_max_vert(normal: Vec3, verts: &Vec<Vec3>) -> (f32, f32) {
     let mut proj_min = f32::MAX;
     let mut proj_max = f32::MIN;
@@ -73,7 +75,6 @@ pub fn get_min_max_vert(normal: Vec3, verts: &Vec<Vec3>) -> (f32, f32) {
     }
     (proj_min, proj_max)
 }
-
 
 /// returns (1,0,0) (0,1,0) (0,0,1) with rotation aka positive normals
 #[must_use]
