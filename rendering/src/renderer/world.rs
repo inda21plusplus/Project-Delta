@@ -387,7 +387,7 @@ impl World {
                     topology: wgpu::PrimitiveTopology::TriangleList,
                     strip_index_format: None,
                     front_face: wgpu::FrontFace::Ccw,
-                    cull_mode: Some(wgpu::Face::Front), // Some(wgpu::Face::Back),
+                    cull_mode: Some(wgpu::Face::Back), // Some(wgpu::Face::Back),
                     // Setting this to anything other than Fill requires Features::NON_FILL_POLYGON_MODE
                     polygon_mode: wgpu::PolygonMode::Fill,
                     // Requires Features::DEPTH_CLIP_CONTROL
@@ -790,10 +790,12 @@ impl World {
             );
         }
 
-        render_pass.set_pipeline(&self.line_render_pipeline);
-        render_pass.set_vertex_buffer(0, self.line_vertex_buffer.slice(..));
-        render_pass.set_bind_group(0, &self.camera_bind_group, &[]);
-        render_pass.draw(0..lines_to_draw, 0..1);
+        if !use_deferred_pipeline {
+            render_pass.set_pipeline(&self.line_render_pipeline);
+            render_pass.set_vertex_buffer(0, self.line_vertex_buffer.slice(..));
+            render_pass.set_bind_group(0, &self.camera_bind_group, &[]);
+            render_pass.draw(0..lines_to_draw * 2, 0..1);
+        }
     }
 
     fn upload_lines(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, lines: &[Line]) {
@@ -1029,6 +1031,32 @@ impl World {
                 0,
                 0..lights.len() as u32,
             );
+        }
+        {
+            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("Line Render Pass"),
+                color_attachments: &[wgpu::RenderPassColorAttachment {
+                    view: &render_target,
+                    resolve_target: None,
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Load,
+                        store: true,
+                    },
+                }],
+                depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
+                    view: &self.depth_texture.view,
+                    depth_ops: Some(wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(1.0),
+                        store: true,
+                    }),
+                    stencil_ops: None,
+                }),
+            });
+
+            render_pass.set_pipeline(&self.line_render_pipeline);
+            render_pass.set_vertex_buffer(0, self.line_vertex_buffer.slice(..));
+            render_pass.set_bind_group(0, &self.camera_bind_group, &[]);
+            render_pass.draw(0..lines.len() as u32 * 2, 0..1);
         }
         queue.submit(std::iter::once(encoder.finish()));
 
