@@ -25,22 +25,27 @@ impl PhysicsScene {
     pub fn new(context: &mut Context) -> Result<Self, anyhow::Error> {
         let mut instances = vec![Transform {
             position: Vec3::new(0.0, 0.0, 0.0),
-            rotation: Quaternion::rotation_x(10.0f32.to_radians()),
-            scale: Vec3::new(100.0, 1.0, 100.0),
+            rotation: Quaternion::rotation_x(00.0f32.to_radians()),
+            scale: Vec3::new(10.0, 1.0, 10.0),
         }];
-        let cubes = 0;
-        let spheres = 1;
+        let cubes = 10;
+        let spheres = 100;
         let mut rng = rand::thread_rng();
-
+/*
+rng.gen_range(-10.0..10.0),
+                    rng.gen_range(14.0..30.0),
+                    rng.gen_range(-10.0..10.0),
+                     */
         for _ in 0..(cubes + spheres) {
             let scale = rng.gen_range(1.0..1.5);
             instances.push(Transform {
                 position: Vec3::new(
+                    //0.0,5.0,0.0
                     rng.gen_range(-10.0..10.0),
                     rng.gen_range(14.0..30.0),
                     rng.gen_range(-10.0..10.0),
                 ),
-                rotation: Quaternion::identity(),
+                rotation: Quaternion::identity().rotated_x(-0.2f32).rotated_y(0.1f32).rotated_z(0.3f32),
                 scale: Vec3::new(scale, scale, scale),
             })
         }

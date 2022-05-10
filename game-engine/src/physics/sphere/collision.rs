@@ -80,8 +80,8 @@ pub fn collide_sphere_vs_sphere(
         diff.normalized()
     };
     debug_assert_finite!(normal);
-    
-    /*standard_collision(
+
+    standard_collision(
         normal,
         (rb1, rb2),
         //(&Collider::SphereColider(*c1), &Collider::SphereColider(*c2)),
@@ -90,7 +90,7 @@ pub fn collide_sphere_vs_sphere(
         (normal*r1, -normal * r2),
         re1,
         re2,
-    );*/
+    );
     pop_coliders(distance_pop * normal, t1, t2, &rb1, &rb2);
 }
 

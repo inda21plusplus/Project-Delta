@@ -78,7 +78,7 @@ pub fn standard_collision(
     _re1: f32,
     _re2: f32,
 ) {
-    println!("POP");
+    //println!("POP");
 
     debug_assert_finite!(normal);
     debug_assert!(
@@ -138,6 +138,7 @@ pub fn standard_collision(
     };
 
     let e = 0.0; // bounce factor 1.0 = bounce 0 = no bounce
+    let u = 1.0; // friction
 
     // impulse magnitude
     let j_r = dot(-(1.0 + e) * v_r, normal) / divisor;
@@ -164,7 +165,6 @@ pub fn standard_collision(
     let t1 = compute_tangent(v_r1, normal, f_e1);
     let t2 = compute_tangent(v_r2, normal, f_e2);
 
-    let u = 1.0; // friction
     let epsilon = 0.001;
     // rb, tangent, inertia tensor, offset, forces
     let do_friction =
@@ -206,24 +206,31 @@ pub fn standard_collision(
         };
 
     if !rb.0.is_static {
-        rb.0.linear_momentum += j_r * normal;
-        rb.0.angular_momentum += -j_r * cross(v_r, normal);
-
-        do_friction(rb.0, t1, i_1, v_r, f_e1, trans.0, r.0);
+        rb.0.linear_momentum += j_r * normal / m_1;
+        rb.0.angular_momentum += -j_r * (i_1 * cross(r.0, normal));
+        do_friction(rb.0, t1, i_1, r.0, f_e1, trans.0, r.0);
     }
     if !rb.1.is_static {
-        rb.1.linear_momentum += -j_r * normal;
-        rb.1.angular_momentum += j_r * -cross(v_r, normal);
+        rb.1.linear_momentum += -j_r * normal / m_2;
+        rb.1.angular_momentum += -j_r * (i_2 * cross(r.1, normal));
 
-        do_friction(rb.1, t2, i_2, -v_r, f_e2, trans.1, r.1);
+        do_friction(rb.1, t2, i_2, r.1, f_e2, trans.1, r.1);
     }
 }
 
 pub fn set_line(id: usize, key: &str, line: Line) {
+    set_line_key(format!("{} {}", id, key), line);
+}
+
+pub fn clear_lines() {
+    LINE_ATLAS.lock().unwrap().clear();
+}
+
+pub fn set_line_key(key : String, line: Line) {
     LINE_ATLAS
         .lock()
         .unwrap()
-        .insert(format!("{} {}", id, key), line);
+        .insert(key, line);
 }
 
 /// where normal_distance is the normal pointing at c1 from c2 with the length of the intercetion
@@ -326,9 +333,9 @@ pub fn collide(
                 rb2.is_active_time = 0.0;
                 //solve_colliding(c1, rb1, t1, c2, rb2, t2);
                 match (c1, c2) {
-                    (Collider::BoxColider(_), Collider::BoxColider(_)) => {
-                        current_post_fix.push(c2_index);
-                    }
+                   // (Collider::BoxColider(_), Collider::BoxColider(_)) => {
+                       // current_post_fix.push(c2_index);
+                    //}
                     _ => {
                         solve_colliding(c1, rb1, t1, c2, rb2, t2, dt);
                     }
@@ -492,7 +499,7 @@ pub fn update(
     transforms: &mut Vec<Transform>,
     phx_objects: &mut Vec<PhysicsObject>,
 ) {
-    println!("===");
+    //println!("===");
     let real_dt = dt;
     let phx_length = phx_objects.len();
 
@@ -547,9 +554,9 @@ pub fn update(
         //}
         phx_objects[i].rb.is_colliding = phx_objects[i].rb.is_colliding_this_frame;
 
-        if i == 1 {
-            println!("{}", phx_objects[i].rb.velocity());
-        }
+       // if i == 1 {
+      //      println!("{}", phx_objects[i].rb.velocity());
+       // }
         set_line(
             i,
             "vel",
