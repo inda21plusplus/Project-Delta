@@ -25,7 +25,7 @@ impl PhysicsScene {
     pub fn new(context: &mut Context) -> Result<Self, anyhow::Error> {
         let mut instances = vec![Transform {
             position: Vec3::new(0.0, 0.0, 0.0),
-            rotation: Quaternion::rotation_x(30.0f32.to_radians()),
+            rotation: Quaternion::rotation_x(10.0f32.to_radians()),
             scale: Vec3::new(100.0, 1.0, 100.0),
         }];
         let cubes = 0;
@@ -57,7 +57,7 @@ impl PhysicsScene {
                 Vec3::new(5.0, 0.00, 0.000),
                 Vec3::zero(),
                 Vec3::new(0.0, 0.0, 0.0), // -1.6
-                10.0,
+                1.0,
             ),
             Collider::BoxColider(BoxColider::new(Vec3::new(1.0, 1.0, 1.0), physics_material)),
         );
@@ -81,7 +81,7 @@ impl PhysicsScene {
                         rng.gen_range(-angle..angle),
                         rng.gen_range(-angle..angle),
                     ),
-                    10.0,
+                    1.0,
                 ),
                 Collider::BoxColider(BoxColider::new(Vec3::new(1.0, 1.0, 1.0), physics_material)),
             ));
@@ -101,7 +101,7 @@ impl PhysicsScene {
                         rng.gen_range(-angle..angle),
                         rng.gen_range(-angle..angle),
                     ),
-                    10.0,
+                    1.0,
                 ),
                 Collider::SphereColider(SphereColider::new(1.0, physics_material)),
             ));

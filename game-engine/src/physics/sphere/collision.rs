@@ -80,18 +80,18 @@ pub fn collide_sphere_vs_sphere(
         diff.normalized()
     };
     debug_assert_finite!(normal);
-
-    pop_coliders(distance_pop * normal, t1, t2, &rb1, &rb2);
-    standard_collision(
+    
+    /*standard_collision(
         normal,
         (rb1, rb2),
         //(&Collider::SphereColider(*c1), &Collider::SphereColider(*c2)),
         (&*t1, &*t2),
         (c1.inv_inertia_tensor(), c2.inv_inertia_tensor()),
-        (normal * r1, normal * r2),
+        (normal*r1, -normal * r2),
         re1,
         re2,
-    );
+    );*/
+    pop_coliders(distance_pop * normal, t1, t2, &rb1, &rb2);
 }
 
 pub fn collide_sphere_vs_box(
@@ -141,9 +141,18 @@ pub fn collide_sphere_vs_box(
 
     let r_1 = point_of_contact - w1;
     let r_2 = point_of_contact - w2;
+    /*standard_collision(
+        -normal,
+        (rb2, rb1),
+        (&t2, &t1),
+        (c2.inv_inertia_tensor(), c1.inv_inertia_tensor()),
+        (r_2, r_1),
+        0.0,
+        0.0,
+    );*/
 
     standard_collision(
-        -normal,
+        normal,
         (rb1, rb2),
         (&t1, &t2),
         (c1.inv_inertia_tensor(), c2.inv_inertia_tensor()),

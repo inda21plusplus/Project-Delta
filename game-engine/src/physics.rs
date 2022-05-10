@@ -14,9 +14,9 @@ type Tri = [Vec3; 3];
 
 mod macros {
     macro_rules! assert_delta {
-        ($x:expr, $y:expr, $d:expr) => {
-            if !($x - $y < $d || $y - $x < $d) {
-                panic!();
+        ($center:expr, $offset:expr, $actual:expr) => {
+            if $center + $offset < $actual || $center - $offset > $actual {
+                panic!("{}+-{} != {}", $center, $offset, $actual);
             }
         };
     }
