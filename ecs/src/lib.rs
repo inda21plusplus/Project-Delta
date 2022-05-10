@@ -8,7 +8,7 @@ mod error;
 mod query;
 mod world;
 
-pub use commands::Commands;
+pub use commands::{CommandBuffer, Commands};
 pub use entity::{Entities, Entity};
 pub use error::BorrowMutError;
 pub use query::{as_mut_lt, as_ref_lt, ComponentQuery, Query};
@@ -26,10 +26,7 @@ mod tests {
         time::{Duration, Instant},
     };
 
-    use crate::{
-        commands::CommandBuffer,
-        component::{ComponentRegistry, Storage, StorageType},
-    };
+    use crate::component::{ComponentRegistry, Storage, StorageType};
 
     use super::*;
 

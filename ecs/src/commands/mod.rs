@@ -8,14 +8,35 @@ mod command;
 mod command_buffer;
 
 pub(crate) use command::Command;
-pub(crate) use command_buffer::CommandBuffer;
+pub use command_buffer::CommandBuffer;
 
 use crate::{Entities, Entity};
 
 /// Allows commands to be issued without exclusive access the world by deferring them to be run at
-/// a later state, when `World::maintain` is called.
-/// Issuing commands on a command buffer after calling `World::maintain` since creation will result
-/// in a panic.
+/// a later state, when exclusive access to the world is available.
+/// # Examples
+/// ```
+/// # struct Position(f32, f32);
+/// # use ecs::{CommandBuffer, Commands, World};
+/// let mut world = World::default();
+/// let e1 = world.spawn();
+///
+/// let mut command_buffer = CommandBuffer::new();
+/// let mut commands = Commands::new(&mut command_buffer, world.entities());
+///
+/// let e2 = commands.spawn();
+/// commands.add(e2, Position(0.0, 0.0));
+/// commands.despawn(e1);
+///
+/// assert!(world.entities().exists(e2)); // NOTE: some commands, like spawning entities happen immediately
+/// assert!(world.entities().exists(e1)); // but others happen when the command buffer is applied
+/// assert!(world.get::<Position>(e2).is_none());
+///
+/// command_buffer.apply(&mut world);
+///
+/// assert!(!world.entities().exists(e1));
+/// assert!(world.entities().exists(e2));
+/// ```
 pub struct Commands<'b, 'e> {
     buffer: &'b mut CommandBuffer,
     entities: &'e Entities,
