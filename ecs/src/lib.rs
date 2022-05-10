@@ -8,7 +8,7 @@ mod error;
 mod query;
 mod world;
 
-pub use commands::Commands;
+pub use commands::{CommandBuffer, Commands};
 pub use entity::{Entities, Entity};
 pub use error::BorrowMutError;
 pub use query::{as_mut_lt, as_ref_lt, ComponentQuery, Query};
@@ -26,10 +26,7 @@ mod tests {
         time::{Duration, Instant},
     };
 
-    use crate::{
-        commands::CommandBuffer,
-        component::{ComponentRegistry, Storage, StorageType},
-    };
+    use crate::component::{ComponentRegistry, Storage, StorageType};
 
     use super::*;
 
@@ -374,8 +371,8 @@ mod tests {
         let b = world.spawn();
         world.add(b, 1usize);
         world.add(b, 2f32);
-        let usize_id = world.component_id::<usize>().unwrap();
-        let f32_id = world.component_id::<f32>().unwrap();
+        let usize_id = world.component_registry().id::<usize>().unwrap();
+        let f32_id = world.component_registry().id::<f32>().unwrap();
 
         let usize_query = Query::new(vec![ComponentQuery {
             id: usize_id,
@@ -431,17 +428,17 @@ mod tests {
         world.add(ant, Health(8));
 
         let name_query = Query::new(vec![ComponentQuery {
-            id: world.component_id::<Name>().unwrap(),
+            id: world.component_registry().id::<Name>().unwrap(),
             mutable: false,
         }])
         .unwrap();
         let mut_name_query = Query::new(vec![ComponentQuery {
-            id: world.component_id::<Name>().unwrap(),
+            id: world.component_registry().id::<Name>().unwrap(),
             mutable: true,
         }])
         .unwrap();
         let health_query = Query::new(vec![ComponentQuery {
-            id: world.component_id::<Health>().unwrap(),
+            id: world.component_registry().id::<Health>().unwrap(),
             mutable: true,
         }])
         .unwrap();
@@ -457,12 +454,12 @@ mod tests {
         let r5 = world.query(&name_query);
         let r6 = world.query(&name_query);
         assert_eq!(
-            BorrowMutError::new(world.component_id::<Name>().unwrap()),
+            BorrowMutError::new(world.component_registry().id::<Name>().unwrap()),
             world.try_query(&mut_name_query).unwrap_err()
         );
         mem::drop(r6);
         assert_eq!(
-            BorrowMutError::new(world.component_id::<Name>().unwrap()),
+            BorrowMutError::new(world.component_registry().id::<Name>().unwrap()),
             world.try_query(&mut_name_query).unwrap_err()
         );
         mem::drop(r5);
@@ -828,6 +825,22 @@ mod tests {
         assert_eq!(world.get::<Pos>(e2), Some(&Pos(0, 2)));
         assert_eq!(world.get::<Pos>(e3), Some(&Pos(-2, 0)));
         assert_eq!(world.get::<Pos>(e4), Some(&Pos(0, -2)));
+    }
+
+    #[test]
+    fn drop_command_buffer_while_it_owns_components() {
+        let world = World::default();
+        let counter = Rc::new(Cell::new(0));
+        {
+            let mut command_buffer = CommandBuffer::new();
+            let mut commands = Commands::new(&mut command_buffer, world.entities());
+
+            let e1 = commands.spawn();
+            commands.add(e1, Counter::named(counter.clone(), "a"));
+            assert_eq!(counter.get(), 1);
+        }
+
+        assert_eq!(counter.get(), 0);
     }
 
     #[derive(Debug)]

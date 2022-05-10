@@ -46,14 +46,14 @@ macro_rules! _query_definition {
     }};
     ( $world:expr, $vec:expr, ($name:tt: $type:ty, $($tail:tt)*) ) => {{
         $vec.push(ComponentQuery {
-            id: $world.component_id::<$type>().unwrap(),
+            id: $world.component_registry().id::<$type>().unwrap(),
             mutable: false,
         });
         _query_definition!($world, $vec, ($($tail)*));
     }};
     ( $world:expr, $vec:expr, ($name:tt: mut $type:ty, $($tail:tt)*) ) => {{
         $vec.push(ComponentQuery {
-            id: $world.component_id::<$type>().unwrap(),
+            id: $world.component_registry().id::<$type>().unwrap(),
             mutable: true,
         });
         _query_definition!($world, $vec, ($($tail)*));
@@ -63,13 +63,13 @@ macro_rules! _query_definition {
     ( $world:expr, $vec:expr, ($name:tt: Entity) ) => { };
     ( $world:expr, $vec:expr, ($name:tt: $type:ty) ) => {{
         $vec.push(ComponentQuery {
-            id: $world.component_id::<$type>().unwrap(),
+            id: $world.component_registry().id::<$type>().unwrap(),
             mutable: false,
         });
     }};
     ( $world:expr, $vec:expr, ($name:tt: mut $type:ty) ) => {{
         $vec.push(ComponentQuery {
-            id: $world.component_id::<$type>().unwrap(),
+            id: $world.component_registry().id::<$type>().unwrap(),
             mutable: true,
         });
     }};

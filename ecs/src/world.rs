@@ -29,10 +29,13 @@ impl Default for World {
 }
 
 impl World {
+    /// Creates a new `entity`. See `Entities::spawn` for more information.
     pub fn spawn(&mut self) -> Entity {
         self.entities.spawn()
     }
 
+    /// Adds the resource to the world. *Resources* are like components, but associated with the
+    /// world, not an entity.
     pub fn add_resource<T: 'static>(&mut self, resource: T) -> ResourceId {
         let resource_id = self.component_registry.register::<T>();
         self.add(self.resource_holder, resource);
@@ -47,13 +50,9 @@ impl World {
         self.get_mut(self.resource_holder)
     }
 
-    pub fn component_id<T: 'static>(&self) -> Option<ComponentId> {
-        self.component_registry.id::<T>()
-    }
-
     /// Adds a component to an entity. If the type is not registered as a component, it gets
     /// registered automatically. Returns `true` if `entity` did not have this kind of component
-    /// before and `entity` exists. It `entity` exists and the component was already present,
+    /// before and `entity` exists. If `entity` exists and the component was already present,
     /// the old component is dropped and replaced with the new one.
     pub fn add<T: 'static>(&mut self, entity: Entity, component: T) -> bool {
         let comp_id = self
@@ -106,7 +105,7 @@ impl World {
         }
     }
 
-    /// Returns `true` if the entity existed.
+    /// Despawns an entity, removing its components (if any). Returns `true` if the entity existed.
     pub fn despawn(&mut self, entity: Entity) -> bool {
         if entity == self.resource_holder {
             // This could happen if someone were to query for a resource (they're currently just
@@ -116,6 +115,7 @@ impl World {
         self.entities
             .id(entity)
             .map(|id| {
+                // Since we just got the entity id, we know it exists.
                 self.entities.despawn_unchecked(id);
                 for component in self.component_registry.entries_mut() {
                     component.storage.unset(id as usize);
@@ -170,6 +170,11 @@ impl World {
     /// Get a reference to the world's entities.
     pub fn entities(&self) -> &Entities {
         &self.entities
+    }
+
+    /// Get a reference to the world's component registry.
+    pub fn component_registry(&self) -> &ComponentRegistry {
+        &self.component_registry
     }
 
     /// Get a mutable reference to the world's component registry.
