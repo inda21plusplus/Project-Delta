@@ -39,6 +39,18 @@ mod macros {
         };
     }
 
+    macro_rules! debug_assert_normalized {
+        ($normal:expr) => {
+            debug_assert!(
+                $normal.magnitude() > 0.99 && $normal.magnitude() < 1.01,
+                "normal {} is not normalized, n = {} |n| = {}",
+                stringify!($normal),
+                $normal,
+                $normal.magnitude()
+            )
+        };
+    }
+
     #[cfg(not(debug_assertions))]
     macro_rules! pause {
         () => {};
@@ -55,6 +67,7 @@ mod macros {
     pub(crate) use debug_assert_finite;
     pub(crate) use pause;
     pub(crate) use squared;
+    pub(crate) use debug_assert_normalized;
 }
 
 #[allow(dead_code)]
@@ -83,6 +96,8 @@ static BODY_ID: AtomicUsize = AtomicUsize::new(0);
 pub struct RidgidBody {
     pub id: usize,
     pub last_frame_location: Vec3, // used for lerp location
+    pub last_frame_rotation: Quaternion, // used for lerp location
+
     //pub velocity: Vec3,
     pub acceleration: Vec3, // can be used for gravity
 
@@ -119,6 +134,7 @@ impl RidgidBody {
             mass,
             angular_momentum: Vec3::zero(),
             linear_momentum: Vec3::zero(),
+            last_frame_rotation : Quaternion::identity(),
             //angular_velocity,
             is_active: true,
             is_using_global_gravity: false,

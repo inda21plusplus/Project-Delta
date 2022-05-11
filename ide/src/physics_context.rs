@@ -25,17 +25,26 @@ impl PhysicsScene {
     pub fn new(context: &mut Context) -> Result<Self, anyhow::Error> {
         let mut instances = vec![Transform {
             position: Vec3::new(0.0, 0.0, 0.0),
-            rotation: Quaternion::rotation_x(00.0f32.to_radians()),
+            rotation: Quaternion::rotation_x(1.0f32.to_radians()),
             scale: Vec3::new(10.0, 1.0, 10.0),
         }];
-        let cubes = 10;
-        let spheres = 100;
+        let cubes = 20;
+        let spheres = 20;
         let mut rng = rand::thread_rng();
-/*
-rng.gen_range(-10.0..10.0),
-                    rng.gen_range(14.0..30.0),
-                    rng.gen_range(-10.0..10.0),
-                     */
+        /*
+        rng.gen_range(-10.0..10.0),
+                            rng.gen_range(14.0..30.0),
+                            rng.gen_range(-10.0..10.0),
+                             */
+
+        /*instances.push(Transform {
+            position: Vec3::new(0.0, 5.0, 0.0),
+            rotation: Quaternion::identity()
+                .rotated_x(-0.2f32)
+                .rotated_y(0.1f32)
+                .rotated_z(0.3f32),
+            scale: Vec3::new(1.0, 2.0, 1.30),
+        });*/
         for _ in 0..(cubes + spheres) {
             let scale = rng.gen_range(1.0..1.5);
             instances.push(Transform {
@@ -45,7 +54,10 @@ rng.gen_range(-10.0..10.0),
                     rng.gen_range(14.0..30.0),
                     rng.gen_range(-10.0..10.0),
                 ),
-                rotation: Quaternion::identity().rotated_x(-0.2f32).rotated_y(0.1f32).rotated_z(0.3f32),
+                rotation: Quaternion::identity()
+                    .rotated_x(rng.gen_range(0.0f32..360.0f32).to_radians())
+                    .rotated_y(rng.gen_range(0.0f32..360.0f32).to_radians())
+                    .rotated_z(rng.gen_range(0.0f32..360.0f32).to_radians()),
                 scale: Vec3::new(scale, scale, scale),
             })
         }
@@ -71,6 +83,11 @@ rng.gen_range(-10.0..10.0),
         let mut physics_objects: Vec<PhysicsObject> = vec![obj1]; //obj3, obj4 vec![obj1.clone(); 16];
         let vel = 1.0;
         let angle = 0.0001;
+
+        //physics_objects.push(PhysicsObject::new(
+        //    RidgidBody::new(Vec3::zero(), gravity, Vec3::zero(), 1.0),
+        //    Collider::BoxColider(BoxColider::new(Vec3::new(1.0, 1.0, 1.0), physics_material)),
+        //));
 
         for _ in 0..cubes {
             physics_objects.push(PhysicsObject::new(

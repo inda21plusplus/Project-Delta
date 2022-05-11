@@ -1,3 +1,4 @@
+use crate::physics::macros::debug_assert_normalized;
 use crate::{physics::macros::assert_delta, rendering::Line};
 use std::sync::Mutex;
 use std::{collections::HashMap, f32::consts::PI};
@@ -18,7 +19,7 @@ use crate::physics::{
     sphere::collision::collide_sphere_vs_box,
 };
 
-use common::{Mat3, Transform, Vec3};
+use common::{Mat3, Quaternion, Transform, Vec3};
 
 /// Returns true if 2 objects are colliding
 #[must_use]
@@ -81,12 +82,7 @@ pub fn standard_collision(
     //println!("POP");
 
     debug_assert_finite!(normal);
-    debug_assert!(
-        normal.is_normalized(),
-        "normal is not normalized, n = {} |n| = {}",
-        normal,
-        normal.magnitude()
-    );
+    debug_assert_normalized!(normal);
 
     // see this link for explanation of all the math, variables are all named according to this article
     // lowercase omega is substituted with w in this code.
@@ -137,7 +133,7 @@ pub fn standard_collision(
         (1.0 / m_1) + (1.0 / m_2) + dot(i_term_1 + i_term_2, normal)
     };
 
-    let e = 0.0; // bounce factor 1.0 = bounce 0 = no bounce
+    let e = 1.0; // bounce factor 1.0 = bounce 0 = no bounce
     let u = 1.0; // friction
 
     // impulse magnitude
@@ -226,11 +222,8 @@ pub fn clear_lines() {
     LINE_ATLAS.lock().unwrap().clear();
 }
 
-pub fn set_line_key(key : String, line: Line) {
-    LINE_ATLAS
-        .lock()
-        .unwrap()
-        .insert(key, line);
+pub fn set_line_key(key: String, line: Line) {
+    //LINE_ATLAS.lock().unwrap().insert(key, line);
 }
 
 /// where normal_distance is the normal pointing at c1 from c2 with the length of the intercetion
@@ -301,6 +294,8 @@ pub fn collide(
 ) -> bool {
     let t1_post = t1.position;
     let t2_post = t2.position;
+    let r1_post = t1.rotation;
+    let r2_post = t2.rotation;
 
     let mut has_colided = false;
 
@@ -333,8 +328,8 @@ pub fn collide(
                 rb2.is_active_time = 0.0;
                 //solve_colliding(c1, rb1, t1, c2, rb2, t2);
                 match (c1, c2) {
-                   // (Collider::BoxColider(_), Collider::BoxColider(_)) => {
-                       // current_post_fix.push(c2_index);
+                    //(Collider::BoxColider(_), Collider::BoxColider(_)) => {
+                    //    current_post_fix.push(c2_index);
                     //}
                     _ => {
                         solve_colliding(c1, rb1, t1, c2, rb2, t2, dt);
@@ -352,7 +347,8 @@ pub fn collide(
 
     let t1_pre = rb1.last_frame_location;
     let t2_pre = rb2.last_frame_location;
-
+    let r1_pre = rb1.last_frame_rotation;
+    let r2_pre = rb2.last_frame_rotation;
     for c1_index in 0..cc1.len() {
         if post_fix[c1_index].is_empty() {
             continue;
@@ -368,6 +364,9 @@ pub fn collide(
         for _ in 0..BINARY_ITTERATIONS {
             t1.position = t1_post * search_location + t1_pre * (1.0 - search_location);
             t2.position = t2_post * search_location + t2_pre * (1.0 - search_location);
+
+            t1.rotation = Quaternion::lerp_precise_unnormalized(r1_pre, r1_post, search_location);
+            t2.rotation = Quaternion::lerp_precise_unnormalized(r2_pre, r2_post, search_location);
 
             search_length *= 0.5;
 
@@ -389,7 +388,8 @@ pub fn collide(
 
         t1.position = t1_post * is_touching + t1_pre * (1.0 - is_touching);
         t2.position = t2_post * is_touching + t2_pre * (1.0 - is_touching);
-
+        t1.rotation = Quaternion::lerp_precise_unnormalized(r1_pre, r1_post, is_touching);
+        t2.rotation = Quaternion::lerp_precise_unnormalized(r2_pre, r2_post, is_touching);
         for c2_index in &post_fix[c1_index] {
             let c2 = &cc2[*c2_index];
 
@@ -398,6 +398,8 @@ pub fn collide(
         }
         t1.position = t1_post * is_not_touching + t1_pre * (1.0 - is_not_touching);
         t2.position = t2_post * is_not_touching + t2_pre * (1.0 - is_not_touching);
+        t1.rotation = Quaternion::lerp_precise_unnormalized(r1_pre, r1_post, is_not_touching);
+        t2.rotation = Quaternion::lerp_precise_unnormalized(r2_pre, r2_post, is_not_touching);
     }
 
     rb1.is_colliding_this_frame = has_colided || rb1.is_colliding_this_frame;
@@ -508,6 +510,7 @@ pub fn update(
 
         // update last frame location
         phx_objects[i].rb.last_frame_location = transforms[i].position;
+        phx_objects[i].rb.last_frame_rotation = transforms[i].rotation;
 
         let tensor = phx_objects[i].colliders[0].inv_inertia_tensor();
 
@@ -554,9 +557,9 @@ pub fn update(
         //}
         phx_objects[i].rb.is_colliding = phx_objects[i].rb.is_colliding_this_frame;
 
-       // if i == 1 {
-      //      println!("{}", phx_objects[i].rb.velocity());
-       // }
+        // if i == 1 {
+        //      println!("{}", phx_objects[i].rb.velocity());
+        // }
         set_line(
             i,
             "vel",
