@@ -19,6 +19,7 @@ pub struct PhysicsScene {
     pub n_cubes: usize,
     pub objects: Vec<PhysicsObject>,
     pub lights: Vec<Light>,
+    pub extra_dt : f32,
 }
 
 impl PhysicsScene {
@@ -28,8 +29,8 @@ impl PhysicsScene {
             rotation: Quaternion::rotation_x(1.0f32.to_radians()),
             scale: Vec3::new(10.0, 1.0, 10.0),
         }];
-        let cubes = 20;
-        let spheres = 20;
+        let cubes = 10;
+        let spheres = 30;
         let mut rng = rand::thread_rng();
         /*
         rng.gen_range(-10.0..10.0),
@@ -148,12 +149,19 @@ impl PhysicsScene {
             transforms: instances,
             objects: physics_objects,
             lights: Self::create_lights(),
+            extra_dt : 0.0,
         })
     }
 
     pub fn update(&mut self, dt: f32, ctx: &mut Context) {
         let mut pause = false;
-        physics_update(&mut pause, dt, &mut self.transforms, &mut self.objects);
+        
+        const PHX_STEP: f32 = 0.02f32;
+        self.extra_dt += dt;
+        while self.extra_dt > PHX_STEP {
+            physics_update(&mut pause, PHX_STEP, &mut self.transforms, &mut self.objects);
+            self.extra_dt -= PHX_STEP;
+        }
 
         let mut mgr = ctx.renderer.get_models_mut();
         mgr.set_transforms(

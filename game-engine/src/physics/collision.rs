@@ -133,7 +133,7 @@ pub fn standard_collision(
         (1.0 / m_1) + (1.0 / m_2) + dot(i_term_1 + i_term_2, normal)
     };
 
-    let e = 1.0; // bounce factor 1.0 = bounce 0 = no bounce
+    let e = 0.3; // bounce factor 1.0 = bounce 0 = no bounce
     let u = 1.0; // friction
 
     // impulse magnitude

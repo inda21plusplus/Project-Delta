@@ -87,9 +87,9 @@ fn collide_box_vs_box_single(
 
     let (axis, a_verts, b_verts) = get_axis_and_verts(&w1, &w2, &t1, &t2, c1, c2);
     if let Some((size, dir)) = proj_has_overlap_extra(&axis, &a_verts, &b_verts) {
-        post_offset -= dir.normalized() * size * 2.0;
+        post_offset -= dir.normalized() * size ;
     } else if let Some((size, dir)) = proj_has_overlap_extra(&axis, &b_verts, &a_verts) {
-        post_offset -= dir.normalized() * size * 2.0;
+        post_offset -= dir.normalized() * size;
     }
 
     for ray in &mut rays {
