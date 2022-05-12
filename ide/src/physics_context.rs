@@ -4,7 +4,7 @@ use game_engine::{
         collision::update as physics_update, r#box::BoxColider, sphere::SphereColider, Collider,
         PhysicsMaterial, PhysicsObject, RidgidBody,
     },
-    rendering::{model::ModelIndex, Light, Line},
+    rendering::{model::ModelIndex, Light},
     Context,
 };
 
@@ -19,18 +19,18 @@ pub struct PhysicsScene {
     pub n_cubes: usize,
     pub objects: Vec<PhysicsObject>,
     pub lights: Vec<Light>,
-    pub extra_dt : f32,
+    pub extra_dt: f32,
 }
 
 impl PhysicsScene {
     pub fn new(context: &mut Context) -> Result<Self, anyhow::Error> {
         let mut instances = vec![Transform {
             position: Vec3::new(0.0, 0.0, 0.0),
-            rotation: Quaternion::rotation_x(1.0f32.to_radians()),
+            rotation: Quaternion::rotation_x(10.0f32.to_radians()),
             scale: Vec3::new(10.0, 1.0, 10.0),
         }];
-        let cubes = 10;
-        let spheres = 30;
+        let cubes = 20;
+        let spheres = 20;
         let mut rng = rand::thread_rng();
         /*
         rng.gen_range(-10.0..10.0),
@@ -50,10 +50,10 @@ impl PhysicsScene {
             let scale = rng.gen_range(1.0..1.5);
             instances.push(Transform {
                 position: Vec3::new(
-                    //0.0,5.0,0.0
-                    rng.gen_range(-10.0..10.0),
-                    rng.gen_range(14.0..30.0),
-                    rng.gen_range(-10.0..10.0),
+                    0.0,5.0,0.0
+                   // rng.gen_range(-10.0..10.0),
+                   // rng.gen_range(14.0..30.0),
+                   // rng.gen_range(-10.0..10.0),
                 ),
                 rotation: Quaternion::identity()
                     .rotated_x(rng.gen_range(0.0f32..360.0f32).to_radians())
@@ -130,12 +130,6 @@ impl PhysicsScene {
             ));
         }
 
-        let mut allow_camera_update = true;
-        let mut last_frame = std::time::Instant::now();
-        let mut pause_physics = false;
-
-        let can_pause_phx = false;
-
         Ok(Self {
             cube_model: context
                 .renderer
@@ -149,17 +143,22 @@ impl PhysicsScene {
             transforms: instances,
             objects: physics_objects,
             lights: Self::create_lights(),
-            extra_dt : 0.0,
+            extra_dt: 0.0,
         })
     }
 
     pub fn update(&mut self, dt: f32, ctx: &mut Context) {
         let mut pause = false;
-        
+
         const PHX_STEP: f32 = 0.02f32;
         self.extra_dt += dt;
         while self.extra_dt > PHX_STEP {
-            physics_update(&mut pause, PHX_STEP, &mut self.transforms, &mut self.objects);
+            physics_update(
+                &mut pause,
+                PHX_STEP,
+                &mut self.transforms,
+                &mut self.objects,
+            );
             self.extra_dt -= PHX_STEP;
         }
 

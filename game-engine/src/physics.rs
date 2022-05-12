@@ -2,7 +2,11 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use crate::physics::macros::debug_assert_finite;
 
-use self::{r#box::BoxColider, sphere::SphereColider};
+use self::{
+    macros::debug_assert_normalized,
+    r#box::{collision::raycast_box, BoxColider},
+    sphere::{collision::raycast_sphere, SphereColider},
+};
 
 pub mod r#box;
 pub mod collision;
@@ -13,21 +17,6 @@ use common::{Mat3, Quaternion, Ray, Transform, Vec3};
 type Tri = [Vec3; 3];
 
 mod macros {
-    macro_rules! assert_delta {
-        ($center:expr, $offset:expr, $actual:expr) => {
-            if $center + $offset < $actual || $center - $offset > $actual {
-                panic!("{}+-{} != {}", $center, $offset, $actual);
-            }
-        };
-    }
-
-    #[cfg(debug_assertions)]
-    macro_rules! pause {
-        () => {
-            pause_and_wait_for_input()
-        };
-    }
-
     macro_rules! debug_assert_finite {
         ($vec:expr) => {
             debug_assert!(
@@ -63,11 +52,9 @@ mod macros {
         };
     }
 
-    pub(crate) use assert_delta;
     pub(crate) use debug_assert_finite;
-    pub(crate) use pause;
-    pub(crate) use squared;
     pub(crate) use debug_assert_normalized;
+    pub(crate) use squared;
 }
 
 #[allow(dead_code)]
@@ -86,8 +73,14 @@ pub enum Collider {
 
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub struct RayCastHit {
-    pub hit: Vec3,    // world position
+    pub distance: f32,
     pub normal: Vec3, // normalized
+}
+
+impl RayCastHit {
+    pub fn new(distance: f32, normal: Vec3) -> Self {
+        Self { distance, normal }
+    }
 }
 
 static BODY_ID: AtomicUsize = AtomicUsize::new(0);
@@ -95,7 +88,7 @@ static BODY_ID: AtomicUsize = AtomicUsize::new(0);
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub struct RidgidBody {
     pub id: usize,
-    pub last_frame_location: Vec3, // used for lerp location
+    pub last_frame_location: Vec3,       // used for lerp location
     pub last_frame_rotation: Quaternion, // used for lerp location
 
     //pub velocity: Vec3,
@@ -134,7 +127,7 @@ impl RidgidBody {
             mass,
             angular_momentum: Vec3::zero(),
             linear_momentum: Vec3::zero(),
-            last_frame_rotation : Quaternion::identity(),
+            last_frame_rotation: Quaternion::identity(),
             //angular_velocity,
             is_active: true,
             is_using_global_gravity: false,
@@ -177,10 +170,6 @@ impl PhysicsObject {
             colliders: vec![colider],
         }
     }
-}
-
-fn is_finite(v: &Vec3) -> bool {
-    v.x.is_finite() && v.y.is_finite() && v.z.is_finite()
 }
 
 /// returns the overlap between [a_min,a_max] and [b_min,b_max], will return a negative value if range is inverted, overlap(a,b) = -overlap(b,a)
@@ -242,11 +231,45 @@ pub struct PhysicsMaterial {
     pub friction: f32,
     pub restfullness: f32, // bounciness
 }
+
 impl Collider {
     pub fn inv_inertia_tensor(&self) -> Mat3 {
         match self {
             Collider::SphereColider(a) => a.inv_inertia_tensor(),
             Collider::BoxColider(a) => a.inv_inertia_tensor(),
         }
+    }
+}
+
+pub fn raycast(t: &Transform, cols: &Vec<Collider>, ray: Ray) -> Option<RayCastHit> {
+    debug_assert_normalized!(ray.direction);
+    debug_assert_finite!(ray.origin);
+
+    let mut distance = f32::INFINITY;
+    let mut normal = Vec3::zero();
+
+    for c in cols {
+        let w = get_position(t, c);
+        if let Some(hit) = raycast_collider(t, c, Ray::new(ray.origin - w, ray.direction)) {
+            if hit.distance < distance {
+                distance = hit.distance;
+                normal = hit.normal;
+                debug_assert_normalized!(hit.normal);
+            }
+        }
+    }
+
+    if distance < f32::INFINITY {
+        Some(RayCastHit::new(distance, normal))
+    } else {
+        None
+    }
+}
+
+/// rotation, collider, ray -> distance, normal
+pub fn raycast_collider(t: &Transform, c: &Collider, ray: Ray) -> Option<RayCastHit> {
+    match c {
+        Collider::SphereColider(s) => raycast_sphere(t, s, ray),
+        Collider::BoxColider(b) => raycast_box(t, b, ray),
     }
 }

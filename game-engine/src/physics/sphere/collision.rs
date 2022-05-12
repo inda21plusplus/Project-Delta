@@ -1,17 +1,11 @@
-use std::{
-    f32::{consts::PI, EPSILON},
-    ops::Div,
-};
-
 use crate::physics::{
     collision::{pop_coliders, standard_collision},
     macros::{debug_assert_finite, squared},
-    proj,
     r#box::{get_closest_point, BoxColider},
-    Collider, RidgidBody,
+    RayCastHit, RidgidBody,
 };
 
-use common::{Mat3, Transform, Vec3};
+use common::{Ray, Transform, Vec3};
 
 use super::SphereColider;
 
@@ -87,9 +81,8 @@ pub fn collide_sphere_vs_sphere(
         //(&Collider::SphereColider(*c1), &Collider::SphereColider(*c2)),
         (&*t1, &*t2),
         (c1.inv_inertia_tensor(), c2.inv_inertia_tensor()),
-        (normal*r1, -normal * r2),
-        re1,
-        re2,
+        (normal * r1, -normal * r2),
+        (&c1.material, &c2.material),
     );
     pop_coliders(distance_pop * normal, t1, t2, &rb1, &rb2);
 }
@@ -105,13 +98,6 @@ pub fn collide_sphere_vs_box(
     w2: Vec3, // world position
     dt: f32,
 ) {
-    let re1 = c1.material.restfullness;
-    let re2 = c2.material.restfullness;
-
-    let gravity_vector = Vec3::new(0f32, -9.82, 0f32); //rb1.acceleration;
-                                                       // println!("B: {} {}",rb1.is_colliding,rb2.is_colliding);
-                                                       //let re2 = c2.material.restfullness;
-
     let r = c1.get_radius(t1.scale);
     debug_assert!(r > 0.0);
 
@@ -157,103 +143,27 @@ pub fn collide_sphere_vs_box(
         (&t1, &t2),
         (c1.inv_inertia_tensor(), c2.inv_inertia_tensor()),
         (r_1, r_2),
-        0.0,
-        0.0,
+        (&c1.material, &c2.material),
     );
 
     pop_coliders(normal * overlap_distance, t1, t2, &rb1, &rb2);
+}
 
-    return;
+pub fn raycast_sphere(t1: &Transform, c: &SphereColider, ray: Ray) -> Option<RayCastHit> {
+    let origen = ray.origin;
 
-    let r = c1.get_radius(t1.scale);
-    let i = 2.0 * rb1.mass * r * r / 5.0;
+    let r = c.get_radius(t1.scale);
+    let t = (-origen).dot(ray.direction);
+    let p = origen + ray.direction * t;
 
-    let v_2 = rb2.velocity();
-    let v_1 = rb1.velocity();
+    let y = p.magnitude();
 
-    let i_1_bodyspace = c1.inv_inertia_tensor();
-    let rot_1 = Mat3::from(t1.rotation);
-    let i_1 = rot_1 * i_1_bodyspace * rot_1.transposed();
-    let i_2_bodyspace = c2.inv_inertia_tensor();
-    let rot_2 = Mat3::from(t2.rotation);
-    let i_2 = rot_2 * i_2_bodyspace * rot_2.transposed();
-
-    let w_1 = rb1.angular_velocity(i_1);
-    let w_2 = rb2.angular_velocity(i_2);
-
-    let v_p1 = v_1 + w_1.cross(r_1);
-    let v_p2 = v_2 + w_2.cross(r_2);
-
-    let e = c1.material.restfullness; // dont do stuff
-    let n_hat = -normal;
-
-    let v_r = v_p2 - v_p1;
-    let j_r_top = (-(1.0 + e) * v_r).dot(n_hat);
-
-    let m_1 = rb1.mass;
-    //let m_2 = rb2.mass;
-
-    let I_1_inv = Mat3::new(1.0 / i, 0.0, 0.0, 0.0, 1.0 / i, 0.0, 0.0, 0.0, 1.0 / i);
-
-    let something = (I_1_inv * r_1.cross(n_hat)).cross(r_1); //+ (I_2.inv() * r_2.cross(n_hat)).cross(r_2);
-
-    let k = 1.0 / m_1 + something.dot(n_hat);
-    let j = j_r_top / k;
-
-    //rb1.angular_velocity = rb1.angular_velocity - dbg!(j_r*(I_1_inv*(r_1.cross(n_hat))));
-    rb1.angular_momentum += j * Vec3::cross(r_1, normal);
-    rb1.linear_momentum += j * normal;
-
-    //rotation * inverseInertiaTensor * rotation^T
-    let rotation = Mat3::from(t1.rotation);
-    let a = rotation * I_1_inv * rotation.transposed();
-    let angular_velocity = rb1.angular_velocity(a);
-
-    let velocity_at_point = rb1.velocity() + angular_velocity.cross(r_1);
-    let tangent_velocity = velocity_at_point - normal * velocity_at_point.dot(normal);
-    let epsilon = 0.001;
-    if tangent_velocity.magnitude_squared() > epsilon * epsilon {
-        let tangent = tangent_velocity.normalized();
-        let vt = velocity_at_point.dot(tangent);
-        let kt = (1.0 / m_1) + Vec3::dot(Vec3::cross(r_1, tangent), a * Vec3::cross(r_1, tangent));
-        let u = 0.5;
-        let j = f32::clamp(j, 0.0, 1.0);
-
-        let jt = f32::clamp(-vt / kt, -u * j, u * j);
-        rb1.linear_momentum += jt * tangent;
-        rb1.angular_momentum += jt * Vec3::cross(r_1, tangent);
+    if y < r {
+        let x = (r * r - y * y).sqrt();
+        let poc_t = t - x;
+        let poc = origen + ray.direction * poc_t;
+        Some(RayCastHit::new(poc_t, poc.normalized()))
+    } else {
+        None
     }
-    //rb1.angular_velocity += j * cross( r, contact.normal );
-    //let velocityAtPoint = v_1
-    //let tangentVelocity = velocityAtPoint - contact.normal * dot( velocityAtPoint, contact.normal );
-
-    //https://en.wikipedia.org/wiki/Collision_response#Impulse-based_friction_model
-    /*let J = [
-        i,0,0;
-        0,i,0
-
-    ]*/
-
-    // rb1.angular_velocity
-
-    //b1.velocity -= gravity_vector * dt;
-    //rb1.velocity = Vec3::zero();
-
-    pop_coliders(normal * overlap_distance, t1, t2, &rb1, &rb2);
-
-    /*standard_collision(
-        normal,
-        rb1,
-        rb2,
-        point_of_contact - w1,
-        point_of_contact - w2,
-        re1,
-        re2,
-    );*/
-    /*
-    let real_v1 = crate::physics::proj(normal, rb1.velocity);
-    if rb2.is_static && rb1.is_colliding {
-        let accel = (rb1.velocity - real_v1);// * (1.0 - c1.material.friction);
-        rb1.velocity += accel;
-    }*/
 }

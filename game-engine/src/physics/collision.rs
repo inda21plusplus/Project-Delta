@@ -1,7 +1,7 @@
 use crate::physics::macros::debug_assert_normalized;
-use crate::{physics::macros::assert_delta, rendering::Line};
+use crate::rendering::Line;
+use std::collections::HashMap;
 use std::sync::Mutex;
-use std::{collections::HashMap, f32::consts::PI};
 
 lazy_static! {
     pub static ref LINE_ATLAS: Mutex<HashMap<String, Line>> = Mutex::new(HashMap::new());
@@ -9,17 +9,17 @@ lazy_static! {
 
 use super::{
     get_position,
-    r#box::{collision::is_colliding_box_vs_box, BoxColider},
+    r#box::collision::is_colliding_box_vs_box,
     sphere::collision::{is_colliding_sphere_vs_box, is_colliding_sphere_vs_sphere},
-    Collider, PhysicsObject, RidgidBody,
+    Collider, PhysicsMaterial, PhysicsObject, RidgidBody,
 };
 use crate::physics::sphere::collision::collide_sphere_vs_sphere;
 use crate::physics::{
-    is_finite, macros::debug_assert_finite, proj, r#box::collision::collide_box_vs_box,
+    macros::debug_assert_finite, proj, r#box::collision::collide_box_vs_box,
     sphere::collision::collide_sphere_vs_box,
 };
 
-use common::{Mat3, Quaternion, Transform, Vec3};
+use common::{Mat3, Ray, Transform, Vec3};
 
 /// Returns true if 2 objects are colliding
 #[must_use]
@@ -42,26 +42,6 @@ pub fn is_colliding(c1: &Collider, t1: &Transform, c2: &Collider, t2: &Transform
     }
 }
 
-#[inline]
-#[must_use]
-/// using https://en.wikipedia.org/wiki/Elastic_collision on a 1d plane where m is mass and v is velocity
-fn standard_elastic_collision(m1: f32, v1: f32, m2: f32, v2: f32) -> (f32, f32) {
-    let u1: f32 = (m1 * v1 - m2 * v1 + 2.0 * m2 * v2) / (m1 + m2);
-    let u2: f32 = (2.0 * m1 * v1 - m1 * v2 + m2 * v2) / (m1 + m2);
-
-    //todo https://en.wikipedia.org/wiki/Inelastic_collision
-    //todo https://en.wikipedia.org/wiki/Coefficient_of_restitution
-    (u1, u2)
-}
-
-#[must_use]
-fn standard_elastic_collision_3(m1: f32, v1: &Vec3, m2: f32, v2: &Vec3) -> (Vec3, Vec3) {
-    let (v1x, v2x) = standard_elastic_collision(m1, v1.x, m2, v2.x);
-    let (v1y, v2y) = standard_elastic_collision(m1, v1.y, m2, v2.y);
-    let (v1z, v2z) = standard_elastic_collision(m1, v1.z, m2, v2.z);
-    (Vec3::new(v1x, v1y, v1z), Vec3::new(v2x, v2y, v2z))
-}
-
 pub fn bounce(input: Vec3, normal: Vec3) -> Vec3 {
     return input - 2.0 * proj(normal, input);
 }
@@ -75,9 +55,7 @@ pub fn standard_collision(
     inertia: (Mat3, Mat3),
     // offset from point of contact
     r: (Vec3, Vec3),
-    // not used atm, restfullness
-    _re1: f32,
-    _re2: f32,
+    mat: (&PhysicsMaterial, &PhysicsMaterial),
 ) {
     //println!("POP");
 
@@ -133,8 +111,9 @@ pub fn standard_collision(
         (1.0 / m_1) + (1.0 / m_2) + dot(i_term_1 + i_term_2, normal)
     };
 
-    let e = 0.3; // bounce factor 1.0 = bounce 0 = no bounce
-    let u = 1.0; // friction
+    // TODO make make this correct, idk if (c1+c2)/2 is correct
+    let e = (mat.0.restfullness + mat.1.restfullness) / 2.0; // bounce factor 1.0 = bounce 0 = no bounce
+    let u = (mat.0.friction + mat.1.friction) / 2.0; // friction
 
     // impulse magnitude
     let j_r = dot(-(1.0 + e) * v_r, normal) / divisor;
@@ -163,54 +142,53 @@ pub fn standard_collision(
 
     let epsilon = 0.001;
     // rb, tangent, inertia tensor, offset, forces
-    let do_friction =
-        |rb: &mut RidgidBody, t: Vec3, i: Mat3, r: Vec3, f_e: Vec3, _t: &Transform, _r: Vec3| {
-            let relative_velocity = rb.velocity() + rb.angular_velocity(i).cross(r);
+    let do_friction = |rb: &mut RidgidBody, t: Vec3, i: Mat3, r: Vec3, _t: &Transform| {
+        let relative_velocity = rb.velocity() + rb.angular_velocity(i).cross(r);
 
-            let tangent_velocity = relative_velocity - normal * relative_velocity.dot(normal);
+        let tangent_velocity = relative_velocity - normal * relative_velocity.dot(normal);
 
-            if tangent_velocity.magnitude_squared() < epsilon * epsilon {
-                return;
-            }
+        if tangent_velocity.magnitude_squared() < epsilon * epsilon {
+            return;
+        }
 
-            let diff = tangent_velocity.normalized() - t;
-            if diff.magnitude() > 0.01 {
-                //println!("tangent_vel: {}, t: {}", tangent_velocity.normalized(), t);
-            }
+        let diff = tangent_velocity.normalized() - t;
+        if diff.magnitude() > 0.01 {
+            //println!("tangent_vel: {}, t: {}", tangent_velocity.normalized(), t);
+        }
 
-            let t = tangent_velocity.normalized();
+        let t = tangent_velocity.normalized();
 
-            let vt = relative_velocity.dot(t);
-            let kt = rb.mass.recip() + r.cross(t).dot(i * r.cross(t));
+        let vt = relative_velocity.dot(t);
+        let kt = rb.mass.recip() + r.cross(t).dot(i * r.cross(t));
 
-            let b = (u * j_r).abs();
+        let b = (u * j_r).abs();
 
-            let jt = (-vt / kt).clamp(-b, b);
-            let add_linj = j_r * normal;
-            set_line(
-                rb.id,
-                "JR",
-                Line {
-                    start: _t.position,
-                    end: _t.position + add_linj,
-                    color: Vec3::new(0.0, 1.0, 0.0),
-                },
-            );
+        let jt = (-vt / kt).clamp(-b, b);
+        let add_linj = j_r * normal;
+        set_line(
+            rb.id,
+            "JR",
+            Line {
+                start: _t.position,
+                end: _t.position + add_linj,
+                color: Vec3::new(0.0, 1.0, 0.0),
+            },
+        );
 
-            rb.linear_momentum += jt * t;
-            rb.angular_momentum += jt * r.cross(t);
-        };
+        rb.linear_momentum += jt * t;
+        rb.angular_momentum += jt * r.cross(t);
+    };
 
     if !rb.0.is_static {
         rb.0.linear_momentum += j_r * normal / m_1;
         rb.0.angular_momentum += -j_r * (i_1 * cross(r.0, normal));
-        do_friction(rb.0, t1, i_1, r.0, f_e1, trans.0, r.0);
+        do_friction(rb.0, t1, i_1, r.0, trans.0);
     }
     if !rb.1.is_static {
         rb.1.linear_momentum += -j_r * normal / m_2;
         rb.1.angular_momentum += -j_r * (i_2 * cross(r.1, normal));
 
-        do_friction(rb.1, t2, i_2, r.1, f_e2, trans.1, r.1);
+        do_friction(rb.1, t2, i_2, r.1, trans.1);
     }
 }
 
@@ -223,7 +201,7 @@ pub fn clear_lines() {
 }
 
 pub fn set_line_key(key: String, line: Line) {
-    //LINE_ATLAS.lock().unwrap().insert(key, line);
+    LINE_ATLAS.lock().unwrap().insert(key, line);
 }
 
 /// where normal_distance is the normal pointing at c1 from c2 with the length of the intercetion
@@ -292,22 +270,10 @@ pub fn collide(
     cc2: &Vec<Collider>,
     dt: f32,
 ) -> bool {
-    let t1_post = t1.position;
-    let t2_post = t2.position;
-    let r1_post = t1.rotation;
-    let r2_post = t2.rotation;
-
     let mut has_colided = false;
 
-    // used when pop does not work, simply uses binary search to pop the colliders using lastframe location and current location
-    let mut post_fix: Vec<Vec<usize>> = Vec::with_capacity(cc1.len());
-
-    for c1_index in 0..cc1.len() {
-        let c1 = &cc1[c1_index];
-
-        let mut current_post_fix: Vec<usize> = Vec::new();
-        for c2_index in 0..cc2.len() {
-            let c2 = &cc2[c2_index];
+    for c1 in cc1 {
+        for c2 in cc2 {
             if is_colliding(c1, t1, c2, t2) {
                 has_colided = true;
 
@@ -326,80 +292,10 @@ pub fn collide(
                 rb2.is_active = true;
                 rb1.is_active_time = 0.0;
                 rb2.is_active_time = 0.0;
-                //solve_colliding(c1, rb1, t1, c2, rb2, t2);
-                match (c1, c2) {
-                    //(Collider::BoxColider(_), Collider::BoxColider(_)) => {
-                    //    current_post_fix.push(c2_index);
-                    //}
-                    _ => {
-                        solve_colliding(c1, rb1, t1, c2, rb2, t2, dt);
-                    }
-                }
+
+                solve_colliding(c1, rb1, t1, c2, rb2, t2, dt);
             }
         }
-        post_fix.push(current_post_fix);
-    }
-
-    // binary searches the col point
-
-    const BINARY_ITTERATIONS: i32 = 8;
-    // TODO ADD ROTATION
-
-    let t1_pre = rb1.last_frame_location;
-    let t2_pre = rb2.last_frame_location;
-    let r1_pre = rb1.last_frame_rotation;
-    let r2_pre = rb2.last_frame_rotation;
-    for c1_index in 0..cc1.len() {
-        if post_fix[c1_index].is_empty() {
-            continue;
-        }
-
-        let c1 = &cc1[c1_index];
-        let mut search_location = 0.5f32;
-        let mut search_length = 0.5f32;
-
-        let mut is_not_touching = 0.0f32;
-        let mut is_touching = 1.0f32;
-
-        for _ in 0..BINARY_ITTERATIONS {
-            t1.position = t1_post * search_location + t1_pre * (1.0 - search_location);
-            t2.position = t2_post * search_location + t2_pre * (1.0 - search_location);
-
-            t1.rotation = Quaternion::lerp_precise_unnormalized(r1_pre, r1_post, search_location);
-            t2.rotation = Quaternion::lerp_precise_unnormalized(r2_pre, r2_post, search_location);
-
-            search_length *= 0.5;
-
-            let mut colliding = false;
-            for c2_index in &post_fix[c1_index] {
-                let c2 = &cc2[*c2_index];
-                if is_colliding(c1, t1, c2, t2) {
-                    colliding = true;
-                    break;
-                }
-            }
-            if !colliding {
-                is_not_touching = search_location;
-            } else {
-                is_touching = search_location;
-            }
-            search_location += search_length * if colliding { -1.0 } else { 1.0 };
-        }
-
-        t1.position = t1_post * is_touching + t1_pre * (1.0 - is_touching);
-        t2.position = t2_post * is_touching + t2_pre * (1.0 - is_touching);
-        t1.rotation = Quaternion::lerp_precise_unnormalized(r1_pre, r1_post, is_touching);
-        t2.rotation = Quaternion::lerp_precise_unnormalized(r2_pre, r2_post, is_touching);
-        for c2_index in &post_fix[c1_index] {
-            let c2 = &cc2[*c2_index];
-
-            solve_colliding(c1, rb1, t1, c2, rb2, t2, dt);
-            has_colided = true;
-        }
-        t1.position = t1_post * is_not_touching + t1_pre * (1.0 - is_not_touching);
-        t2.position = t2_post * is_not_touching + t2_pre * (1.0 - is_not_touching);
-        t1.rotation = Quaternion::lerp_precise_unnormalized(r1_pre, r1_post, is_not_touching);
-        t2.rotation = Quaternion::lerp_precise_unnormalized(r2_pre, r2_post, is_not_touching);
     }
 
     rb1.is_colliding_this_frame = has_colided || rb1.is_colliding_this_frame;
@@ -476,22 +372,6 @@ impl RidgidBody {
         transform.rotation.rotate_z(angular_velocity.z * dt);
 
         self.is_active_time += dt;
-
-        /*
-
-        // apply acceleration
-        self.velocity += self.acceleration * dt;
-        self.angular_velocity += self.torque * dt;
-
-        // apply rotation
-        transform.rotation.rotate_x(self.angular_velocity.x * dt);
-        transform.rotation.rotate_y(self.angular_velocity.y * dt);
-        transform.rotation.rotate_z(self.angular_velocity.z * dt);
-
-        // update position
-        transform.position += self.velocity * dt;
-
-        self.is_active_time += dt;*/
     }
 }
 
@@ -552,6 +432,43 @@ pub fn update(
         }
     }
     for i in 0..phx_length {
+        let direction = Vec3::new(-1.0, -1.0, -1.0).normalized();
+        let origin = Vec3::new(10.0, 13.0, 10.0);
+        if let Some(hit) = super::raycast(
+            &transforms[i],
+            &phx_objects[i].colliders,
+            Ray::new(origin, direction),
+        ) {
+            set_line(
+                i,
+                "ray",
+                Line {
+                    start: origin,
+                    end: origin + direction * hit.distance,
+                    color: Vec3::new(0.0, 1.0, 0.0),
+                },
+            );
+            set_line(
+                i,
+                "rayNormal",
+                Line {
+                    start: origin + direction * hit.distance,
+                    end: origin + direction * hit.distance + hit.normal,
+                    color: Vec3::new(1.0, 0.0, 0.0),
+                },
+            );
+        } else {
+            set_line(
+                i,
+                "ray",
+                Line {
+                    start: origin,
+                    end: direction * 1000.0,
+                    color: Vec3::new(0.0, 0.0, 1.0),
+                },
+            );
+        }
+
         // if phx_objects[i].rb.is_colliding_this_frame {
         //     println!("col >> {} = {}",i, phx_objects[i].rb.is_colliding_this_frame);
         //}

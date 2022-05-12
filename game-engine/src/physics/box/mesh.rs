@@ -1,10 +1,9 @@
-use crate::physics::{PhysicsMaterial, Tri};
+use crate::physics::Tri;
 
 use super::BoxColider;
 
-use common::{Quaternion, Ray, Transform, Vec3};
+use common::{Ray, Transform, Vec3};
 
-// TODO FIX using get_verts
 pub fn get_vertex(w: &Vec3, t: &Transform, c: &BoxColider) -> Vec<Vec3> {
     let s = c.scale * t.scale;
     let r = t.rotation * c.local_rotation;
@@ -22,7 +21,8 @@ pub fn get_vertex(w: &Vec3, t: &Transform, c: &BoxColider) -> Vec<Vec3> {
 }
 
 #[must_use]
-/// in binary order, aka v000 v001 v010, not rotated where v000 is min and v111 is max
+/// in binary order, aka v000 v001 v010, not rotated where v000 is min and v111 is max,
+/// note that it does not apply rotation or world position
 pub fn get_verts(t: &Transform, c: &BoxColider) -> [Vec3; 8] {
     let c = t.scale * c.scale;
     let v111 = c;
@@ -45,11 +45,11 @@ fn test_get_verts() {
 
     let t = Transform {
         position: Vec3::zero(),
-        rotation: Quaternion::identity(),
+        rotation: common::Quaternion::identity(),
         scale,
     };
 
-    let material = PhysicsMaterial {
+    let material = crate::physics::PhysicsMaterial {
         friction: 1.0,
         restfullness: 1.0,
     };

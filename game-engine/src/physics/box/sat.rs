@@ -28,8 +28,8 @@ pub fn proj_has_overlap(axis: &Vec<Vec3>, a_verts: &Vec<Vec3>, b_verts: &Vec<Vec
     true
 }
 
-// NOT USED ATM
-/// same as proj_has_overlap with more return info
+/// same as proj_has_overlap with more return info,
+/// note that normal is not notmalized
 #[must_use]
 pub fn proj_has_overlap_extra(
     axis: &Vec<Vec3>,

@@ -1,7 +1,7 @@
 use crate::physics::{
-    collision::{pop_coliders, standard_collision},
-    sphere::SphereColider,
-    Collider, RidgidBody, macros::debug_assert_normalized,
+    collision::standard_collision,
+    macros::{debug_assert_finite, debug_assert_normalized},
+    RayCastHit, RidgidBody, Tri,
 };
 
 use super::{
@@ -11,7 +11,6 @@ use super::{
 };
 
 use common::{Ray, Transform, Vec3};
-use rendering::Line;
 
 pub fn is_colliding_box_vs_box(
     w1: Vec3,
@@ -40,6 +39,11 @@ pub fn collide_box_vs_box(
     } else {
         collide_box_vs_box_single(c2, rb2, t2, w2, c1, rb1, t1, w1);
     }
+}
+
+/// given a trangle that is counter clockwise, it will return the normal that is normalized
+fn get_normal_from_tri(tri: &Tri) -> Vec3 {
+    return -(tri[1] - tri[2]).cross(tri[0] - tri[2]).normalized();
 }
 
 fn collide_box_vs_box_single(
@@ -73,21 +77,16 @@ fn collide_box_vs_box_single(
     let r1 = t1.rotation * c1.local_rotation;
     let r2 = t2.rotation * c2.local_rotation;
 
-    let re1 = c1.material.restfullness;
-    let re2 = c2.material.restfullness;
-
-    //t1.rotation = Quaternion::identity();
-    //t2.rotation = Quaternion::identity();
-
     let r2_inv = r2.inverse();
     crate::physics::collision::clear_lines();
     let s1 = t1.scale * c1.scale;
     let mut index = 0;
     let mut post_offset = Vec3::zero();
 
+    // push the boxes away from each other
     let (axis, a_verts, b_verts) = get_axis_and_verts(&w1, &w2, &t1, &t2, c1, c2);
     if let Some((size, dir)) = proj_has_overlap_extra(&axis, &a_verts, &b_verts) {
-        post_offset -= dir.normalized() * size ;
+        post_offset -= dir.normalized() * size;
     } else if let Some((size, dir)) = proj_has_overlap_extra(&axis, &b_verts, &a_verts) {
         post_offset -= dir.normalized() * size;
     }
@@ -106,7 +105,7 @@ fn collide_box_vs_box_single(
         for tri in &tri2 {
             index += 1;
             let max_distance_on_axis = s1.dot(ray.direction);
-            crate::physics::collision::set_line_key(
+            /*crate::physics::collision::set_line_key(
                 format!("{} Col2 {}", rb1.id, index),
                 Line {
                     start: rotate_right(origin - direction * max_distance_on_axis),
@@ -138,7 +137,7 @@ fn collide_box_vs_box_single(
                     end: rotate_right(tri[1]),
                     color: Vec3::new(0.0, 1.0, 1.0),
                 },
-            );
+            );*/
 
             if let Some(d) = new_ray.triangle_intersection(*tri) {
                 let ray_distance = d.abs();
@@ -151,7 +150,7 @@ fn collide_box_vs_box_single(
                 // ray hit is not outside the box
                 if ray_distance < box_distance {
                     let overlap = box_distance - ray_distance;
-                    let normal = -(tri[1] - tri[2]).cross(tri[0] - tri[2]).normalized();
+                    let normal = get_normal_from_tri(tri);
                     //let normal = -(r2 * ray.direction).normalized();
                     //let normal_overlap = normal * overlap;
 
@@ -183,7 +182,7 @@ fn collide_box_vs_box_single(
                             color: Vec3::new(0.0, 1.0, 0.0),
                         },
                     );*/
-                    crate::physics::collision::set_line_key(
+                    /*crate::physics::collision::set_line_key(
                         format!("{} ColT3L {}", rb1.id, index),
                         Line {
                             start: rotate_right(point_of_contact),
@@ -199,7 +198,7 @@ fn collide_box_vs_box_single(
                             end: rotate_right(point_of_contact),
                             color: Vec3::new(1.0, 0.0, 1.0),
                         },
-                    );
+                    );*/
                     /*standard_collision(
                         normal,
                         (rb1, rb2),
@@ -220,16 +219,40 @@ fn collide_box_vs_box_single(
                             rotate_right(point_of_contact) - w2,
                             rotate_right(point_of_contact) - w1,
                         ),
-                        re2,
-                        re1,
+                        (&c1.material, &c2.material),
                     );
-                    //post_offset += r1*normal*(box_distance-d.abs())/100.0;
-                    // break 'outer;
-                    // rb1.linear_momentum = Vec3::zero();
-                    //rb1.angular_momentum = Vec3::zero();
                 }
             }
         }
     }
     t1.position += post_offset;
+}
+
+pub fn raycast_box(t: &Transform, c: &BoxColider, ray: Ray) -> Option<RayCastHit> {
+    let v = get_verts(t, c);
+    let tris = get_tris_for_box(&v);
+    let r = t.rotation * c.local_rotation;
+    let r_inv = r.inverse();
+    let fixed_ray = Ray::new(r_inv * ray.origin, r_inv * ray.direction);
+    let mut min_d = f32::INFINITY;
+    let mut normal = Vec3::zero();
+    for tri in tris {
+        if let Some(d) = fixed_ray.triangle_intersection(tri) {
+            if d < std::f32::EPSILON {
+                continue;
+            }
+
+            if d < min_d {
+                min_d = d;
+                normal = get_normal_from_tri(&tri);
+            }
+        }
+    }
+    if min_d < f32::INFINITY {
+        debug_assert_finite!(normal);
+        debug_assert_normalized!(normal);
+        Some(RayCastHit::new(min_d, r * normal))
+    } else {
+        None
+    }
 }
