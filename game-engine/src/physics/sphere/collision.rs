@@ -1,5 +1,5 @@
 use crate::physics::{
-    collision::{pop_coliders, standard_collision},
+    collision::{pop_colliders, standard_collision},
     macros::{debug_assert_finite, squared},
     r#box::{get_closest_point, BoxColider},
     RayCastHit, RidgidBody,
@@ -81,7 +81,7 @@ pub fn collide_sphere_vs_sphere(
         (normal * r1, -normal * r2),
         (&c1.material, &c2.material),
     );
-    pop_coliders(distance_pop * normal, t1, t2, &rb1, &rb2);
+    pop_colliders(distance_pop * normal, t1, t2, &rb1, &rb2);
 }
 
 pub fn collide_sphere_vs_box(
@@ -133,7 +133,7 @@ pub fn collide_sphere_vs_box(
         (&c1.material, &c2.material),
     );
 
-    pop_coliders(normal * overlap_distance, t1, t2, &rb1, &rb2);
+    pop_colliders(normal * overlap_distance, t1, t2, &rb1, &rb2);
 }
 
 pub fn raycast_sphere(t1: &Transform, c: &SphereColider, ray: Ray) -> Option<RayCastHit> {

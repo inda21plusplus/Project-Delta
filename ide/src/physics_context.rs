@@ -1,4 +1,5 @@
 use common::{Quaternion, Transform, Vec3};
+
 use game_engine::{
     physics::{
         collision::update as physics_update, r#box::BoxColider, sphere::SphereColider, Collider,
@@ -50,10 +51,9 @@ impl PhysicsScene {
             let scale = rng.gen_range(1.0..1.5);
             instances.push(Transform {
                 position: Vec3::new(
-                    0.0,5.0,0.0
-                   // rng.gen_range(-10.0..10.0),
-                   // rng.gen_range(14.0..30.0),
-                   // rng.gen_range(-10.0..10.0),
+                    rng.gen_range(-10.0..10.0),
+                    rng.gen_range(14.0..30.0),
+                    rng.gen_range(-10.0..10.0),
                 ),
                 rotation: Quaternion::identity()
                     .rotated_x(rng.gen_range(0.0f32..360.0f32).to_radians())

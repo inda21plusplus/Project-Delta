@@ -49,7 +49,7 @@ pub fn bounce(input: Vec3, normal: Vec3) -> Vec3 {
 pub fn standard_collision(
     normal: Vec3,
     rb: (&mut RidgidBody, &mut RidgidBody),
-    //coll: (&Collider, &Collider),
+    // coll: (&Collider, &Collider),
     trans: (&Transform, &Transform),
     // inverted inertia matrices
     inertia: (Mat3, Mat3),
@@ -57,21 +57,12 @@ pub fn standard_collision(
     r: (Vec3, Vec3),
     mat: (&PhysicsMaterial, &PhysicsMaterial),
 ) {
-    //println!("POP");
-
     debug_assert_finite!(normal);
     debug_assert_normalized!(normal);
 
     // see this link for explanation of all the math, variables are all named according to this article
     // lowercase omega is substituted with w in this code.
     // https://en.wikipedia.org/wiki/Collision_response#Impulse-Based_Reaction_Model
-
-    /*match coll {
-        (Collider::SphereColider(_), Collider::SphereColider(_)) => {}
-        (Collider::SphereColider(_), Collider::BoxColider(_)) => {}
-        (Collider::BoxColider(_), Collider::SphereColider(_)) => {}
-        (Collider::BoxColider(_), Collider::BoxColider(_)) => {}
-    }*/
 
     let cross = |a, b| Vec3::cross(a, b);
     let dot = |a, b| Vec3::dot(a, b);
@@ -118,42 +109,15 @@ pub fn standard_collision(
     // impulse magnitude
     let j_r = dot(-(1.0 + e) * v_r, normal) / divisor;
 
-    // relative velocity, normal, sum of all external forces
-    fn compute_tangent(v_r: Vec3, n: Vec3, f_e: Vec3) -> Vec3 {
-        if !(v_r.dot(n).abs() < f32::EPSILON) {
-            let a = v_r - v_r.dot(n) * n;
-            a / a.magnitude()
-        } else if !(f_e.dot(n).abs() < f32::EPSILON) {
-            let a = f_e - f_e.dot(n) * n;
-            a / a.magnitude()
-        } else {
-            Vec3::zero()
-        }
-    }
-
-    let f_e1 = rb.0.acceleration * m_1;
-    let f_e2 = rb.1.acceleration * m_2;
-
-    let v_r1 = rb.0.velocity() + rb.0.angular_velocity(i_1).cross(r.0);
-    let v_r2 = rb.1.velocity() + rb.1.angular_velocity(i_2).cross(r.1);
-
-    let t1 = compute_tangent(v_r1, normal, f_e1);
-    let t2 = compute_tangent(v_r2, normal, f_e2);
-
     let epsilon = 0.001;
     // rb, tangent, inertia tensor, offset, forces
-    let do_friction = |rb: &mut RidgidBody, t: Vec3, i: Mat3, r: Vec3, _t: &Transform| {
+    let do_friction = |rb: &mut RidgidBody, i: Mat3, r: Vec3, _t: &Transform| {
         let relative_velocity = rb.velocity() + rb.angular_velocity(i).cross(r);
 
         let tangent_velocity = relative_velocity - normal * relative_velocity.dot(normal);
 
         if tangent_velocity.magnitude_squared() < epsilon * epsilon {
             return;
-        }
-
-        let diff = tangent_velocity.normalized() - t;
-        if diff.magnitude() > 0.01 {
-            //println!("tangent_vel: {}, t: {}", tangent_velocity.normalized(), t);
         }
 
         let t = tangent_velocity.normalized();
@@ -172,13 +136,13 @@ pub fn standard_collision(
     if !rb.0.is_static {
         rb.0.linear_momentum += j_r * normal / m_1;
         rb.0.angular_momentum += -j_r * (i_1 * cross(r.0, normal));
-        do_friction(rb.0, t1, i_1, r.0, trans.0);
+        do_friction(rb.0, i_1, r.0, trans.0);
     }
     if !rb.1.is_static {
         rb.1.linear_momentum += -j_r * normal / m_2;
         rb.1.angular_momentum += -j_r * (i_2 * cross(r.1, normal));
 
-        do_friction(rb.1, t2, i_2, r.1, trans.1);
+        do_friction(rb.1, i_2, r.1, trans.1);
     }
 }
 
@@ -195,7 +159,7 @@ pub fn set_line_key(key: String, line: Line) {
 }
 
 /// where normal_distance is the normal pointing at c1 from c2 with the length of the intercetion
-pub fn pop_coliders(
+pub fn pop_colliders(
     normal_distance: Vec3,
     t1: &mut Transform,
     t2: &mut Transform,
@@ -242,9 +206,7 @@ pub fn solve_colliding(
             Collider::BoxColider(b2) => collide_sphere_vs_box(b1, rb1, t1, w1, b2, rb2, t2, w2),
         },
         Collider::BoxColider(b1) => match c2 {
-            Collider::SphereColider(b2) => {
-                collide_sphere_vs_box(b2, rb2, t2, w2, b1, rb1, t1, w1)
-            }
+            Collider::SphereColider(b2) => collide_sphere_vs_box(b2, rb2, t2, w2, b1, rb1, t1, w1),
             Collider::BoxColider(b2) => collide_box_vs_box(b1, rb1, t1, w1, b2, rb2, t2, w2),
         },
     }
@@ -293,7 +255,7 @@ pub fn collide(
 }
 
 impl RidgidBody {
-    pub fn add_impulse(&mut self, force: Vec3) {
+    pub fn add_force(&mut self, force: Vec3) {
         self.linear_momentum += force;
     }
 
@@ -306,10 +268,10 @@ impl RidgidBody {
 
         //TODO https://en.wikipedia.org/wiki/Verlet_integration
 
-        transform.position += self.velocity() * dt; 
+        transform.position += self.velocity() * dt;
         debug_assert_finite!(transform.position);
 
-        self.add_impulse(self.acceleration * dt * self.mass);
+        self.add_force(self.acceleration * dt * self.mass);
 
         // apply rotation
         let i_inv = Mat3::from(transform.rotation)
@@ -355,6 +317,10 @@ pub fn update(
 
         // pop coliders and apply force on all colliding objects
         for (transform, phx_obj) in trans_last.iter_mut().zip(phx_last.iter_mut()) {
+            // simply dont care about collison if both are static
+            if phx_first[i].rb.is_static && phx_obj.rb.is_static {
+                continue;
+            }
             if collide(
                 &mut phx_first[i].rb,
                 &mut trans_first[i],

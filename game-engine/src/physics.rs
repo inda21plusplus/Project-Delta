@@ -42,9 +42,10 @@ mod macros {
 
     #[must_use]
     macro_rules! squared {
-        ($x:expr) => {
-            $x * $x
-        };
+        ($x:expr) => {{
+            let x = $x;
+            x * x
+        }};
     }
 
     pub(crate) use debug_assert_finite;
@@ -58,10 +59,20 @@ pub enum Collider {
     BoxColider(BoxColider),
 }
 
+impl Collider {
+    pub fn inv_inertia_tensor(&self) -> Mat3 {
+        match self {
+            Collider::SphereColider(a) => a.inv_inertia_tensor(),
+            Collider::BoxColider(a) => a.inv_inertia_tensor(),
+        }
+    }
+}
+
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub struct RayCastHit {
     pub distance: f32,
-    pub normal: Vec3, // normalized
+    /// normalized
+    pub normal: Vec3, 
 }
 
 impl RayCastHit {
@@ -125,7 +136,7 @@ impl RidgidBody {
     }
 
     pub fn velocity(&self) -> Vec3 {
-        self.linear_momentum * self.mass.recip()
+        self.linear_momentum / self.mass
     }
 
     pub fn angular_velocity(&self, inv_tensor_world: Mat3) -> Vec3 {
@@ -194,7 +205,6 @@ fn get_world_position(pos: Vec3, scale: Vec3, rotation: Quaternion, local_positi
 }
 
 /// returns the world position of a collider given transform and colider
-#[must_use]
 fn get_position(transform: &Transform, collider: &Collider) -> Vec3 {
     get_world_position(
         transform.position,
@@ -211,15 +221,6 @@ fn get_position(transform: &Transform, collider: &Collider) -> Vec3 {
 pub struct PhysicsMaterial {
     pub friction: f32,
     pub restfullness: f32, // bounciness
-}
-
-impl Collider {
-    pub fn inv_inertia_tensor(&self) -> Mat3 {
-        match self {
-            Collider::SphereColider(a) => a.inv_inertia_tensor(),
-            Collider::BoxColider(a) => a.inv_inertia_tensor(),
-        }
-    }
 }
 
 pub fn raycast(t: &Transform, cols: &Vec<Collider>, ray: Ray) -> Option<RayCastHit> {
