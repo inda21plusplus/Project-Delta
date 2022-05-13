@@ -48,7 +48,9 @@ jobs:
 
       - name: Build IDE
         working-directory: ./ide
-        run: cargo build --verbose
+        run: |
+          sudo apt install libxcb-shape0-dev libxcb-xfixes0-dev
+          cargo build --verbose
 
       - name: Build Engine
         working-directory: ./game-engine
@@ -74,7 +76,9 @@ jobs:
 
       - name: Test IDE
         working-directory: ./ide
-        run: cargo test --verbose
+        run: |
+          sudo apt install libxcb-shape0-dev libxcb-xfixes0-dev
+          cargo test --verbose
 
       - name: Test Engine
         working-directory: ./game-engine
