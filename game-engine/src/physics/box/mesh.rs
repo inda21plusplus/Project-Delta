@@ -4,6 +4,7 @@ use super::BoxColider;
 
 use common::{Ray, Transform, Vec3};
 
+/// get proper vertex position in world position
 pub fn get_vertex(w: &Vec3, t: &Transform, c: &BoxColider) -> Vec<Vec3> {
     let s = c.scale * t.scale;
     let r = t.rotation * c.local_rotation;

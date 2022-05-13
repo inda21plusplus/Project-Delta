@@ -71,19 +71,12 @@ impl PhysicsScene {
         let gravity = Vec3::new(0.0, -9.82, 0.0);
 
         let mut obj1 = PhysicsObject::new(
-            RidgidBody::new(
-                Vec3::new(5.0, 0.00, 0.000),
-                Vec3::zero(),
-                Vec3::new(0.0, 0.0, 0.0), // -1.6
-                1.0,
-            ),
+            RidgidBody::new(Vec3::zero(), 1.0),
             Collider::BoxColider(BoxColider::new(Vec3::new(1.0, 1.0, 1.0), physics_material)),
         );
         obj1.rb.is_static = true;
 
         let mut physics_objects: Vec<PhysicsObject> = vec![obj1]; //obj3, obj4 vec![obj1.clone(); 16];
-        let vel = 1.0;
-        let angle = 0.0001;
 
         //physics_objects.push(PhysicsObject::new(
         //    RidgidBody::new(Vec3::zero(), gravity, Vec3::zero(), 1.0),
@@ -92,40 +85,14 @@ impl PhysicsScene {
 
         for _ in 0..cubes {
             physics_objects.push(PhysicsObject::new(
-                RidgidBody::new(
-                    Vec3::new(
-                        rng.gen_range(-vel..vel),
-                        rng.gen_range(-vel..vel),
-                        rng.gen_range(-vel..vel),
-                    ),
-                    gravity,
-                    Vec3::new(
-                        rng.gen_range(-angle..angle),
-                        rng.gen_range(-angle..angle),
-                        rng.gen_range(-angle..angle),
-                    ),
-                    1.0,
-                ),
+                RidgidBody::new(gravity, 1.0),
                 Collider::BoxColider(BoxColider::new(Vec3::new(1.0, 1.0, 1.0), physics_material)),
             ));
         }
 
         for _ in 0..spheres {
             physics_objects.push(PhysicsObject::new(
-                RidgidBody::new(
-                    Vec3::new(
-                        rng.gen_range(-vel..vel),
-                        rng.gen_range(-vel..vel),
-                        rng.gen_range(-vel..vel),
-                    ),
-                    gravity,
-                    Vec3::new(
-                        rng.gen_range(-angle..angle),
-                        rng.gen_range(-angle..angle),
-                        rng.gen_range(-angle..angle),
-                    ),
-                    1.0,
-                ),
+                RidgidBody::new(gravity, 1.0),
                 Collider::SphereColider(SphereColider::new(1.0, physics_material)),
             ));
         }

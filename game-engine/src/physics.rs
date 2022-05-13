@@ -40,11 +40,6 @@ mod macros {
         };
     }
 
-    #[cfg(not(debug_assertions))]
-    macro_rules! pause {
-        () => {};
-    }
-
     #[must_use]
     macro_rules! squared {
         ($x:expr) => {
@@ -55,14 +50,6 @@ mod macros {
     pub(crate) use debug_assert_finite;
     pub(crate) use debug_assert_normalized;
     pub(crate) use squared;
-}
-
-#[allow(dead_code)]
-fn pause_and_wait_for_input() {
-    let mut stdout = std::io::stdout();
-    std::io::Write::write(&mut stdout, b"Paused\n").unwrap();
-    std::io::Write::flush(&mut stdout).unwrap();
-    std::io::Read::read(&mut std::io::stdin(), &mut [0]).unwrap();
 }
 
 #[derive(Debug, PartialEq, Clone, Copy)]
@@ -99,13 +86,13 @@ pub struct RidgidBody {
 
     //pub angular_velocity: Vec3, // Spin angular velocity in rad per seconds around that axis (Quaternion::rotate_3d)
     //pub torque: Vec3,           // torque to angular_velocity is what acceleration is to velocity
-    pub center_of_mass_offset: Vec3, // also used for instant center of rotation https://en.wikipedia.org/wiki/Instant_centre_of_rotation
+    //pub center_of_mass_offset: Vec3, // not used atm
     pub is_active_time: f32,
     pub mass: f32,
     pub is_using_global_gravity: bool,
     //is_trigger : bool,
     pub is_static: bool,
-    pub is_active: bool, // TODO after object is not moving then it becomes disabled to oprimize
+    //pub is_active: bool, // TODO after object is not moving then it becomes disabled to oprimize
     pub is_colliding: bool,
     pub is_colliding_this_frame: bool,
     pub drag: f32,
@@ -114,27 +101,22 @@ pub struct RidgidBody {
 impl Default for RidgidBody {
     fn default() -> Self {
         let v = Vec3::default();
-        RidgidBody::new(v, v, v, 1.0)
+        RidgidBody::new(v, 1.0)
     }
 }
 
 impl RidgidBody {
-    pub fn new(velocity: Vec3, acceleration: Vec3, angular_velocity: Vec3, mass: f32) -> Self {
+    pub fn new(acceleration: Vec3, mass: f32) -> Self {
         Self {
             id: BODY_ID.fetch_add(1, Ordering::SeqCst),
-            //velocity,
             acceleration,
             mass,
             angular_momentum: Vec3::zero(),
             linear_momentum: Vec3::zero(),
             last_frame_rotation: Quaternion::identity(),
-            //angular_velocity,
-            is_active: true,
             is_using_global_gravity: false,
             is_active_time: 0.0f32,
-            center_of_mass_offset: Vec3::zero(),
             is_static: false,
-            //torque: Vec3::zero(),
             last_frame_location: Vec3::zero(),
             is_colliding: false,
             is_colliding_this_frame: false,
@@ -227,7 +209,6 @@ fn get_position(transform: &Transform, collider: &Collider) -> Vec3 {
 
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub struct PhysicsMaterial {
-    //static_friction: f32,
     pub friction: f32,
     pub restfullness: f32, // bounciness
 }

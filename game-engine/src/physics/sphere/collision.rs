@@ -57,9 +57,6 @@ pub fn collide_sphere_vs_sphere(
     t2: &mut Transform,
     w2: Vec3, // world position
 ) {
-    let re1 = c1.material.restfullness;
-    let re2 = c2.material.restfullness;
-
     let r1 = c1.get_radius(t1.scale);
     let r2 = c2.get_radius(t2.scale);
 
@@ -96,7 +93,6 @@ pub fn collide_sphere_vs_box(
     rb2: &mut RidgidBody,
     t2: &mut Transform,
     w2: Vec3, // world position
-    dt: f32,
 ) {
     let r = c1.get_radius(t1.scale);
     debug_assert!(r > 0.0);
@@ -127,15 +123,6 @@ pub fn collide_sphere_vs_box(
 
     let r_1 = point_of_contact - w1;
     let r_2 = point_of_contact - w2;
-    /*standard_collision(
-        -normal,
-        (rb2, rb1),
-        (&t2, &t1),
-        (c2.inv_inertia_tensor(), c1.inv_inertia_tensor()),
-        (r_2, r_1),
-        0.0,
-        0.0,
-    );*/
 
     standard_collision(
         normal,

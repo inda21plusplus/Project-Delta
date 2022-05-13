@@ -56,15 +56,6 @@ fn collide_box_vs_box_single(
     t2: &mut Transform,
     w2: Vec3, // world position
 ) {
-    //if rb1.is_static && rb2.is_static {
-    //   return;
-    //}
-
-    // this ensures that rb2 is never static
-    //if rb1.is_static {
-    //return collide_box_vs_box(c2, rb2, t2, w2, c1, rb1, t1, w1);
-    //}
-
     let v1 = get_verts(t1, c1);
     let v2 = get_verts(t2, c2);
 
@@ -78,18 +69,7 @@ fn collide_box_vs_box_single(
     let r2 = t2.rotation * c2.local_rotation;
 
     let r2_inv = r2.inverse();
-    crate::physics::collision::clear_lines();
     let s1 = t1.scale * c1.scale;
-    let mut index = 0;
-    let mut post_offset = Vec3::zero();
-
-    // push the boxes away from each other
-    let (axis, a_verts, b_verts) = get_axis_and_verts(&w1, &w2, &t1, &t2, c1, c2);
-    if let Some((size, dir)) = proj_has_overlap_extra(&axis, &a_verts, &b_verts) {
-        post_offset -= dir.normalized() * size;
-    } else if let Some((size, dir)) = proj_has_overlap_extra(&axis, &b_verts, &a_verts) {
-        post_offset -= dir.normalized() * size;
-    }
 
     for ray in &mut rays {
         let origin = r2_inv *           // rotate ray
@@ -97,47 +77,12 @@ fn collide_box_vs_box_single(
                 (ray.origin + s1 * ray.direction)  // set ray origin between vertexes, this is used because ray intercect returns negetive values
                                   + world_offset); // applied offset to center the world on w2
 
-        let rotate_right = |world_position: Vec3| -> Vec3 { r2 * world_position + w2 };
 
         let direction = r2_inv * r1 * ray.direction;
         let new_ray = Ray::new(origin, direction);
 
         for tri in &tri2 {
-            index += 1;
             let max_distance_on_axis = s1.dot(ray.direction);
-            /*crate::physics::collision::set_line_key(
-                format!("{} Col2 {}", rb1.id, index),
-                Line {
-                    start: rotate_right(origin - direction * max_distance_on_axis),
-                    end: rotate_right(origin + direction * max_distance_on_axis),
-                    color: Vec3::new(1.0, 1.0, 1.0),
-                },
-            );
-
-            crate::physics::collision::set_line_key(
-                format!("{} T1 {}", rb1.id, index),
-                Line {
-                    start: rotate_right(tri[0]),
-                    end: rotate_right(tri[1]),
-                    color: Vec3::new(0.0, 1.0, 1.0),
-                },
-            );
-            crate::physics::collision::set_line_key(
-                format!("{} T2 {}", rb1.id, index),
-                Line {
-                    start: rotate_right(tri[1]),
-                    end: rotate_right(tri[2]),
-                    color: Vec3::new(0.0, 1.0, 1.0),
-                },
-            );
-            crate::physics::collision::set_line_key(
-                format!("{} T3 {}", rb1.id, index),
-                Line {
-                    start: rotate_right(tri[2]),
-                    end: rotate_right(tri[1]),
-                    color: Vec3::new(0.0, 1.0, 1.0),
-                },
-            );*/
 
             if let Some(d) = new_ray.triangle_intersection(*tri) {
                 let ray_distance = d.abs();
@@ -149,70 +94,15 @@ fn collide_box_vs_box_single(
 
                 // ray hit is not outside the box
                 if ray_distance < box_distance {
-                    let overlap = box_distance - ray_distance;
                     let normal = get_normal_from_tri(tri);
-                    //let normal = -(r2 * ray.direction).normalized();
-                    //let normal_overlap = normal * overlap;
-
-                    // pop_coliders(d.signum() * normal_overlap / 4.0, t1, t2, &rb1, &rb2);
-                    //println!("{}/{} -> {}",d,box_distance,normal);
                     let point_of_contact = origin + direction * d;
-                    //w1 + //r1*ray.origin  +r1*ray.direction*(d+s1); //+ s1 *r2 * ray.direction;
-                    /*crate::physics::collision::set_line_key(
-                        format!("{} ColT1 {}",rb1.id,index),
-                        Line {
-                            start: point_of_contact,
-                            end: point_of_contact + Vec3::unit_x(),
-                            color: Vec3::new(1.0, 0.0, 0.0),
-                        },
-                    );
-                    crate::physics::collision::set_line_key(
-                        format!("{} ColT2 {}",rb1.id,index),
-                        Line {
-                            start: point_of_contact,
-                            end: point_of_contact + Vec3::unit_y(),
-                            color: Vec3::new(0.0, 1.0, 0.0),
-                        },
-                    );
-                    crate::physics::collision::set_line_key(
-                        format!("{} ColT3 {}",rb1.id,index),
-                        Line {
-                            start: point_of_contact,
-                            end: point_of_contact + Vec3::unit_z(),
-                            color: Vec3::new(0.0, 1.0, 0.0),
-                        },
-                    );*/
-                    /*crate::physics::collision::set_line_key(
-                        format!("{} ColT3L {}", rb1.id, index),
-                        Line {
-                            start: rotate_right(point_of_contact),
-                            end: rotate_right(point_of_contact) + r2 * normal,
-                            color: Vec3::new(1.0, 0.0, 0.0),
-                        },
-                    );
-
-                    crate::physics::collision::set_line_key(
-                        format!("{} ColT3 {}", rb1.id, index),
-                        Line {
-                            start: rotate_right(origin),
-                            end: rotate_right(point_of_contact),
-                            color: Vec3::new(1.0, 0.0, 1.0),
-                        },
-                    );*/
-                    /*standard_collision(
-                        normal,
-                        (rb1, rb2),
-                        //(&Collider::BoxColider(*c1), &Collider::BoxColider(*c2)),
-                        (&*t1, &*t2),
-                        (c1.inv_inertia_tensor(), c2.inv_inertia_tensor()),
-                        (point_of_contact-w1, point_of_contact-w2),
-                        re1,
-                        re2,
-                    );*/
+                    
+        // to optimize we dont rotate all tris instead we rotate the ray, this is used to get back into world position
+        let rotate_right = |world_position: Vec3| -> Vec3 { r2 * world_position + w2 };
+        
                     standard_collision(
                         r2 * normal,
                         (rb2, rb1),
-                        //(&Collider::BoxColider(*c1), &Collider::BoxColider(*c2)),
                         (&*t2, &*t1),
                         (c2.inv_inertia_tensor(), c1.inv_inertia_tensor()),
                         (
@@ -225,6 +115,17 @@ fn collide_box_vs_box_single(
             }
         }
     }
+
+    let mut post_offset = Vec3::zero();
+
+    // push the boxes away from each other
+    let (axis, a_verts, b_verts) = get_axis_and_verts(&w1, &w2, &t1, &t2, c1, c2);
+    if let Some((size, dir)) = proj_has_overlap_extra(&axis, &a_verts, &b_verts) {
+        post_offset -= dir.normalized() * size;
+    } else if let Some((size, dir)) = proj_has_overlap_extra(&axis, &b_verts, &a_verts) {
+        post_offset -= dir.normalized() * size;
+    }
+
     t1.position += post_offset;
 }
 
