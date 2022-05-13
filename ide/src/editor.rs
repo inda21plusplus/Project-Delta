@@ -136,7 +136,7 @@ impl Editor {
                     ..
                 } = event
                 {
-                    self.handle_keyboard_input(keycode, state);
+                    return self.handle_keyboard_input(keycode, state);
                 }
             }
             Event::MainEventsCleared => self.window.winit_window().request_redraw(),
@@ -151,9 +151,13 @@ impl Editor {
         ControlFlow::Continue(())
     }
 
-    fn handle_keyboard_input(&mut self, keycode: VirtualKeyCode, state: ElementState) {
+    fn handle_keyboard_input(
+        &mut self,
+        keycode: VirtualKeyCode,
+        state: ElementState,
+    ) -> ControlFlow<()> {
         if state != ElementState::Pressed {
-            return;
+            return ControlFlow::Continue(());
         }
         match keycode {
             VirtualKeyCode::Q => {
@@ -166,8 +170,12 @@ impl Editor {
                     .set_window_mode(WindowMode::CameraMode)
                     .unwrap_or_else(|_| log::error!("Could not lock cursor"));
             }
+            VirtualKeyCode::Escape => {
+                return ControlFlow::Break(());
+            }
             _ => {}
         }
+        ControlFlow::Continue(())
     }
 
     fn update(&mut self, dt: f32) {
