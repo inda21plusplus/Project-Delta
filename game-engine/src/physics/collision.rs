@@ -238,11 +238,6 @@ pub fn collide(
                 debug_assert_finite!(rb1.angular_velocity(i_1));
                 debug_assert_finite!(rb2.angular_velocity(i_2));
 
-                //rb1.is_active = true;
-                //rb2.is_active = true;
-                rb1.is_active_time = 0.0;
-                rb2.is_active_time = 0.0;
-
                 solve_colliding(c1, rb1, t1, c2, rb2, t2);
             }
         }
@@ -282,8 +277,6 @@ impl RidgidBody {
         transform.rotation.rotate_x(angular_velocity.x * dt);
         transform.rotation.rotate_y(angular_velocity.y * dt);
         transform.rotation.rotate_z(angular_velocity.z * dt);
-
-        self.is_active_time += dt;
     }
 }
 
@@ -299,10 +292,7 @@ pub fn update(
     for i in 0..phx_length {
         phx_objects[i].rb.is_colliding_this_frame = false;
 
-        // update last frame location
-        phx_objects[i].rb.last_frame_location = transforms[i].position;
-        phx_objects[i].rb.last_frame_rotation = transforms[i].rotation;
-
+        // this needs to be changed somehow if we want multible coliders on a dynamic object
         let tensor = phx_objects[i].colliders[0].inv_inertia_tensor();
 
         // simulate one step in the simulation

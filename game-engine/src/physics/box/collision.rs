@@ -74,6 +74,9 @@ fn collide_box_vs_box_single(
     let r2_inv = r2.inverse();
     let s1 = t1.scale * c1.scale;
 
+    // to optimize we dont rotate all tris instead we rotate the ray, this is used to get back into world position
+    let rotate_right = |world_position: Vec3| -> Vec3 { r2 * world_position + w2 };
+
     for ray in &mut rays {
         let origin = r2_inv *           // rotate ray
             (r1 *                                  // rotation on self 
@@ -83,11 +86,7 @@ fn collide_box_vs_box_single(
         let direction = r2_inv * r1 * ray.direction;
         debug_assert_normalized!(direction);
 
-        // to optimize we dont rotate all tris instead we rotate the ray, this is used to get back into world position
-        let rotate_right = |world_position: Vec3| -> Vec3 { r2 * world_position + w2 };
-
         let new_ray = Ray::new(origin, direction);
-
         for tri in &tri2 {
             let max_distance_on_axis = s1.dot(ray.direction);
 

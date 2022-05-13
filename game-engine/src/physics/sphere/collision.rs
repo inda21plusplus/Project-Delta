@@ -1,6 +1,6 @@
 use crate::physics::{
     collision::{pop_colliders, standard_collision},
-    macros::{debug_assert_finite, squared},
+    macros::debug_assert_finite,
     r#box::{get_closest_point, BoxColider},
     RayCastHit, RidgidBody,
 };
@@ -36,7 +36,8 @@ pub fn is_colliding_sphere_vs_box(
     bc2: &BoxColider,
     t2: &Transform,
 ) -> bool {
-    let r_squared = squared!(sc1.get_radius(t1.scale));
+    let r = sc1.get_radius(t1.scale);
+    let r_squared = r * r;
     debug_assert!(r_squared > 0.0, "r^2 = {}", r_squared);
 
     let scale = t2.scale * bc2.scale;
@@ -70,12 +71,12 @@ pub fn collide_sphere_vs_sphere(
     } else {
         diff.normalized()
     };
+
     debug_assert_finite!(normal);
 
     standard_collision(
         normal,
         (rb1, rb2),
-        //(&Collider::SphereColider(*c1), &Collider::SphereColider(*c2)),
         (&*t1, &*t2),
         (c1.inv_inertia_tensor(), c2.inv_inertia_tensor()),
         (normal * r1, -normal * r2),

@@ -21,9 +21,9 @@ pub fn get_vertex(w: &Vec3, t: &Transform, c: &BoxColider) -> Vec<Vec3> {
     vec
 }
 
-#[must_use]
 /// in binary order, aka v000 v001 v010, not rotated where v000 is min and v111 is max,
 /// note that it does not apply rotation or world position
+#[must_use]
 pub fn get_verts(t: &Transform, c: &BoxColider) -> [Vec3; 8] {
     let c = t.scale * c.scale;
     let v111 = c;

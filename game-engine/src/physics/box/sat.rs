@@ -28,8 +28,8 @@ pub fn proj_has_overlap(axis: &Vec<Vec3>, a_verts: &Vec<Vec3>, b_verts: &Vec<Vec
     true
 }
 
-/// same as proj_has_overlap with more return info,
-/// note that normal is not notmalized
+/// same as proj_has_overlap with more return info, overlap distance & penetration vector
+/// note that penetration is not always normalized
 #[must_use]
 pub fn proj_has_overlap_extra(
     axis: &Vec<Vec3>,
@@ -59,7 +59,7 @@ pub fn proj_has_overlap_extra(
     Some((min_overlap, penetration))
 }
 
-pub fn get_min_max_vert(normal: Vec3, verts: &Vec<Vec3>) -> (f32, f32) {
+fn get_min_max_vert(normal: Vec3, verts: &Vec<Vec3>) -> (f32, f32) {
     let mut proj_min = f32::MAX;
     let mut proj_max = f32::MIN;
     for vert in verts {
@@ -76,7 +76,6 @@ pub fn get_min_max_vert(normal: Vec3, verts: &Vec<Vec3>) -> (f32, f32) {
 }
 
 /// returns (1,0,0) (0,1,0) (0,0,1) with rotation aka positive normals
-#[must_use]
 pub fn get_axis(t: &Transform, c: &BoxColider) -> (Vec3, Vec3, Vec3) {
     let rotation = t.rotation * c.local_rotation;
     (

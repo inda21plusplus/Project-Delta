@@ -40,17 +40,8 @@ mod macros {
         };
     }
 
-    #[must_use]
-    macro_rules! squared {
-        ($x:expr) => {{
-            let x = $x;
-            x * x
-        }};
-    }
-
     pub(crate) use debug_assert_finite;
     pub(crate) use debug_assert_normalized;
-    pub(crate) use squared;
 }
 
 #[derive(Debug, PartialEq, Clone, Copy)]
@@ -72,7 +63,7 @@ impl Collider {
 pub struct RayCastHit {
     pub distance: f32,
     /// normalized
-    pub normal: Vec3, 
+    pub normal: Vec3,
 }
 
 impl RayCastHit {
@@ -86,27 +77,18 @@ static BODY_ID: AtomicUsize = AtomicUsize::new(0);
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub struct RidgidBody {
     pub id: usize,
-    pub last_frame_location: Vec3,       // used for lerp location
-    pub last_frame_rotation: Quaternion, // used for lerp location
-
-    //pub velocity: Vec3,
     pub acceleration: Vec3, // can be used for gravity
 
     pub angular_momentum: Vec3,
     pub linear_momentum: Vec3,
 
-    //pub angular_velocity: Vec3, // Spin angular velocity in rad per seconds around that axis (Quaternion::rotate_3d)
-    //pub torque: Vec3,           // torque to angular_velocity is what acceleration is to velocity
-    //pub center_of_mass_offset: Vec3, // not used atm
-    pub is_active_time: f32,
+    //pub center_of_mass_offset: Vec3,
     pub mass: f32,
-    pub is_using_global_gravity: bool,
-    //is_trigger : bool,
+
     pub is_static: bool,
-    //pub is_active: bool, // TODO after object is not moving then it becomes disabled to oprimize
-    pub is_colliding: bool,
+
+    pub is_colliding: bool, // not used atm
     pub is_colliding_this_frame: bool,
-    pub drag: f32,
 }
 
 impl Default for RidgidBody {
@@ -124,14 +106,9 @@ impl RidgidBody {
             mass,
             angular_momentum: Vec3::zero(),
             linear_momentum: Vec3::zero(),
-            last_frame_rotation: Quaternion::identity(),
-            is_using_global_gravity: false,
-            is_active_time: 0.0f32,
             is_static: false,
-            last_frame_location: Vec3::zero(),
             is_colliding: false,
             is_colliding_this_frame: false,
-            drag: 0.5, // TODO make public
         }
     }
 
@@ -145,7 +122,6 @@ impl RidgidBody {
 }
 
 #[inline]
-#[must_use]
 fn proj(on: Vec3, vec: Vec3) -> Vec3 {
     vec.dot(on) * on / on.magnitude_squared()
 }
@@ -167,8 +143,8 @@ impl PhysicsObject {
 
 /// returns the overlap between [a_min,a_max] and [b_min,b_max], will return a negative value if range is inverted, overlap(a,b) = -overlap(b,a)
 fn overlap(a_min: f32, a_max: f32, b_min: f32, b_max: f32) -> f32 {
-    debug_assert!(a_min <= a_max, "a min < max");
-    debug_assert!(b_min <= b_max, "b min < max");
+    debug_assert!(a_min <= a_max, "a min <= max");
+    debug_assert!(b_min <= b_max, "b min <= max");
 
     if a_min < b_min {
         if a_max < b_min {
@@ -184,7 +160,6 @@ fn overlap(a_min: f32, a_max: f32, b_min: f32, b_max: f32) -> f32 {
 }
 
 /// clamps a vector between 2 others vectors
-#[must_use]
 fn clamp(v: Vec3, min: Vec3, max: Vec3) -> Vec3 {
     debug_assert_finite!(min);
     debug_assert_finite!(max);
