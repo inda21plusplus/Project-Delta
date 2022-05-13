@@ -20,9 +20,9 @@ jobs:
           toolchain: stable
           override: true
 
-      - name: Check IDE
-        working-directory: ./ide
-        run: cargo check --verbose
+      # - name: Check IDE
+      #   working-directory: ./ide
+      #   run: cargo check --verbose
 
       - name: Check Engine
         working-directory: ./game-engine
@@ -46,9 +46,9 @@ jobs:
           toolchain: stable
           override: true
 
-      - name: Build IDE
-        working-directory: ./ide
-        run: cargo build --verbose
+      # - name: Build IDE
+      #   working-directory: ./ide
+      #   run: cargo build --verbose
 
       - name: Build Engine
         working-directory: ./game-engine
@@ -72,9 +72,9 @@ jobs:
           toolchain: stable
           override: true
 
-      - name: Test IDE
-        working-directory: ./ide
-        run: cargo test --verbose
+      # - name: Test IDE
+      #   working-directory: ./ide
+      #   run: cargo test --verbose
 
       - name: Test Engine
         working-directory: ./game-engine
@@ -99,9 +99,9 @@ jobs:
           override: true
           components: clippy
 
-      - name: Clippy IDE
-        working-directory: ./ide
-        run: cargo clippy # -- -D warnings
+      # - name: Clippy IDE
+      #   working-directory: ./ide
+      #   run: cargo clippy # -- -D warnings
 
       - name: Clippy Engine
         working-directory: ./game-engine
@@ -126,9 +126,9 @@ jobs:
           override: true
           components: rustfmt
 
-      - name: Check IDE formatting
-        working-directory: ./ide
-        run: cargo fmt --check
+      # - name: Check IDE formatting
+      #   working-directory: ./ide
+      #   run: cargo fmt --check
 
       - name: Check Engine formatting
         working-directory: ./game-engine
