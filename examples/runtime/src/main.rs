@@ -6,10 +6,10 @@ mod camera_controller;
 mod editor;
 mod window;
 
-fn main() {
+fn main() -> anyhow::Result<()> {
     env_logger::init();
 
-    let (event_loop, mut editor) = Editor::new().unwrap();
+    let (event_loop, mut editor) = Editor::new()?;
     event_loop.run(
         move |event, _, control_flow| match editor.handle_event(event) {
             ControlFlow::Continue(_) => {}

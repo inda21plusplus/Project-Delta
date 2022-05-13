@@ -1,20 +1,24 @@
 use std::iter;
 use std::mem;
 
+use egui;
 use pollster::FutureExt;
 use raw_window_handle::HasRawWindowHandle;
-use wgpu::util::DeviceExt;
 
 use crate::model::ModelIndex;
 use crate::model::ModelManager;
-use crate::model::{self, DrawModel, Vertex};
-use crate::{camera, texture, Camera, RenderingError};
-use common::{Mat4, Transform, Vec3, Vec4};
+use crate::{texture, Camera, RenderingError};
+use common::{Mat3, Mat4, Transform, Vec3, Vec4};
+
+pub mod gbuffer;
+pub mod world;
+use world::World;
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct RawTranslationMatrix {
     model: [[f32; 4]; 4],
+    rotation: [[f32; 3]; 3],
 }
 
 impl RawTranslationMatrix {
@@ -29,6 +33,7 @@ impl RawTranslationMatrix {
                         * Mat4::with_diagonal(Vec4::new(x, y, z, 1.0)),
                 )
             },
+            rotation: unsafe { mem::transmute::<Mat3, _>(Mat3::from(transform.rotation)) },
         }
     }
 }
@@ -59,6 +64,21 @@ impl RawTranslationMatrix {
                     shader_location: 8,
                     format: wgpu::VertexFormat::Float32x4,
                 },
+                wgpu::VertexAttribute {
+                    offset: mem::size_of::<[f32; 16]>() as wgpu::BufferAddress,
+                    shader_location: 9,
+                    format: wgpu::VertexFormat::Float32x3,
+                },
+                wgpu::VertexAttribute {
+                    offset: mem::size_of::<[f32; 19]>() as wgpu::BufferAddress,
+                    shader_location: 10,
+                    format: wgpu::VertexFormat::Float32x3,
+                },
+                wgpu::VertexAttribute {
+                    offset: mem::size_of::<[f32; 22]>() as wgpu::BufferAddress,
+                    shader_location: 11,
+                    format: wgpu::VertexFormat::Float32x3,
+                },
             ],
         }
     }
@@ -66,22 +86,20 @@ impl RawTranslationMatrix {
 
 pub struct Renderer {
     pub camera: Camera,
-
+    painter: crate::ui::Painter,
     surface: wgpu::Surface,
     device: wgpu::Device,
     queue: wgpu::Queue,
     config: wgpu::SurfaceConfiguration,
     size: (u32, u32),
-    line_render_pipeline: wgpu::RenderPipeline,
-    line_vertex_buffer: wgpu::Buffer,
-    n_lines: u32,
-    render_pipeline: wgpu::RenderPipeline,
-    model_manager: ModelManager,
-    texture_bind_group_layout: wgpu::BindGroupLayout,
-    camera_uniform: camera::CameraUniform,
-    camera_buffer: wgpu::Buffer,
-    camera_bind_group: wgpu::BindGroup,
+    line_render_pipeline_layout: wgpu::PipelineLayout,
+    line_shader: wgpu::ShaderModule,
+    shader: wgpu::ShaderModule,
+    render_pipeline_layout: wgpu::PipelineLayout,
+    camera_bind_group_layout: wgpu::BindGroupLayout,
+    light_bind_group_layout: wgpu::BindGroupLayout,
     depth_texture: texture::Texture,
+    worlds: Vec<World>,
     clear_color: [f64; 3],
 }
 
@@ -217,8 +235,24 @@ impl Renderer {
                         ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
                         count: None,
                     },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 2,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Texture {
+                            multisampled: false,
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                        },
+                        count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 3,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                        count: None,
+                    },
                 ],
-                label: Some("texture_bind_group_layout"),
+                label: Some("texture bind group layout"),
             });
 
         let camera = Camera {
@@ -228,22 +262,14 @@ impl Renderer {
             aspect: config.width as f32 / config.height as f32,
             fovy: 45f32.to_radians(),
             znear: 0.1,
-            zfar: 100.0,
+            zfar: 2000.0,
         };
-
-        let camera_uniform = camera::CameraUniform::new(&camera);
-
-        let camera_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Camera Buffer"),
-            contents: bytemuck::cast_slice(&[camera_uniform]),
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-        });
 
         let camera_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                 entries: &[wgpu::BindGroupLayoutEntry {
                     binding: 0,
-                    visibility: wgpu::ShaderStages::VERTEX,
+                    visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
                     ty: wgpu::BindingType::Buffer {
                         ty: wgpu::BufferBindingType::Uniform,
                         has_dynamic_offset: false,
@@ -254,159 +280,74 @@ impl Renderer {
                 label: Some("camera_bind_group_layout"),
             });
 
-        let camera_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            layout: &camera_bind_group_layout,
-            entries: &[wgpu::BindGroupEntry {
-                binding: 0,
-                resource: camera_buffer.as_entire_binding(),
-            }],
-            label: Some("camera_bind_group"),
-        });
+        let light_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                entries: &[wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                }],
+                label: Some("light_bind_group_layout"),
+            });
 
         let shader = device.create_shader_module(&wgpu::ShaderModuleDescriptor {
             label: Some("shader.wgsl"),
             source: wgpu::ShaderSource::Wgsl(include_str!("../shader.wgsl").into()),
         });
-
         let line_shader = device.create_shader_module(&wgpu::ShaderModuleDescriptor {
             label: Some("line_shader.wgsl"),
             source: wgpu::ShaderSource::Wgsl(include_str!("../line_shader.wgsl").into()),
         });
 
-        let depth_texture = texture::Texture::new_depth_texture(&device, &config);
+        let depth_texture = texture::Texture::new_depth_texture(&device, &config, true);
 
         let render_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Render Pipeline Layout"),
-                bind_group_layouts: &[&texture_bind_group_layout, &camera_bind_group_layout],
+                bind_group_layouts: &[
+                    &texture_bind_group_layout,
+                    &camera_bind_group_layout,
+                    &light_bind_group_layout,
+                ],
                 push_constant_ranges: &[],
             });
 
-        let n_lines = 16;
-        let line_vertex_buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("Line Buffer"),
-            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-            size: n_lines as wgpu::BufferAddress * mem::size_of::<RawLine>() as wgpu::BufferAddress,
-        });
         let line_render_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Line Render Pipeline Layout"),
                 bind_group_layouts: &[&camera_bind_group_layout],
                 push_constant_ranges: &[],
             });
-        let line_render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("Line Render Pipeline"),
-            layout: Some(&line_render_pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &line_shader,
-                entry_point: "vs_main",
-                buffers: &[RawLineVertex::desc()],
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &line_shader,
-                entry_point: "fs_main",
-                targets: &[wgpu::ColorTargetState {
-                    format: config.format,
-                    blend: Some(wgpu::BlendState {
-                        color: wgpu::BlendComponent::REPLACE,
-                        alpha: wgpu::BlendComponent::OVER,
-                    }),
-                    write_mask: wgpu::ColorWrites::ALL,
-                }],
-            }),
-            primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::LineList,
-                strip_index_format: None,
-                front_face: wgpu::FrontFace::Ccw,
-                cull_mode: Some(wgpu::Face::Back),
-                polygon_mode: wgpu::PolygonMode::Fill,
-                unclipped_depth: false,
-                conservative: false,
-            },
-            depth_stencil: Some(wgpu::DepthStencilState {
-                format: texture::Texture::DEPTH_FORMAT,
-                depth_write_enabled: false,
-                depth_compare: wgpu::CompareFunction::Always,
-                stencil: wgpu::StencilState::default(),
-                bias: wgpu::DepthBiasState::default(),
-            }),
-            multisample: wgpu::MultisampleState {
-                count: 1,
-                mask: !0,
-                alpha_to_coverage_enabled: false,
-            },
-            multiview: None,
-        });
 
-        let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("Render Pipeline"),
-            layout: Some(&render_pipeline_layout),
-            vertex: wgpu::VertexState {
-                module: &shader,
-                entry_point: "vs_main",
-                buffers: &[model::ModelVertex::desc(), RawTranslationMatrix::desc()],
-            },
-            fragment: Some(wgpu::FragmentState {
-                module: &shader,
-                entry_point: "fs_main",
-                targets: &[wgpu::ColorTargetState {
-                    format: config.format,
-                    blend: Some(wgpu::BlendState {
-                        color: wgpu::BlendComponent::REPLACE,
-                        alpha: wgpu::BlendComponent::REPLACE,
-                    }),
-                    write_mask: wgpu::ColorWrites::ALL,
-                }],
-            }),
-            primitive: wgpu::PrimitiveState {
-                topology: wgpu::PrimitiveTopology::TriangleList,
-                strip_index_format: None,
-                front_face: wgpu::FrontFace::Ccw,
-                cull_mode: Some(wgpu::Face::Back),
-                // Setting this to anything other than Fill requires Features::NON_FILL_POLYGON_MODE
-                polygon_mode: wgpu::PolygonMode::Fill,
-                // Requires Features::DEPTH_CLIP_CONTROL
-                unclipped_depth: false,
-                // Requires Features::CONSERVATIVE_RASTERIZATION
-                conservative: false,
-            },
-            depth_stencil: Some(wgpu::DepthStencilState {
-                format: texture::Texture::DEPTH_FORMAT,
-                depth_write_enabled: true,
-                depth_compare: wgpu::CompareFunction::Less,
-                stencil: wgpu::StencilState::default(),
-                bias: wgpu::DepthBiasState::default(),
-            }),
-            multisample: wgpu::MultisampleState {
-                count: 1,
-                mask: !0,
-                alpha_to_coverage_enabled: false,
-            },
-            // If the pipeline will be used with a multiview render pass, this
-            // indicates how many array layers the attachments will have.
-            multiview: None,
-        });
+        let painter = crate::ui::Painter::new(&device, &queue, &config);
 
-        Ok(Self {
+        let mut this = Self {
             surface,
             device,
             queue,
             config,
             size,
-            render_pipeline,
-            line_render_pipeline,
-            line_vertex_buffer,
-            n_lines,
-            model_manager: ModelManager::new(),
-            texture_bind_group_layout,
+            shader,
+            render_pipeline_layout,
+            line_shader,
+            line_render_pipeline_layout,
             camera,
-            camera_buffer,
-            camera_bind_group,
-            camera_uniform,
+            camera_bind_group_layout,
+            light_bind_group_layout,
             depth_texture,
             clear_color,
-        })
+            worlds: vec![],
+            painter,
+        };
+
+        this.worlds = vec![World::new(&this, camera)];
+
+        Ok(this)
     }
 
     pub fn resize(&mut self, (width, height): (u32, u32)) {
@@ -416,43 +357,79 @@ impl Renderer {
             self.camera.aspect = width as f32 / height as f32;
             self.size = (width, height);
             self.surface.configure(&self.device, &self.config);
-            self.depth_texture = texture::Texture::new_depth_texture(&self.device, &self.config);
+            self.depth_texture =
+                texture::Texture::new_depth_texture(&self.device, &self.config, true);
+            self.painter.resize(&self.device, &self.queue, &self.config);
+
+            for world in &mut self.worlds {
+                world.resize(&self.device, &self.config);
+            }
         }
     }
 
+    /// Load an obj file and all its associate files.
     pub fn load_model<P: AsRef<std::path::Path>>(
         &mut self,
         path: P,
     ) -> Result<ModelIndex, RenderingError> {
-        let model = model::Model::load(
-            &self.device,
-            &self.queue,
-            &self.texture_bind_group_layout,
-            path,
-        )?;
+        self.worlds[0].load_model(&self.device, &self.queue, path)
+    }
 
-        let idx = self.model_manager.add_model(&self.device, model, 16);
-
-        Ok(idx)
+    pub fn get_models_mut(&mut self) -> ModelManager {
+        self.worlds[0].get_models_mut(&self.device, &self.queue)
     }
 
     pub fn update_camera(&mut self) {
-        self.camera_uniform.update_view_proj(&self.camera);
-        self.queue.write_buffer(
-            &self.camera_buffer,
-            0,
-            bytemuck::cast_slice(&[self.camera_uniform]),
-        );
+        self.worlds[0].camera = self.camera.clone();
+        self.worlds[0].update_camera(&self.queue, self.painter.last_aspect);
     }
 
+    #[deprecated = "use the model manager for this functionality instead"]
     pub fn update_instances(&mut self, instances: &[(ModelIndex, &[Transform])]) {
-        for (idx, data) in instances {
-            self.model_manager
-                .set_transforms(&self.device, &self.queue, *idx, data.to_vec());
-        }
+        self.worlds[0].update_instances(&self.device, &self.queue, instances)
     }
 
-    pub fn render(&mut self, lines: &[Line]) -> Result<(), RenderingError> {
+    pub fn make_egui_render_target(&mut self, ctx: &egui::Context) -> egui::TextureHandle {
+        let tex_mgr = ctx.tex_manager();
+        let id = {
+            let mut lock = tex_mgr.write();
+            lock.alloc(
+                "scene render texture".to_string(),
+                egui::ImageData::Color(egui::ColorImage::new(
+                    [self.config.width as usize, self.config.height as usize],
+                    egui::Color32::BLACK,
+                )),
+            )
+        };
+        let handle = egui::TextureHandle::new(tex_mgr, id);
+
+        let render_texture = texture::Texture::new_render_target(
+            "egui ui texture",
+            &self.device,
+            (self.config.width, self.config.height),
+            self.config.format,
+        );
+
+        let ui_tex = self.painter.make_ui_texture(&self.device, render_texture);
+        self.painter.set_render_texture(id, ui_tex);
+
+        handle
+    }
+
+    // TODO: pass some kind of Scene object to renderer instead, or make it a part of renderer
+    // this would help in allowing the renderer to be more configurable, and would alleviate
+    // some of the potential creep in just getting more and more arguments.
+    // This also conflicts design-wise with the existing model manager, as we now have two
+    // entirely distinct ways to interact with what is being rendered.
+    pub fn render(
+        &mut self,
+        lines: &[Line],
+        lights: &[world::Light],
+        ui: &egui::Context,
+        egui_output: egui::FullOutput,
+        pixels_per_point: f32,
+        deferred: bool,
+    ) -> Result<(), RenderingError> {
         let output = self.surface.get_current_texture()?;
         let view = output
             .texture
@@ -464,67 +441,53 @@ impl Renderer {
                 label: Some("Render Encoder"),
             });
 
-        if lines.len() > self.n_lines as usize {
-            self.n_lines = lines.len() as u32;
-            self.line_vertex_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
-                label: Some("Line Buffer"),
-                usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-                mapped_at_creation: false,
-                size: self.n_lines as wgpu::BufferAddress
-                    * mem::size_of::<RawLine>() as wgpu::BufferAddress,
-            });
+        let render_tex = if let Some((_, render_tex)) = self.painter.get_render_texture() {
+            &render_tex.tex.view
+        } else {
+            &view
+        };
+        if deferred {
+            self.worlds[0].render_deferred(&self.device, lines, lights, render_tex, &self.queue)?;
+        } else {
+            self.worlds[0].render(&self.device, lines, render_tex, None, &self.queue)?;
         }
 
-        self.queue.write_buffer(
-            &self.line_vertex_buffer,
-            0,
-            bytemuck::cast_slice(
-                &lines
-                    .iter()
-                    .cloned()
-                    .map(Line::into_raw)
-                    .collect::<Vec<_>>(),
-            ),
-        );
-
         {
-            let [r, g, b] = self.clear_color;
-            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("Render Pass"),
+            let mut ui_render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("UI render pass"),
                 color_attachments: &[wgpu::RenderPassColorAttachment {
                     view: &view,
                     resolve_target: None,
                     ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(wgpu::Color { r, g, b, a: 1.0 }),
+                        load: wgpu::LoadOp::Load,
                         store: true,
                     },
                 }],
                 depth_stencil_attachment: Some(wgpu::RenderPassDepthStencilAttachment {
                     view: &self.depth_texture.view,
                     depth_ops: Some(wgpu::Operations {
-                        load: wgpu::LoadOp::Clear(1.0),
+                        load: wgpu::LoadOp::Load, // ::Clear(1.0),
                         store: true,
                     }),
                     stencil_ops: None,
                 }),
             });
+            self.painter
+                .update_textures(&self.device, &self.queue, egui_output.textures_delta.set);
+            let meshes = ui.tessellate(egui_output.shapes);
 
-            for (c, obj_model) in self.model_manager.models().iter().enumerate() {
-                render_pass
-                    .set_vertex_buffer(1, self.model_manager.instance_buffers()[c].slice(..));
-                render_pass.set_pipeline(&self.render_pipeline);
-                render_pass.draw_model_instanced(
-                    obj_model,
-                    0..self.model_manager.instances()[c].len() as u32,
-                    &self.camera_bind_group,
-                );
-            }
-
-            render_pass.set_pipeline(&self.line_render_pipeline);
-            render_pass.set_vertex_buffer(0, self.line_vertex_buffer.slice(..));
-            render_pass.set_bind_group(0, &self.camera_bind_group, &[]);
-            render_pass.draw(0..lines.len() as u32, 0..1);
+            self.painter.paint(
+                &self.device,
+                &self.queue,
+                &mut ui_render_pass,
+                meshes,
+                pixels_per_point,
+                self.config.height,
+                self.config.width,
+            );
         }
+
+        self.painter.free_textures(egui_output.textures_delta.free);
 
         self.queue.submit(iter::once(encoder.finish()));
         output.present();

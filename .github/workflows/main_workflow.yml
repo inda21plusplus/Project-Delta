@@ -46,9 +46,11 @@ jobs:
           toolchain: stable
           override: true
 
-      # - name: Build IDE
-      #   working-directory: ./ide
-      #   run: cargo build --verbose
+      - name: Build IDE
+        working-directory: ./examples/runtime
+        run: |
+          sudo apt install -y libxcb-shape0-dev libxcb-xfixes0-dev
+          cargo build --verbose
 
       - name: Build Engine
         working-directory: ./game-engine
@@ -72,9 +74,11 @@ jobs:
           toolchain: stable
           override: true
 
-      # - name: Test IDE
-      #   working-directory: ./ide
-      #   run: cargo test --verbose
+      - name: Test IDE
+        working-directory: ./examples/runtime
+        run: |
+          sudo apt install -y libxcb-shape0-dev libxcb-xfixes0-dev
+          cargo test --verbose
 
       - name: Test Engine
         working-directory: ./game-engine

@@ -2,22 +2,11 @@
 
 struct Camera {
     view_proj: mat4x4<f32>;
-    pos: vec3<f32>;
 };
-
-struct Light {
-    world_pos: vec3<f32>;
-    radius: f32;
-    color: vec3<f32>;
-    k_c: f32;
-    k_l: f32;
-    k_q: f32;
-};
-
 [[group(1), binding(0)]]
 var<uniform> camera: Camera;
-[[group(2), binding(0)]]
-var<uniform> light_buf: Light;
+
+var<private> light_pos: vec3<f32> = vec3<f32>(0.0, 0.0, 0.0);
 
 struct VertexInput {
     [[location(0)]] position: vec3<f32>;
@@ -32,13 +21,15 @@ struct InstanceInput {
     [[location(9)]] normal_matrix_0: vec3<f32>;
     [[location(10)]] normal_matrix_1: vec3<f32>;
     [[location(11)]] normal_matrix_2: vec3<f32>;
+    [[location(12)]] tex_id: u32;
 };
 
 struct VertexOutput {
     [[builtin(position)]] clip_position: vec4<f32>;
     [[location(0)]] tex_coords: vec2<f32>;
     [[location(1), interpolate(linear)]] world_normal: vec3<f32>;
-    [[location(2), interpolate(linear)]] world_position: vec3<f32>;
+    [[location(2)]] world_position: vec3<f32>;
+    [[location(3)]] tex_id: u32;
 };
 
 fn shade_sample(
@@ -53,20 +44,15 @@ fn shade_sample(
     k_s: f32,
     shininess: f32,
 ) -> vec3<f32> {
-    let light_ray = light_pos - world_pos;
-    let dist = length(light_ray);
-    let attenuation = 1.0 / (light_buf.k_c + light_buf.k_l * dist + light_buf.k_q * dist * dist);
-
-    let light_dir = normalize(light_ray);
+    let light_dir = normalize(light_pos - world_pos);
     let lambertian = max(dot(normal, light_dir), 0.0);
     let reflect_dir = reflect(-light_dir, normal);
-    let viewer_dir = normalize(world_pos - camera.pos);
+    let viewer_dir = normalize(-world_pos);
     let spec_angle = max(dot(reflect_dir, viewer_dir), 0.0);
     let specular = pow(spec_angle, shininess);
-    let color =
-        vec3<f32>(k_a * amb_col +
-                  k_d * lambertian * diff_col +
-                  k_s * specular * spec_col);
+    let color = vec3<f32>(k_a * amb_col +
+                          k_d * lambertian * diff_col +
+                          k_s * specular * spec_col);
     return color;
 }
 
@@ -92,20 +78,20 @@ fn vs_main(
     out.world_normal = (model_matrix * vec4<f32>(model.normal, 0.0)).xyz;
     out.clip_position = camera.view_proj * world_position;
     out.world_position = world_position.xyz;
-    //out.normal = (camera.view_proj * model_matrix * vec4<f32>(model.normal, 0.0)).xyz;
+    out.tex_id = instance.tex_id;
     return out;
 }
 
 // Fragment shader
 
 [[group(0), binding(0)]]
-var t_diffuse: texture_2d<f32>;
+var t_diffuse: binding_array<texture_2d<f32>>;
 [[group(0), binding(1)]]
-var s_diffuse: sampler;
+var s_diffuse: binding_array<sampler>;
 [[group(0), binding(2)]]
-var t_normal: texture_2d<f32>;
+var t_normal: binding_array<texture_2d<f32>>;
 [[group(0), binding(3)]]
-var s_normal: sampler;
+var s_normal: binding_array<sampler>;
 
 [[stage(fragment)]]
 fn fs_main(in: VertexOutput) -> [[location(0)]] vec4<f32> {
@@ -115,10 +101,10 @@ fn fs_main(in: VertexOutput) -> [[location(0)]] vec4<f32> {
 
     let normal = normalize(in.world_normal);
     let world_pos = in.world_position;
-    let light_pos = light_buf.world_pos;
+    let light_pos = vec3<f32>(1.0, 1.0, 1.0);
     
-    let diff_col = textureSample(t_diffuse, s_diffuse, in.tex_coords);
-    let white = vec3<f32>(1.0);
+    let diff_col = textureSample(t_diffuse[in.tex_id], s_diffuse[in.tex_id], in.tex_coords);
+    let white = vec3<f32>(1.0, 1.0, 1.0);
 
     let shininess = 80.0;
 
