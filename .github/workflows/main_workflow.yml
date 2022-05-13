@@ -20,12 +20,16 @@ jobs:
           toolchain: stable
           override: true
 
-      - name: Check IDE
-        working-directory: ./ide
-        run: cargo check --verbose
+      # - name: Check IDE
+      #   working-directory: ./ide
+      #   run: cargo check --verbose
 
       - name: Check Engine
         working-directory: ./game-engine
+        run: cargo check --verbose
+
+      - name: Check ECS
+        working-directory: ./ecs
         run: cargo check --verbose
 
   build:
@@ -43,11 +47,17 @@ jobs:
           override: true
 
       - name: Build IDE
-        working-directory: ./ide
-        run: cargo build --verbose
+        working-directory: ./examples/runtime
+        run: |
+          sudo apt install -y libxcb-shape0-dev libxcb-xfixes0-dev
+          cargo build --verbose
 
       - name: Build Engine
         working-directory: ./game-engine
+        run: cargo build --verbose
+
+      - name: Build ECS
+        working-directory: ./ecs
         run: cargo build --verbose
 
   test:
@@ -65,11 +75,17 @@ jobs:
           override: true
 
       - name: Test IDE
-        working-directory: ./ide
-        run: cargo test --verbose
+        working-directory: ./examples/runtime
+        run: |
+          sudo apt install -y libxcb-shape0-dev libxcb-xfixes0-dev
+          cargo test --verbose
 
       - name: Test Engine
         working-directory: ./game-engine
+        run: cargo test --verbose
+
+      - name: Test ECS
+        working-directory: ./ecs
         run: cargo test --verbose
 
   clippy:
@@ -85,19 +101,43 @@ jobs:
           profile: minimal
           toolchain: stable
           override: true
+          components: clippy
 
-      - name: Clippy IDE
-        working-directory: ./ide
-        run: |
-          rustup component add clippy
-          cargo clippy
-        # cargo clippy -- -D warnings # This line will interpet Warnings as errors
+      # - name: Clippy IDE
+      #   working-directory: ./ide
+      #   run: cargo clippy # -- -D warnings
 
       - name: Clippy Engine
         working-directory: ./game-engine
-        run: |
-          rustup component add clippy
-          cargo clippy
-        # cargo clippy -- -D warnings # This line will interpet Warnings as errors
+        run: cargo clippy # -- -D warnings
 
+      - name: Clippy ECS
+        working-directory: ./ecs
+        run: cargo clippy # -- -D warnings
 
+  format:
+    name: Check code formatting
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v2
+
+      - name: Install Stable Toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: stable
+          override: true
+          components: rustfmt
+
+      # - name: Check IDE formatting
+      #   working-directory: ./ide
+      #   run: cargo fmt --check
+
+      - name: Check Engine formatting
+        working-directory: ./game-engine
+        run: cargo fmt --check
+
+      - name: Check ECS formatting
+        working-directory: ./ecs
+        run: cargo fmt --check
