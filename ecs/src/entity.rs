@@ -48,12 +48,12 @@ impl Entities {
         }
     }
 
-    // NOTE: this should not be called directly, since it does not remove the entities components
     /// Returns `true` if the `entity` was despawned and `false` if `entity` had been despawned
     /// previously.
     /// # Time complexity
     /// *O*(1) (ammortized).
     /// The current implementation keeps a `Vec` of currently unused id's which might have to grow.
+    // NOTE: this should not be called directly, since it does not remove the entities components
     // NOTE: this is used in a test
     #[allow(dead_code)]
     pub(crate) fn despawn(&mut self, entity: Entity) -> bool {
@@ -99,6 +99,16 @@ impl Entities {
         Iter::new(self)
     }
 
+    /// Creates an iterator over all currently alive entities, yielding all possible pairs of
+    /// entities. If `(A, B)` is yielded, then `(B, A)` is not.
+    ///
+    /// # Time complexity
+    /// Creation: *O*(*u*) where *u* is the amount of currently unused entity ID's.
+    /// Iteration: *O*(1) for every call to next.
+    pub fn iter_combinations(&self) -> IterCombinations {
+        IterCombinations::new(self)
+    }
+
     fn create_new_id(&self) -> EntityId {
         let mut g = self.generations.borrow_mut();
         let id = g
@@ -121,7 +131,7 @@ pub struct Iter<'e> {
 impl<'e> Iter<'e> {
     fn new(entities: &'e Entities) -> Self {
         Self {
-            curr: 0,
+            curr: 1, // skip the resource holder
             entities,
             unused_ids: entities.unused_ids.borrow().iter().copied().collect(),
         }
@@ -146,6 +156,65 @@ impl<'e> Iterator for Iter<'e> {
                 let gen = self.entities.generations.borrow()[curr as usize].get();
                 return Some(Entity { id: curr, gen });
             }
+        }
+        None
+    }
+}
+
+pub struct IterCombinations<'e> {
+    curr_a: EntityId,
+    curr_b: EntityId,
+    entities: &'e Entities,
+    unused_ids: HashSet<EntityId>,
+}
+
+impl<'e> IterCombinations<'e> {
+    fn new(entities: &'e Entities) -> Self {
+        Self {
+            curr_a: 1, // skip the resource holder
+            curr_b: 2,
+            entities,
+            unused_ids: entities.unused_ids.borrow().iter().copied().collect(),
+        }
+    }
+
+    /// Get the iter's entities.
+    pub fn entities(&self) -> &Entities {
+        self.entities
+    }
+}
+
+impl<'e> Iterator for IterCombinations<'e> {
+    type Item = (Entity, Entity);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let gen = self.entities.generations.borrow();
+        while (self.curr_a as usize) < gen.len() {
+            let id_a = self.curr_a;
+            if self.unused_ids.contains(&id_a) {
+                continue;
+            }
+            while (self.curr_b as usize) < gen.len() {
+                let id_b = self.curr_b;
+                self.curr_b += 1;
+                if self.unused_ids.contains(&id_b) {
+                    continue;
+                }
+                let gen_a = gen[id_a as usize].get();
+                let gen_b = gen[id_b as usize].get();
+                return Some((
+                    Entity {
+                        id: id_a,
+                        gen: gen_a,
+                    },
+                    Entity {
+                        id: id_b,
+                        gen: gen_b,
+                    },
+                ));
+            }
+            self.curr_a += 1;
+            self.curr_b = self.curr_a + 1;
         }
         None
     }

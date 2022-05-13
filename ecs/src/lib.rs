@@ -11,7 +11,7 @@ mod world;
 pub use commands::{CommandBuffer, Commands};
 pub use entity::{Entities, Entity};
 pub use error::BorrowMutError;
-pub use query::{as_mut_lt, as_ref_lt, ComponentQuery, Query};
+pub use query::{ComponentQuery, Query, _as_mut_lt, _as_ref_lt};
 pub use world::World;
 
 #[cfg(test)]
@@ -20,7 +20,7 @@ mod tests {
         alloc::Layout,
         any,
         cell::Cell,
-        collections::HashSet,
+        collections::{HashMap, HashSet},
         mem, ptr,
         rc::Rc,
         time::{Duration, Instant},
@@ -55,6 +55,9 @@ mod tests {
     #[test]
     fn entities() {
         let mut entities = Entities::default();
+        let _resource_holder = entities.spawn(); // NOTE: the first entity is always the resource
+                                                 // holder in a `World` and `Entities::iter*` takes
+                                                 // this into account.
         let a = entities.spawn();
         assert!(entities.exists(a));
         assert!(entities.despawn(a));
@@ -750,6 +753,98 @@ mod tests {
         query_iter!(world, (c: Counter) => {
             assert_eq!(c.1, "b");
         });
+    }
+
+    #[test]
+    fn entity_iter_combinations() {
+        let mut world = World::default();
+        const N: usize = 10;
+        for _ in 0..N {
+            world.spawn();
+        }
+
+        let mut counter = 0;
+        let mut counters = HashMap::new();
+        for (a, b) in world.entities().iter_combinations() {
+            *counters.entry(a).or_insert(0) += 1;
+            *counters.entry(b).or_insert(0) += 1;
+            counter += 1;
+        }
+        assert_eq!(counter, N * (N - 1) / 2);
+        assert_eq!(counters.into_values().collect::<Vec<_>>(), vec![N - 1; N]);
+
+        let mut counter = 0;
+        let mut counters = HashMap::new();
+        query_iter_combs!(world, ((a, b): Entity) => {
+            *counters.entry(a).or_insert(0) += 1;
+            *counters.entry(b).or_insert(0) += 1;
+            counter += 1;
+        });
+        assert_eq!(counter, N * (N - 1) / 2);
+        assert_eq!(counters.into_values().collect::<Vec<_>>(), vec![N - 1; N]);
+    }
+
+    #[test]
+    fn query_combinations() {
+        #[derive(Debug, PartialEq, Eq)]
+        struct Pos(i32, i32);
+        struct Vel(i32, i32);
+
+        let mut world = World::default();
+
+        let e1 = world.spawn();
+        let e2 = world.spawn();
+        let e3 = world.spawn();
+        let e4 = world.spawn();
+
+        world.add(e1, Pos(5, 0));
+        world.add(e2, Pos(0, 5));
+        world.add(e3, Pos(-5, 0));
+        world.add(e4, Pos(0, -5));
+
+        world.add(e1, Vel(0, 0));
+        world.add(e2, Vel(0, 0));
+        world.add(e3, Vel(0, 0));
+        world.add(e4, Vel(0, 0));
+
+        query_iter_combs!(world, ((p1, p2): Pos, (v1, v2): mut Vel) => {
+            let dx = (p2.0 - p1.0).signum();
+            let dy = (p2.1 - p1.1).signum();
+            v1.0 += dx;
+            v1.1 += dy;
+            v2.0 -= dx;
+            v2.1 -= dy;
+        });
+
+        query_iter!(world, (p: mut Pos, v: Vel) => {
+            p.0 += v.0;
+            p.1 += v.1;
+        });
+
+        assert_eq!(world.get::<Pos>(e1), Some(&Pos(2, 0)));
+        assert_eq!(world.get::<Pos>(e2), Some(&Pos(0, 2)));
+        assert_eq!(world.get::<Pos>(e3), Some(&Pos(-2, 0)));
+        assert_eq!(world.get::<Pos>(e4), Some(&Pos(0, -2)));
+    }
+
+    #[test]
+    fn commands_iter_macro() {
+        let mut world = World::default();
+        struct Parent(Entity);
+        struct Child;
+        let c = world.spawn();
+        world.add(c, Child);
+
+        query_iter!(world, commands: Commands, (entity: Entity, child: Child) => {
+            let p = commands.spawn();
+            commands.add(entity, Parent(p));
+        });
+
+        let mut count = 0;
+        query_iter!(world, (entity: Entity) => {
+            count += 1;
+        });
+        assert_eq!(count, 2);
     }
 
     #[test]
