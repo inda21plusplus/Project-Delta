@@ -1,0 +1,53 @@
+.Main {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  flex-grow: 1;
+  gap: 10px;
+
+  & > div {
+    display: flex;
+    flex-direction: row;
+    flex-grow: 1;
+    gap: 10px;
+
+    aside {
+      width: 25%;
+    }
+
+    main {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      width: 75%;
+      padding: 10px;
+    }
+  }
+
+  footer {
+    height: 25%;
+    overflow-x: hidden;
+    overflow-y: scroll;
+    ul {
+
+    }
+  }
+}
+
+.Game {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: start;
+  gap: 10px;
+  width: 100%;
+
+  canvas {
+    background-color: lightslategray;
+    aspect-ratio: 16/9;
+    width: 100%;
+    border-radius: 5px;
+  }
+}
