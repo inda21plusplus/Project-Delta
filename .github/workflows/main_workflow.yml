@@ -47,7 +47,7 @@ jobs:
           override: true
 
       - name: Build IDE
-        working-directory: ./ide
+        working-directory: ./examples/runtime
         run: |
           sudo apt install -y libxcb-shape0-dev libxcb-xfixes0-dev
           cargo build --verbose
@@ -75,7 +75,7 @@ jobs:
           override: true
 
       - name: Test IDE
-        working-directory: ./ide
+        working-directory: ./examples/runtime
         run: |
           sudo apt install -y libxcb-shape0-dev libxcb-xfixes0-dev
           cargo test --verbose
