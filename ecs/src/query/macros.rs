@@ -2,6 +2,14 @@ use std::ptr::NonNull;
 
 #[macro_export]
 macro_rules! query_iter {
+    ( $world:expr, $commands:ident: Commands, ($($query:tt)*) => $body:block ) => {{
+        let mut command_buffer = $crate::CommandBuffer::new();
+        let mut $commands = $crate::Commands::new(&mut command_buffer, $world.entities());
+
+        query_iter!($world, ($($query)*) => $body);
+
+        command_buffer.apply(&mut $world);
+    }};
     ( $world:expr, ($($query:tt)*) => $body:block ) => {{
         #[allow(unused_mut)]
         let mut v = vec![];
@@ -82,11 +90,11 @@ macro_rules! _query_defvars {
         _query_defvars!($comps[..], $lt, $entity, ($($tail)*));
     };
     ( $comps:expr, $lt:expr, $entity:expr, ($name:ident: $type:ty, $($tail:tt)*) ) => {
-        let $name = unsafe { $crate::query::as_ref_lt($lt, $comps[0].cast::<$type>()) };
+        let $name = unsafe { $crate::query::_as_ref_lt($lt, $comps[0].cast::<$type>()) };
         _query_defvars!($comps[1..], $lt, $entity, ($($tail)*));
     };
     ( $comps:expr, $lt:expr, $entity:expr, ($name:ident: mut $type:ty, $($tail:tt)*) ) => {
-        let $name = unsafe { $crate::query::as_mut_lt($lt, $comps[0].cast::<$type>()) };
+        let $name = unsafe { $crate::query::_as_mut_lt($lt, $comps[0].cast::<$type>()) };
         _query_defvars!($comps[1..], $lt, $entity, ($($tail)*));
     };
 
@@ -95,10 +103,10 @@ macro_rules! _query_defvars {
         let $name = $entity;
     };
     ( $comps:expr, $lt:expr, $entity:expr, ($name:ident: $type:ty) ) => {
-        let $name = unsafe { $crate::query::as_ref_lt($lt, $comps[0].cast::<$type>()) };
+        let $name = unsafe { $crate::query::_as_ref_lt($lt, $comps[0].cast::<$type>()) };
     };
     ( $comps:expr, $lt:expr, $entity:expr, ($name:ident: mut $type:ty) ) => {
-        let $name = unsafe { $crate::query::as_mut_lt($lt, $comps[0].cast::<$type>()) };
+        let $name = unsafe { $crate::query::_as_mut_lt($lt, $comps[0].cast::<$type>()) };
     };
 }
 
@@ -110,15 +118,15 @@ macro_rules! _query_defvars_combs {
     };
     ( $comps1:expr, $comps2:expr, $lt:expr, $entity:expr, ($name:tt: $type:ty, $($tail:tt)*) ) => {
         let $name = unsafe { (
-            $crate::query::as_ref_lt($lt, $comps1[0].cast::<$type>()),
-            $crate::query::as_ref_lt($lt, $comps2[0].cast::<$type>()),
+            $crate::query::_as_ref_lt($lt, $comps1[0].cast::<$type>()),
+            $crate::query::_as_ref_lt($lt, $comps2[0].cast::<$type>()),
         ) };
         _query_defvars_combs!($comps1[1..], $comps2[1..], $lt, $entity, ($($tail)*));
     };
     ( $comps1:expr, $comps2:expr, $lt:expr, $entity:expr, ($name:tt: mut $type:ty, $($tail:tt)*) ) => {
         let $name = unsafe { (
-            $crate::query::as_mut_lt($lt, $comps1[0].cast::<$type>()),
-            $crate::query::as_mut_lt($lt, $comps2[0].cast::<$type>()),
+            $crate::query::_as_mut_lt($lt, $comps1[0].cast::<$type>()),
+            $crate::query::_as_mut_lt($lt, $comps2[0].cast::<$type>()),
         ) };
         _query_defvars_combs!($comps[1..], $lt, $entity, ($($tail)*));
     };
@@ -129,14 +137,14 @@ macro_rules! _query_defvars_combs {
     };
     ( $comps1:expr, $comps2:expr, $lt:expr, $entity:expr, ($name:tt: $type:ty) ) => {
         let $name = unsafe { (
-            $crate::query::as_ref_lt($lt, $comps1[0].cast::<$type>()),
-            $crate::query::as_ref_lt($lt, $comps2[0].cast::<$type>()),
+            $crate::query::_as_ref_lt($lt, $comps1[0].cast::<$type>()),
+            $crate::query::_as_ref_lt($lt, $comps2[0].cast::<$type>()),
         ) };
     };
     ( $comps1:expr, $comps2:expr, $lt:expr, $entity:expr, ($name:tt: mut $type:ty) ) => {
         let $name = unsafe { (
-            $crate::query::as_mut_lt($lt, $comps1[0].cast::<$type>()),
-            $crate::query::as_mut_lt($lt, $comps2[0].cast::<$type>()),
+            $crate::query::_as_mut_lt($lt, $comps1[0].cast::<$type>()),
+            $crate::query::_as_mut_lt($lt, $comps2[0].cast::<$type>()),
         ) };
     };
 }
@@ -148,7 +156,7 @@ macro_rules! _query_defvars_combs {
 /// # Note
 /// This is used in macros exported by the crate.
 #[allow(clippy::needless_lifetimes)]
-pub unsafe fn as_ref_lt<'a, T>(_lifetime: &'a (), ptr: NonNull<T>) -> &'a T {
+pub unsafe fn _as_ref_lt<'a, T>(_lifetime: &'a (), ptr: NonNull<T>) -> &'a T {
     ptr.as_ref()
 }
 
@@ -159,6 +167,6 @@ pub unsafe fn as_ref_lt<'a, T>(_lifetime: &'a (), ptr: NonNull<T>) -> &'a T {
 /// # Note
 /// This is used in macros exported by the crate.
 #[allow(clippy::mut_from_ref, clippy::needless_lifetimes)]
-pub unsafe fn as_mut_lt<'a, T>(_lifetime: &'a (), mut ptr: NonNull<T>) -> &'a mut T {
+pub unsafe fn _as_mut_lt<'a, T>(_lifetime: &'a (), mut ptr: NonNull<T>) -> &'a mut T {
     ptr.as_mut()
 }

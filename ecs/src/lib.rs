@@ -11,7 +11,7 @@ mod world;
 pub use commands::{CommandBuffer, Commands};
 pub use entity::{Entities, Entity};
 pub use error::BorrowMutError;
-pub use query::{as_mut_lt, as_ref_lt, ComponentQuery, Query};
+pub use query::{ComponentQuery, Query, _as_mut_lt, _as_ref_lt};
 pub use world::World;
 
 #[cfg(test)]
@@ -825,6 +825,26 @@ mod tests {
         assert_eq!(world.get::<Pos>(e2), Some(&Pos(0, 2)));
         assert_eq!(world.get::<Pos>(e3), Some(&Pos(-2, 0)));
         assert_eq!(world.get::<Pos>(e4), Some(&Pos(0, -2)));
+    }
+
+    #[test]
+    fn commands_iter_macro() {
+        let mut world = World::default();
+        struct Parent(Entity);
+        struct Child;
+        let c = world.spawn();
+        world.add(c, Child);
+
+        query_iter!(world, commands: Commands, (entity: Entity, child: Child) => {
+            let p = commands.spawn();
+            commands.add(entity, Parent(p));
+        });
+
+        let mut count = 0;
+        query_iter!(world, (entity: Entity) => {
+            count += 1;
+        });
+        assert_eq!(count, 2);
     }
 
     #[test]
