@@ -2,109 +2,13 @@ use std::{collections::HashSet, ptr::NonNull};
 
 use crate::{
     component::{ComponentEntryRef, ComponentId},
-    entity::Iter as EntityIter,
+    entity::{Iter as EntityIter, IterCombinations as EntityIterCombinations},
     BorrowMutError, Entity, World,
 };
 
-/// Casts `ptr` to a reference with the lifetime `'a`.
-/// # Safety
-/// It is the responsibility of the caller to ensure that the lifetime `'a` outlives
-/// the lifetime of the data pointed to by `ptr`.
-#[allow(clippy::needless_lifetimes)]
-pub unsafe fn as_ref_lt<'a, T>(_lifetime: &'a (), ptr: NonNull<T>) -> &'a T {
-    ptr.as_ref()
-}
+mod macros;
 
-/// Casts `ptr` to a mutable reference with the lifetime `'a`.
-/// # Safety
-/// It is the responsibility of the caller to ensure that the lifetime `'a` outlives
-/// the lifetime of the data pointed to by `ptr`.
-#[allow(clippy::mut_from_ref, clippy::needless_lifetimes)]
-pub unsafe fn as_mut_lt<'a, T>(_lifetime: &'a (), mut ptr: NonNull<T>) -> &'a mut T {
-    ptr.as_mut()
-}
-
-#[macro_export]
-macro_rules! _query_definition {
-    ( $world:expr, $vec:expr, ($name:ident: Entity, $($tail:tt)*) ) => {{
-        _query_definition!($world, $vec, ($($tail)*));
-    }};
-    ( $world:expr, $vec:expr, ($name:ident: $type:ty, $($tail:tt)*) ) => {{
-        $vec.push(ComponentQuery {
-            id: $world.component_id::<$type>().unwrap(),
-            mutable: false,
-        });
-        _query_definition!($world, $vec, ($($tail)*));
-    }};
-    ( $world:expr, $vec:expr, ($name:ident: mut $type:ty, $($tail:tt)*) ) => {{
-        $vec.push(ComponentQuery {
-            id: $world.component_id::<$type>().unwrap(),
-            mutable: true,
-        });
-        _query_definition!($world, $vec, ($($tail)*));
-    }};
-
-    // Last entry
-    ( $world:expr, $vec:expr, ($name:ident: Entity) ) => { };
-    ( $world:expr, $vec:expr, ($name:ident: $type:ty) ) => {{
-        $vec.push(ComponentQuery {
-            id: $world.component_id::<$type>().unwrap(),
-            mutable: false,
-        });
-    }};
-    ( $world:expr, $vec:expr, ($name:ident: mut $type:ty) ) => {{
-        $vec.push(ComponentQuery {
-            id: $world.component_id::<$type>().unwrap(),
-            mutable: true,
-        });
-    }};
-}
-
-#[macro_export]
-macro_rules! _query_defvars {
-    ( $comps:expr, $lt:expr, $entity:expr, ($name:ident: Entity, $($tail:tt)*) ) => {
-        let $name = $entity;
-        _query_defvars!($comps[..], $lt, $entity, ($($tail)*));
-    };
-    ( $comps:expr, $lt:expr, $entity:expr, ($name:ident: $type:ty, $($tail:tt)*) ) => {
-        let $name = unsafe { $crate::query::as_ref_lt($lt, $comps[0].cast::<$type>()) };
-        _query_defvars!($comps[1..], $lt, $entity, ($($tail)*));
-    };
-    ( $comps:expr, $lt:expr, $entity:expr, ($name:ident: mut $type:ty, $($tail:tt)*) ) => {
-        let $name = unsafe { $crate::query::as_mut_lt($lt, $comps[0].cast::<$type>()) };
-        _query_defvars!($comps[1..], $lt, $entity, ($($tail)*));
-    };
-
-    // Last entry
-    ( $comps:expr, $lt:expr, $entity:expr, ($name:ident: Entity) ) => {
-        let $name = $entity;
-    };
-    ( $comps:expr, $lt:expr, $entity:expr, ($name:ident: $type:ty) ) => {
-        let $name = unsafe { $crate::query::as_ref_lt($lt, $comps[0].cast::<$type>()) };
-    };
-    ( $comps:expr, $lt:expr, $entity:expr, ($name:ident: mut $type:ty) ) => {
-        let $name = unsafe { $crate::query::as_mut_lt($lt, $comps[0].cast::<$type>()) };
-    };
-}
-
-#[macro_export]
-macro_rules! query_iter {
-    ( $world:expr, ($($query:tt)*) => $body:block ) => {{
-        #[allow(unused_mut)]
-        let mut v = vec![];
-        _query_definition!($world, v, ($($query)*));
-        let q = Query::new(v).expect("Query violates rusts borrow rules");
-
-        let mut res = $world.query(&q);
-
-        #[allow(unused_variables)]
-        for (e, comps) in unsafe { res.iter() } {
-            let lt = ();
-            $crate::_query_defvars!(comps, &lt, e, ($($query)*));
-            $body
-        }
-    }};
-}
+pub use self::macros::*;
 
 /// Represents a valid query for components without multiple mutable access to the same type of
 /// component.
@@ -198,6 +102,10 @@ impl<'w, 'q> QueryResponse<'w, 'q> {
     pub unsafe fn iter<'a>(&'a mut self) -> Iter<'a, 'w, 'q> {
         Iter::new(self)
     }
+
+    pub unsafe fn iter_combinations<'a>(&'a mut self) -> IterCombinations<'a, 'w, 'q> {
+        IterCombinations::new(self)
+    }
 }
 
 pub struct Iter<'a, 'w, 'q> {
@@ -207,8 +115,7 @@ pub struct Iter<'a, 'w, 'q> {
 
 impl<'a, 'w, 'q> Iter<'a, 'w, 'q> {
     pub fn new(res: &'a mut QueryResponse<'w, 'q>) -> Self {
-        let mut entity_iter = res.world.entities().iter();
-        entity_iter.next(); // Skip the resource entity.
+        let entity_iter = res.world.entities().iter();
         Self { res, entity_iter }
     }
 }
@@ -222,6 +129,37 @@ impl<'a, 'r, 'q> Iterator for Iter<'a, 'r, 'q> {
             self.res
                 .try_get_by_index(self.entity_iter.entities().id(e).unwrap())
                 .map(|comps| (e, comps))
+        })
+    }
+}
+
+pub struct IterCombinations<'a, 'w, 'q> {
+    res: &'a mut QueryResponse<'w, 'q>,
+    entity_iter: EntityIterCombinations<'w>,
+}
+
+impl<'a, 'w, 'q> IterCombinations<'a, 'w, 'q> {
+    pub fn new(res: &'a mut QueryResponse<'w, 'q>) -> Self {
+        let entity_iter = res.world.entities().iter_combinations();
+        Self { res, entity_iter }
+    }
+}
+
+// TODO: for sparse components this could be optimized
+impl<'a, 'r, 'q> Iterator for IterCombinations<'a, 'r, 'q> {
+    type Item = ((Entity, Vec<NonNull<u8>>), (Entity, Vec<NonNull<u8>>));
+
+    fn next(&mut self) -> Option<Self::Item> {
+        // SAFETY: we know that `EntityIterCombinations` won't return the same entity in both
+        // values of the tuple, so we know that the components are safe to access.
+        self.entity_iter.next().and_then(|(e1, e2)| unsafe {
+            self.res
+                .try_get_by_index(self.entity_iter.entities().id(e1).unwrap())
+                .and_then(|comps1| {
+                    self.res
+                        .try_get_by_index(self.entity_iter.entities().id(e2).unwrap())
+                        .map(|comps2| ((e1, comps1), (e2, comps2)))
+                })
         })
     }
 }
