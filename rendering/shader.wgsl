@@ -138,5 +138,5 @@ fn fs_main(in: VertexOutput) -> [[location(0)]] vec4<f32> {
         shininess,
     );
 
-    return vec4<f32>(color, 1.0);
+    return vec4<f32>(diff_col.xyz, 1.0);
 }

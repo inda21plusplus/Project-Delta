@@ -41,10 +41,10 @@ impl CameraController {
             }
             DeviceEvent::MouseWheel {
                 delta: MouseScrollDelta::LineDelta(_, dy),
-            } => self.movement_speed *= (-dy as f32 / 1000.).exp(),
+            } => self.movement_speed *= (-dy as f32 / 100.).exp(),
             DeviceEvent::MouseWheel {
                 delta: MouseScrollDelta::PixelDelta(d),
-            } => self.movement_speed *= (-d.y as f32 / 1000.).exp(),
+            } => self.movement_speed *= (-d.y as f32 / 100.).exp(),
             _ => {}
         }
     }
@@ -125,5 +125,7 @@ impl CameraController {
 
         camera.eye = self.position;
         camera.target = self.position + forward;
+
+        //println!("{:?} {:?}", camera.eye, self.rotation);
     }
 }

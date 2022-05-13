@@ -7,6 +7,7 @@ use egui_winit::State as EguiWinitState;
 
 use common::{Quaternion, Transform, Vec2, Vec3};
 use game_engine::{
+    physics::collision,
     rendering::{model::ModelIndex, Light, Line, Renderer},
     Context,
 };
@@ -17,6 +18,7 @@ use winit::{
 
 use crate::{
     camera_controller::CameraController,
+    physics_context::PhysicsScene,
     window::{Window, WindowMode},
 };
 
@@ -28,7 +30,7 @@ pub struct Editor {
     egui_context: EguiContext,
     context: Context,
     camera_controller: CameraController,
-    scene: ExampleScene,
+    scene: PhysicsScene,
     last_frame: Instant,
     // render_texture: egui::TextureHandle,
     light: Light,
@@ -73,7 +75,7 @@ impl Editor {
         );
 
         let scene =
-            ExampleScene::new(&mut context).with_context(|| "failed to create the scene")?;
+            PhysicsScene::new(&mut context).with_context(|| "failed to create the scene")?;
         let state = EguiWinitState::new(4096, &window.winit_window());
         let egui_context = EguiContext::default();
         {
@@ -81,6 +83,8 @@ impl Editor {
             opts.debug_paint_clip_rects = false;
         }
         //let render_texture = context.renderer.make_egui_render_target(&egui_context);
+
+        let light = scene.lights[0];
 
         Ok((
             event_loop,
@@ -93,13 +97,7 @@ impl Editor {
                 scene,
                 last_frame: Instant::now(),
                 //render_texture,
-                light: Light {
-                    pos: Vec3::new(0.0, 0.0, 0.0),
-                    color: [1.0; 3],
-                    k_constant: 1.0,
-                    k_linear: 0.35,
-                    k_quadratic: 0.44,
-                },
+                light,
             },
         ))
     }
@@ -184,15 +182,16 @@ impl Editor {
             .update_camera(dt, &mut self.context.renderer.camera);
         self.context.renderer.update_camera();
 
-        let mut lines = Vec::new();
+        let mut lines = collision::LINE_ATLAS
+            .lock()
+            .unwrap()
+            .values()
+            .copied()
+            .collect::<Vec<_>>();
         let start = self.scene.transforms[0].position;
         let color = Vec3::new(1.0, 0.0, 0.0);
 
-        for &Transform { position: end, .. } in &self.scene.transforms[1..] {
-            lines.push(Line { start, end, color });
-        }
-
-        let pos_r = || -10.0..=10.0;
+        let pos_r = || -100.0..=100.0;
         let k_r = || 0.0..=1.0;
 
         let raw_input = self.state.take_egui_input(&self.window.winit_window());
@@ -220,12 +219,12 @@ impl Editor {
 
         if self.window.inner_size() != (0, 0) {
             match self.context.renderer.render(
-                &lines,
+                &lines[..],
                 &lights,
                 &self.egui_context,
                 full_output,
                 self.egui_context.pixels_per_point(),
-                true,
+                false,
             ) {
                 Ok(_) => (),
                 Err(e) => log::error!("Failed to render: {}", e),
