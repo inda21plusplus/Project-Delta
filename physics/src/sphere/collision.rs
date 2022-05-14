@@ -1,10 +1,10 @@
-use common::{Ray, Transform, Vec3};
+use common::{Transform, Vec3};
 
 use crate::{
     collision::{pop_colliders, standard_collision},
     macros::debug_assert_finite,
     r#box::{get_closest_point, BoxCollider},
-    RayCastHit, Rigidbody, SphereCollider,
+    Rigidbody, SphereCollider,
 };
 
 pub fn is_colliding_sphere_vs_sphere(
@@ -80,7 +80,7 @@ pub fn collide_sphere_vs_sphere(
         (normal * r1, -normal * r2),
         (&c1.material, &c2.material),
     );
-    pop_colliders(distance_pop * normal, t1, t2, &rb1, &rb2);
+    pop_colliders(distance_pop * normal, t1, t2, rb1, rb2);
 }
 
 pub fn collide_sphere_vs_box(
@@ -126,11 +126,11 @@ pub fn collide_sphere_vs_box(
     standard_collision(
         normal,
         (rb1, rb2),
-        (&t1, &t2),
+        (t1, t2),
         (c1.inv_inertia_tensor(), c2.inv_inertia_tensor()),
         (r_1, r_2),
         (&c1.material, &c2.material),
     );
 
-    pop_colliders(normal * overlap_distance, t1, t2, &rb1, &rb2);
+    pop_colliders(normal * overlap_distance, t1, t2, rb1, rb2);
 }

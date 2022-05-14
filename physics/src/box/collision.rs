@@ -16,7 +16,7 @@ pub fn is_colliding_box_vs_box(
     bc2: &BoxCollider,
     t2: &Transform,
 ) -> bool {
-    let (axis, a_verts, b_verts) = get_axis_and_verts(&w1, &w2, &t1, &t2, bc1, bc2);
+    let (axis, a_verts, b_verts) = get_axis_and_verts(&w1, &w2, t1, t2, bc1, bc2);
     proj_has_overlap(&axis, &a_verts, &b_verts) || proj_has_overlap(&axis, &b_verts, &a_verts)
 }
 
@@ -114,7 +114,7 @@ fn collide_box_vs_box_single(
 
     // push the boxes away from each other
     // this can be better as SAT is not perfect for pulling boxes from each other
-    let (axis, a_verts, b_verts) = get_axis_and_verts(&w1, &w2, &t1, &t2, c1, c2);
+    let (axis, a_verts, b_verts) = get_axis_and_verts(&w1, &w2, t1, t2, c1, c2);
     if let Some((size, dir)) = proj_has_overlap_extra(&axis, &a_verts, &b_verts) {
         post_offset -= dir.normalized() * size * 0.5;
     } else if let Some((size, dir)) = proj_has_overlap_extra(&axis, &b_verts, &a_verts) {

@@ -94,8 +94,8 @@ pub fn get_axis_and_verts(
     bc1: &BoxCollider,
     bc2: &BoxCollider,
 ) -> (Vec<Vec3>, Vec<Vec3>, Vec<Vec3>) {
-    let (a0, a1, a2) = get_axis(&t1, bc1);
-    let (b0, b1, b2) = get_axis(&t2, bc2);
+    let (a0, a1, a2) = get_axis(t1, bc1);
+    let (b0, b1, b2) = get_axis(t2, bc2);
 
     let axis = vec![
         a0,
@@ -115,7 +115,7 @@ pub fn get_axis_and_verts(
         a2.cross(b2),
     ];
 
-    let a_vex = get_vertex(w1, &t1, bc1);
-    let b_vex = get_vertex(w2, &t2, bc2);
+    let a_vex = get_vertex(w1, t1, bc1);
+    let b_vex = get_vertex(w2, t2, bc2);
     (axis, a_vex, b_vex)
 }

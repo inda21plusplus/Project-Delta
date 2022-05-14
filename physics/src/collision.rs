@@ -1,5 +1,4 @@
 use common::{Mat3, Transform, Vec3};
-use rendering::Line;
 
 use crate::{
     get_position,
@@ -57,7 +56,7 @@ pub fn bounce(input: Vec3, normal: Vec3) -> Vec3 {
         vec.dot(on) * on / on.magnitude_squared()
     }
 
-    return input - 2.0 * proj(normal, input);
+    input - 2.0 * proj(normal, input)
 }
 
 pub fn standard_collision(
@@ -154,20 +153,6 @@ pub fn standard_collision(
         rb.1.angular_momentum += -j_r * (i_2 * r.1.cross(normal));
         do_friction(rb.1, i_2, r.1, trans.1);
     }
-}
-
-pub fn set_line(id: usize, key: &str, line: Line) {
-    set_line_key(format!("{} {}", id, key), line);
-}
-
-pub fn clear_lines() {
-    todo!()
-    // LINE_ATLAS.lock().unwrap().clear();
-}
-
-pub fn set_line_key(key: String, line: Line) {
-    todo!()
-    // LINE_ATLAS.lock().unwrap().insert(key, line);
 }
 
 /// where normal_distance is the normal pointing at c1 from c2 with the length of the intercetion

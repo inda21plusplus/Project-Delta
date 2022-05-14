@@ -6,7 +6,7 @@ pub type Tri = [Vec3; 3];
 
 /// given a trangle that is counter clockwise, it will return the normal that is normalized
 pub fn get_normal_from_tri(tri: &Tri) -> Vec3 {
-    return -(tri[1] - tri[2]).cross(tri[0] - tri[2]).normalized();
+    -(tri[1] - tri[2]).cross(tri[0] - tri[2]).normalized()
 }
 
 /// get proper vertex position in world position

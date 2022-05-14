@@ -46,15 +46,15 @@ impl Editor {
             log::warn!("Could not load icon");
         }
 
-        let window = Window::new(&event_loop, icon)
-            .with_context(|| format!("failed to open the winit window"))?;
+        let window =
+            Window::new(&event_loop, icon).with_context(|| "failed to open the winit window")?;
         let mut context = Context {
             renderer: Renderer::new(
                 window.raw_window_handle(),
                 window.inner_size(),
                 [0.229, 0.507, 0.921],
             )
-            .with_context(|| format!("failed to create the renderer"))?,
+            .with_context(|| "failed to create the renderer")?,
         };
 
         let camera_controller = CameraController::new(
@@ -66,7 +66,7 @@ impl Editor {
 
         let scene =
             PhysicsScene::new(&mut context).with_context(|| "failed to create the scene")?;
-        let state = EguiWinitState::new(4096, &window.winit_window());
+        let state = EguiWinitState::new(4096, window.winit_window());
         let egui_context = EguiContext::default();
         {
             let mut opts = egui_context.tessellation_options();
@@ -170,11 +170,11 @@ impl Editor {
         let pos_r = || -100.0..=100.0;
         let k_r = || 0.0..=1.0;
 
-        let raw_input = self.state.take_egui_input(&self.window.winit_window());
+        let raw_input = self.state.take_egui_input(self.window.winit_window());
         let full_output = self.egui_context.run(raw_input, |ctx| {
             egui::Window::new("The Stuff®")
                 .auto_sized()
-                .show(&ctx, |ui| {
+                .show(ctx, |ui| {
                     ui.label("Light position");
                     ui.spacing_mut().slider_width *= 2.0;
                     ui.add(Slider::new(&mut self.scene.light.pos.x, pos_r()).text("x"));

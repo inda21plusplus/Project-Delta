@@ -7,7 +7,7 @@ pub fn update(world: &mut World, dt: f32) {
     let gravity = world
         .resource::<Gravity>()
         .map(|g| g.0)
-        .unwrap_or(Vec3::zero());
+        .unwrap_or_else(Vec3::zero);
 
     query_iter!(world, (transform: mut Transform, rb: mut Rigidbody, collider: Option<Collider>) => {
         rb.add_force(gravity / rb.mass, dt);
@@ -15,7 +15,7 @@ pub fn update(world: &mut World, dt: f32) {
         // NOTE: not 100% sure but `identity` seems to be reasonable
         let tensor = collider
             .map(|c| c.inv_inertia_tensor())
-            .unwrap_or_else(|| Mat3::identity());
+            .unwrap_or_else(Mat3::identity);
 
         // simulate one step in the simulation
         rb.step(dt, transform, tensor);
