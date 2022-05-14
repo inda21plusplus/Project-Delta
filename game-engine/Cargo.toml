@@ -11,3 +11,4 @@ log = "0.4"
 rendering = { path = "../rendering" }
 physics = { path = "../physics" }
 common = { path = "../common" }
+ecs = { path = "../ecs" }
