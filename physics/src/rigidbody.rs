@@ -10,6 +10,7 @@ pub struct Rigidbody {
     //pub center_of_mass_offset: Vec3,
     pub mass: f32,
 
+    // TODO: remove this. A static rigidbody is the same as no rigidbody
     pub is_static: bool,
 
     pub is_colliding: bool, // not used atm
@@ -34,6 +35,13 @@ impl Rigidbody {
         }
     }
 
+    pub fn new_static() -> Self {
+        Self {
+            is_static: true,
+            ..Default::default()
+        }
+    }
+
     pub fn velocity(&self) -> Vec3 {
         self.linear_momentum / self.mass
     }
@@ -43,14 +51,19 @@ impl Rigidbody {
     }
 
     pub fn add_impulse(&mut self, impulse: Vec3) {
+        if self.is_static {
+            return;
+        }
+
         self.linear_momentum += impulse;
     }
 
     pub fn add_force(&mut self, force: Vec3, dt: f32) {
-        self.linear_momentum += force * dt;
+        self.add_impulse(force * dt);
     }
 
-    pub fn step(&mut self, dt: f32, transform: &mut Transform, inv_inertia_tensor: Mat3) {
+    /// Applies this rigidbody's velocities to `transform`.
+    pub fn step(&self, dt: f32, transform: &mut Transform, inv_inertia_tensor: Mat3) {
         if self.is_static {
             return;
         }
@@ -58,9 +71,7 @@ impl Rigidbody {
         debug_assert_finite!(self.velocity());
         debug_assert_finite!(transform.position);
 
-        self.add_force(Vec3::new(0., -9.81, 0.) / self.mass, dt);
-
-        //TODO https://en.wikipedia.org/wiki/Verlet_integration
+        // TODO: https://en.wikipedia.org/wiki/Verlet_integration
 
         transform.position += self.velocity() * dt;
 

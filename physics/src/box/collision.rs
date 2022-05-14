@@ -1,10 +1,6 @@
 use common::{Ray, Transform, Vec3};
 
-use crate::{
-    collision::standard_collision,
-    macros::{debug_assert_finite, debug_assert_normalized},
-    RayCastHit, Rigidbody,
-};
+use crate::{collision::standard_collision, macros::debug_assert_normalized, Rigidbody};
 
 use super::{
     mesh::{get_normal_from_tri, get_rays_for_box, get_tris_for_box, get_verts},
@@ -74,7 +70,7 @@ fn collide_box_vs_box_single(
 
     for ray in &mut rays {
         let origin = r2_inv *           // rotate ray
-            (r1 *                                  // rotation on self 
+            (r1 *                                  // rotation on self
                 (ray.origin + s1 * ray.direction)  // set ray origin between vertexes, this is used because ray intercect returns negetive values
                                   + world_offset); // applied offset to center the world on w2
 

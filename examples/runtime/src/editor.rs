@@ -9,11 +9,7 @@ use winit::{
 };
 
 use common::{Vec2, Vec3};
-use game_engine::{
-    ecs::World,
-    rendering::{Light, Renderer},
-    Context,
-};
+use game_engine::{rendering::Renderer, Context};
 
 use crate::{
     camera_controller::CameraController,

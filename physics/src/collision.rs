@@ -10,7 +10,7 @@ use crate::{
     sphere::collision::collide_sphere_vs_sphere,
     sphere::collision::{is_colliding_sphere_vs_box, is_colliding_sphere_vs_sphere},
     sphere::{collision::collide_sphere_vs_box, SphereCollider},
-    PhysicsMaterial, PhysicsObject, Rigidbody,
+    PhysicsMaterial, Rigidbody,
 };
 
 #[derive(Debug, PartialEq, Clone, Copy)]
@@ -152,7 +152,6 @@ pub fn standard_collision(
     if !rb.1.is_static {
         rb.1.linear_momentum += -j_r * normal / m_2;
         rb.1.angular_momentum += -j_r * (i_2 * r.1.cross(normal));
-
         do_friction(rb.1, i_2, r.1, trans.1);
     }
 }
@@ -229,8 +228,8 @@ pub fn solve_colliding(
 
 // Returns `true` if there was a collision
 pub fn collide(
-    rb1: &mut Rigidbody,
     t1: &mut Transform,
+    rb1: &mut Rigidbody,
     cc1: &Vec<Collider>,
     t2: &mut Transform,
     rb2: &mut Rigidbody,
@@ -243,16 +242,18 @@ pub fn collide(
             if is_colliding(c1, t1, c2, t2) {
                 has_collided = true;
 
-                let rot_1 = Mat3::from(t1.rotation);
-                let rot_2 = Mat3::from(t2.rotation);
+                if cfg!(debug_assertions) {
+                    let rot_1 = Mat3::from(t1.rotation);
+                    let rot_2 = Mat3::from(t2.rotation);
 
-                let i_1 = rot_1 * c1.inv_inertia_tensor() * rot_1.transposed();
-                let i_2 = rot_2 * c2.inv_inertia_tensor() * rot_2.transposed();
+                    let i_1 = rot_1 * c1.inv_inertia_tensor() * rot_1.transposed();
+                    let i_2 = rot_2 * c2.inv_inertia_tensor() * rot_2.transposed();
 
-                debug_assert_finite!(rb1.velocity());
-                debug_assert_finite!(rb2.velocity());
-                debug_assert_finite!(rb1.angular_velocity(i_1));
-                debug_assert_finite!(rb2.angular_velocity(i_2));
+                    debug_assert_finite!(rb1.velocity());
+                    debug_assert_finite!(rb2.velocity());
+                    debug_assert_finite!(rb1.angular_velocity(i_1));
+                    debug_assert_finite!(rb2.angular_velocity(i_2));
+                }
 
                 solve_colliding(c1, rb1, t1, c2, rb2, t2);
             }
