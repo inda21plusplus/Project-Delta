@@ -1,6 +1,8 @@
-use super::PhysicsMaterial;
 use common::{Mat3, Vec3};
+
 pub(crate) mod collision;
+
+use crate::PhysicsMaterial;
 
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub struct SphereColider {

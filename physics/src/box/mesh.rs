@@ -1,8 +1,6 @@
-use crate::physics::Tri;
-
-use super::BoxColider;
-
 use common::{Ray, Transform, Vec3};
+
+use crate::{BoxColider, Tri};
 
 /// get proper vertex position in world position
 pub fn get_vertex(w: &Vec3, t: &Transform, c: &BoxColider) -> Vec<Vec3> {
@@ -42,6 +40,8 @@ pub fn get_verts(t: &Transform, c: &BoxColider) -> [Vec3; 8] {
 
 #[test]
 fn test_get_verts() {
+    use crate::PhysicsMaterial;
+
     let scale = Vec3::new(2.0, 1.0, 10.0);
 
     let t = Transform {
@@ -50,7 +50,7 @@ fn test_get_verts() {
         scale,
     };
 
-    let material = crate::physics::PhysicsMaterial {
+    let material = PhysicsMaterial {
         friction: 1.0,
         restfullness: 1.0,
     };

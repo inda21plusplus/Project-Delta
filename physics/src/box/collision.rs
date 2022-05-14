@@ -1,4 +1,6 @@
-use crate::physics::{
+use common::{Ray, Transform, Vec3};
+
+use crate::{
     collision::standard_collision,
     macros::{debug_assert_finite, debug_assert_normalized},
     RayCastHit, RidgidBody, Tri,
@@ -9,8 +11,6 @@ use super::{
     sat::{get_axis_and_verts, proj_has_overlap, proj_has_overlap_extra},
     BoxColider,
 };
-
-use common::{Ray, Transform, Vec3};
 
 pub fn is_colliding_box_vs_box(
     w1: Vec3,

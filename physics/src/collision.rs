@@ -1,28 +1,20 @@
-use crate::physics::macros::debug_assert_normalized;
-use crate::rendering::Line;
-use std::collections::HashMap;
-use std::sync::Mutex;
+use common::{Mat3, Transform, Vec3};
+use rendering::Line;
 
-lazy_static! {
-    pub static ref LINE_ATLAS: Mutex<HashMap<String, Line>> = Mutex::new(HashMap::new());
-}
-
-use super::{
+use crate::{
     get_position,
+    macros::debug_assert_finite,
+    macros::debug_assert_normalized,
+    proj,
+    r#box::collision::collide_box_vs_box,
     r#box::collision::is_colliding_box_vs_box,
+    sphere::collision::collide_sphere_vs_box,
+    sphere::collision::collide_sphere_vs_sphere,
     sphere::collision::{is_colliding_sphere_vs_box, is_colliding_sphere_vs_sphere},
     Collider, PhysicsMaterial, PhysicsObject, RidgidBody,
 };
-use crate::physics::sphere::collision::collide_sphere_vs_sphere;
-use crate::physics::{
-    macros::debug_assert_finite, proj, r#box::collision::collide_box_vs_box,
-    sphere::collision::collide_sphere_vs_box,
-};
-
-use common::{Mat3, Transform, Vec3};
 
 /// Returns true if 2 objects are colliding
-#[must_use]
 pub fn is_colliding(c1: &Collider, t1: &Transform, c2: &Collider, t2: &Transform) -> bool {
     let w1 = get_position(t1, c1);
     let w2 = get_position(t2, c2);
@@ -64,9 +56,6 @@ pub fn standard_collision(
     // lowercase omega is substituted with w in this code.
     // https://en.wikipedia.org/wiki/Collision_response#Impulse-Based_Reaction_Model
 
-    let cross = |a, b| Vec3::cross(a, b);
-    let dot = |a, b| Vec3::dot(a, b);
-
     // all these calculations are done the same way for the two objects, so it's separated out for clarity
     // v_i, m_i, w_i, v_pi, inertia, inertia term
     let do_calcs = |rb: &mut RidgidBody,
@@ -80,8 +69,8 @@ pub fn standard_collision(
         // inertia tensor in world space coordinates
         let i = rot * inertia * rot.transposed();
         let w = rb.angular_velocity(i);
-        let v_p = v + cross(w, r);
-        let i_term = cross(i * cross(r, n), r);
+        let v_p = v + w.cross(r);
+        let i_term = (i * r.cross(n)).cross(r);
 
         (m, v_p, i, i_term)
     };
@@ -95,11 +84,11 @@ pub fn standard_collision(
 
     // the divisor in the j_r calculation (factored out for readability)
     let divisor = if rb.0.is_static {
-        (1.0 / m_2) + dot(i_term_2, normal)
+        (1.0 / m_2) + i_term_2.dot(normal)
     } else if rb.1.is_static {
-        (1.0 / m_1) + dot(i_term_1, normal)
+        (1.0 / m_1) + i_term_1.dot(normal)
     } else {
-        (1.0 / m_1) + (1.0 / m_2) + dot(i_term_1 + i_term_2, normal)
+        (1.0 / m_1) + (1.0 / m_2) + (i_term_1 + i_term_2).dot(normal)
     };
 
     // TODO make make this correct, idk if (c1+c2)/2 is correct
@@ -107,7 +96,7 @@ pub fn standard_collision(
     let u = (mat.0.friction + mat.1.friction) / 2.0; // friction
 
     // impulse magnitude
-    let j_r = dot(-(1.0 + e) * v_r, normal) / divisor;
+    let j_r = -(1.0 + e) * v_r.dot(normal) / divisor;
 
     let epsilon = 0.001;
     // rb, tangent, inertia tensor, offset, forces
@@ -135,12 +124,12 @@ pub fn standard_collision(
 
     if !rb.0.is_static {
         rb.0.linear_momentum += j_r * normal / m_1;
-        rb.0.angular_momentum += -j_r * (i_1 * cross(r.0, normal));
+        rb.0.angular_momentum += -j_r * (i_1 * r.0.cross(normal));
         do_friction(rb.0, i_1, r.0, trans.0);
     }
     if !rb.1.is_static {
         rb.1.linear_momentum += -j_r * normal / m_2;
-        rb.1.angular_momentum += -j_r * (i_2 * cross(r.1, normal));
+        rb.1.angular_momentum += -j_r * (i_2 * r.1.cross(normal));
 
         do_friction(rb.1, i_2, r.1, trans.1);
     }
@@ -151,11 +140,13 @@ pub fn set_line(id: usize, key: &str, line: Line) {
 }
 
 pub fn clear_lines() {
-    LINE_ATLAS.lock().unwrap().clear();
+    todo!()
+    // LINE_ATLAS.lock().unwrap().clear();
 }
 
 pub fn set_line_key(key: String, line: Line) {
-    LINE_ATLAS.lock().unwrap().insert(key, line);
+    todo!()
+    // LINE_ATLAS.lock().unwrap().insert(key, line);
 }
 
 /// where normal_distance is the normal pointing at c1 from c2 with the length of the intercetion

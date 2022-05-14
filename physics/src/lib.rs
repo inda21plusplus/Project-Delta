@@ -1,6 +1,6 @@
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use crate::physics::macros::debug_assert_finite;
+use crate::macros::debug_assert_finite;
 
 use self::{
     macros::debug_assert_normalized,

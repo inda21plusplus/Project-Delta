@@ -1,8 +1,7 @@
-use crate::physics::overlap;
-
-use super::{mesh::get_vertex, BoxColider};
-
 use common::{Transform, Vec3};
+
+use super::mesh::get_vertex;
+use crate::{overlap, BoxColider};
 
 /// SAT algo on 3d
 /// https://hitokageproduction.com/article/11

@@ -1,13 +1,11 @@
-use crate::physics::{
+use common::{Ray, Transform, Vec3};
+
+use crate::{
     collision::{pop_colliders, standard_collision},
     macros::debug_assert_finite,
     r#box::{get_closest_point, BoxColider},
-    RayCastHit, RidgidBody,
+    RayCastHit, RidgidBody, SphereColider,
 };
-
-use common::{Ray, Transform, Vec3};
-
-use super::SphereColider;
 
 pub fn is_colliding_sphere_vs_sphere(
     w1: Vec3,
