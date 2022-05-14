@@ -86,7 +86,10 @@ impl<'w, 'q> QueryResponse<'w, 'q> {
     /// not marked as mutable in the query is undefined behaviour.
     /// The pointers must not outlive this `QueryResponse`
     pub unsafe fn try_get(&mut self, entity: Entity) -> Option<Vec<NonNull<u8>>> {
-        self.try_get_by_index(entity.get_id_unchecked())
+        self.world
+            .entities()
+            .id(entity)
+            .and_then(|index| self.try_get_by_index(index))
     }
 
     unsafe fn try_get_by_index(&mut self, index: u32) -> Option<Vec<NonNull<u8>>> {
