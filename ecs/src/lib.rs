@@ -326,14 +326,17 @@ mod tests {
             ComponentQuery {
                 id: a,
                 mutable: true,
+                optional: false,
             },
             ComponentQuery {
                 id: b,
                 mutable: false,
+                optional: false,
             },
             ComponentQuery {
                 id: b,
                 mutable: false,
+                optional: false,
             },
         ]);
         assert!(q.is_ok(), "{:?}; a={:?}, b={:?}", q, a, b);
@@ -352,14 +355,17 @@ mod tests {
                 ComponentQuery {
                     id: a,
                     mutable: false,
+                    optional: false,
                 },
                 ComponentQuery {
                     id: b,
                     mutable: true,
+                    optional: false,
                 },
                 ComponentQuery {
                     id: b,
                     mutable: false,
+                    optional: false,
                 }
             ])
         );
@@ -379,30 +385,42 @@ mod tests {
         let usize_query = Query::new(vec![ComponentQuery {
             id: usize_id,
             mutable: false,
+            optional: false,
         }])
         .unwrap();
         let both_query = Query::new(vec![
             ComponentQuery {
                 id: usize_id,
                 mutable: true,
+                optional: false,
             },
             ComponentQuery {
                 id: f32_id,
                 mutable: false,
+                optional: false,
             },
         ])
         .unwrap();
         {
             let mut res = world.query(&usize_query);
-            assert_eq!(*unsafe { res.get(a)[0].cast::<usize>().as_ref() }, 0);
-            assert_eq!(*unsafe { res.get(b)[0].cast::<usize>().as_ref() }, 1);
+            assert_eq!(
+                *unsafe { res.get(a)[0].cast::<usize>().as_ref().unwrap() },
+                0
+            );
+            assert_eq!(
+                *unsafe { res.get(b)[0].cast::<usize>().as_ref().unwrap() },
+                1
+            );
         }
         {
             let mut res = world.query(&both_query);
             assert!(unsafe { res.try_get(a) }.is_none());
             let (int, float) = unsafe {
                 if let [int, float] = res.get(b)[..] {
-                    (int.cast::<usize>().as_mut(), float.cast::<f32>().as_ref())
+                    (
+                        int.cast::<usize>().as_mut().unwrap(),
+                        float.cast::<f32>().as_ref().unwrap(),
+                    )
                 } else {
                     panic!()
                 }
@@ -412,8 +430,14 @@ mod tests {
         }
         {
             let mut res = world.query(&usize_query);
-            assert_eq!(*unsafe { res.get(a)[0].cast::<usize>().as_ref() }, 0);
-            assert_eq!(*unsafe { res.get(b)[0].cast::<usize>().as_ref() }, 3);
+            assert_eq!(
+                *unsafe { res.get(a)[0].cast::<usize>().as_ref().unwrap() },
+                0
+            );
+            assert_eq!(
+                *unsafe { res.get(b)[0].cast::<usize>().as_ref().unwrap() },
+                3
+            );
         }
     }
 
@@ -432,16 +456,19 @@ mod tests {
         let name_query = Query::new(vec![ComponentQuery {
             id: world.component_registry().id::<Name>().unwrap(),
             mutable: false,
+            optional: false,
         }])
         .unwrap();
         let mut_name_query = Query::new(vec![ComponentQuery {
             id: world.component_registry().id::<Name>().unwrap(),
             mutable: true,
+            optional: false,
         }])
         .unwrap();
         let health_query = Query::new(vec![ComponentQuery {
             id: world.component_registry().id::<Health>().unwrap(),
             mutable: true,
+            optional: false,
         }])
         .unwrap();
         let r1 = world.query(&name_query);
@@ -480,16 +507,19 @@ mod tests {
             ComponentQuery {
                 id: name_id,
                 mutable: true,
+                optional: false,
             },
             ComponentQuery {
                 id: health_id,
                 mutable: false,
+                optional: false,
             },
         ])
         .unwrap();
         let q2 = Query::new(vec![ComponentQuery {
             id: health_id,
             mutable: true,
+            optional: false,
         }])
         .unwrap();
 
@@ -584,10 +614,12 @@ mod tests {
             ComponentQuery {
                 id: pos_id,
                 mutable: true,
+                optional: false,
             },
             ComponentQuery {
                 id: vel_id,
                 mutable: false,
+                optional: false,
             },
         ])
         .unwrap();
@@ -596,8 +628,8 @@ mod tests {
             q.iter().map(|(_e, comps)| {
                 if let [pos, vel] = comps[..] {
                     (
-                        pos.cast::<Position>().as_mut(),
-                        vel.cast::<Velocity>().as_ref(),
+                        pos.cast::<Position>().as_mut().unwrap(),
+                        vel.cast::<Velocity>().as_ref().unwrap(),
                     )
                 } else {
                     panic!();
@@ -611,6 +643,7 @@ mod tests {
         let q = Query::new(vec![ComponentQuery {
             id: pos_id,
             mutable: false,
+            optional: false,
         }])
         .unwrap();
         let mut q = world.query(&q);
@@ -618,7 +651,7 @@ mod tests {
             q.iter()
                 .map(|(_e, comps)| {
                     if let [pos] = comps[..] {
-                        pos.cast::<Position>().as_ref()
+                        pos.cast::<Position>().as_ref().unwrap()
                     } else {
                         panic!();
                     }
@@ -669,7 +702,12 @@ mod tests {
         let id = world.component_registry_mut().register::<usize>();
         let entity = world.spawn();
 
-        let q = Query::new(vec![ComponentQuery { id, mutable: true }]).unwrap();
+        let q = Query::new(vec![ComponentQuery {
+            id,
+            mutable: true,
+            optional: false,
+        }])
+        .unwrap();
         // This creates a mutable borrow on `usize`s
         let q = world.query(&q);
         // And this another one
@@ -863,6 +901,101 @@ mod tests {
         }
 
         assert_eq!(counter.get(), 0);
+    }
+
+    #[test]
+    fn cannot_get_component_of_old_entity() {
+        let mut world = World::default();
+
+        let a = world.spawn();
+        world.despawn(a);
+        let b = world.spawn();
+        world.add(b, 10usize);
+        let q = Query::new(vec![ComponentQuery {
+            id: world.component_registry().id::<usize>().unwrap(),
+            mutable: false,
+            optional: true,
+        }])
+        .unwrap();
+        let mut res = world.query(&q);
+        assert!(unsafe { res.try_get(a).is_none() });
+        assert!(unsafe { res.try_get(b).is_some() });
+    }
+
+    #[test]
+    fn optional_query() {
+        let mut world = World::default();
+
+        struct A;
+        struct B(usize);
+
+        for i in 0..=100 {
+            let e = world.spawn();
+            world.add(e, A);
+            if i % 2 == 0 {
+                world.add(e, B(0));
+            }
+        }
+
+        let mut with_b = 0;
+        let mut without_b = 0;
+        query_iter!(world, (entity: Entity, a: A, b: mut Option<B>) => {
+            if let Some(b) = b {
+                b.0 += 1;
+                with_b += 1;
+            } else {
+                without_b += 1;
+            }
+        });
+        assert_eq!(with_b, 51);
+        assert_eq!(without_b, 50);
+        let mut with_b = 0;
+        let mut without_b = 0;
+        query_iter!(world, (a: A, b: Option<B>) => {
+            if let Some(b) = b {
+                with_b += 1;
+            } else {
+                without_b += 1;
+            }
+        });
+        assert_eq!(with_b, 51);
+        assert_eq!(without_b, 50);
+
+        query_iter!(world, (b: B) => {
+            assert_eq!(b.0, 1);
+        });
+    }
+
+    #[test]
+    fn optional_combs_query() {
+        let mut world = World::default();
+        struct A;
+
+        for _ in 0..10 {
+            let e = world.spawn();
+            world.add(e, A);
+        }
+        for _ in 0..10 {
+            world.spawn();
+        }
+
+        let mut c = 0;
+        query_iter_combs!(world, (_: A) => {
+            c += 1;
+        });
+        assert_eq!(c, 10 * 9 / 2);
+
+        let mut c = 0;
+        query_iter_combs!(world, (_: Option<A>) => {
+            c += 1;
+        });
+        assert_eq!(c, 20 * 19 / 2);
+
+        let mut c = 0;
+        query_iter_combs!(world, (_: mut Option<A>) => {
+            c += 1;
+        });
+        assert_eq!(c, 20 * 19 / 2);
     }
 
     #[derive(Debug)]
