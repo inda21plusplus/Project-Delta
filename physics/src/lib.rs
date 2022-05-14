@@ -1,20 +1,19 @@
-use std::sync::atomic::{AtomicUsize, Ordering};
+use collision::collide;
+use common::{Quaternion, Transform, Vec3};
 
-use crate::macros::debug_assert_finite;
+use macros::debug_assert_finite;
 
-use self::{
-    macros::debug_assert_normalized,
-    r#box::{collision::raycast_box, BoxColider},
-    sphere::{collision::raycast_sphere, SphereColider},
-};
+mod r#box;
+mod collision;
+mod raycast;
+mod rigidbody;
+mod sphere;
 
-pub mod r#box;
-pub mod collision;
-pub mod sphere;
-
-use common::{Mat3, Quaternion, Ray, Transform, Vec3};
-
-type Tri = [Vec3; 3];
+pub use collision::Collider;
+pub use r#box::BoxCollider;
+pub use raycast::RayCastHit;
+pub use rigidbody::Rigidbody;
+pub use sphere::SphereCollider;
 
 mod macros {
     macro_rules! debug_assert_finite {
@@ -44,99 +43,55 @@ mod macros {
     pub(crate) use debug_assert_normalized;
 }
 
-#[derive(Debug, PartialEq, Clone, Copy)]
-pub enum Collider {
-    SphereColider(SphereColider),
-    BoxColider(BoxColider),
-}
+pub fn update(dt: f32, transforms: &mut Vec<Transform>, phx_objects: &mut Vec<PhysicsObject>) {
+    let phx_length = phx_objects.len();
 
-impl Collider {
-    pub fn inv_inertia_tensor(&self) -> Mat3 {
-        match self {
-            Collider::SphereColider(a) => a.inv_inertia_tensor(),
-            Collider::BoxColider(a) => a.inv_inertia_tensor(),
+    for i in 0..phx_length {
+        phx_objects[i].rb.is_colliding_this_frame = false;
+
+        // this needs to be changed somehow if we want multible colliders on a dynamic object
+        let tensor = phx_objects[i].colliders[0].inv_inertia_tensor();
+
+        // simulate one step in the simulation
+        phx_objects[i].rb.step(dt, &mut transforms[i], tensor);
+    }
+    for i in 0..phx_length {
+        let (phx_first, phx_last) = phx_objects.split_at_mut(i + 1);
+
+        let (trans_first, trans_last) = transforms.split_at_mut(i + 1);
+
+        // pop colliders and apply force on all colliding objects
+        for (transform, phx_obj) in trans_last.iter_mut().zip(phx_last.iter_mut()) {
+            // simply dont care about collison if both are static
+            if phx_first[i].rb.is_static && phx_obj.rb.is_static {
+                continue;
+            }
+            collide(
+                &mut phx_first[i].rb,
+                &mut trans_first[i],
+                &phx_first[i].colliders,
+                transform,
+                &mut phx_obj.rb,
+                &phx_obj.colliders,
+            );
         }
     }
-}
-
-#[derive(Debug, PartialEq, Clone, Copy)]
-pub struct RayCastHit {
-    pub distance: f32,
-    /// normalized
-    pub normal: Vec3,
-}
-
-impl RayCastHit {
-    pub fn new(distance: f32, normal: Vec3) -> Self {
-        Self { distance, normal }
+    for i in 0..phx_length {
+        phx_objects[i].rb.is_colliding = phx_objects[i].rb.is_colliding_this_frame;
     }
-}
-
-static BODY_ID: AtomicUsize = AtomicUsize::new(0);
-
-#[derive(Debug, PartialEq, Clone, Copy)]
-pub struct RidgidBody {
-    pub id: usize,
-    pub acceleration: Vec3, // can be used for gravity
-
-    pub angular_momentum: Vec3,
-    pub linear_momentum: Vec3,
-
-    //pub center_of_mass_offset: Vec3,
-    pub mass: f32,
-
-    pub is_static: bool,
-
-    pub is_colliding: bool, // not used atm
-    pub is_colliding_this_frame: bool,
-}
-
-impl Default for RidgidBody {
-    fn default() -> Self {
-        let v = Vec3::default();
-        RidgidBody::new(v, 1.0)
-    }
-}
-
-impl RidgidBody {
-    pub fn new(acceleration: Vec3, mass: f32) -> Self {
-        Self {
-            id: BODY_ID.fetch_add(1, Ordering::SeqCst),
-            acceleration,
-            mass,
-            angular_momentum: Vec3::zero(),
-            linear_momentum: Vec3::zero(),
-            is_static: false,
-            is_colliding: false,
-            is_colliding_this_frame: false,
-        }
-    }
-
-    pub fn velocity(&self) -> Vec3 {
-        self.linear_momentum / self.mass
-    }
-
-    pub fn angular_velocity(&self, inv_tensor_world: Mat3) -> Vec3 {
-        inv_tensor_world * self.angular_momentum
-    }
-}
-
-#[inline]
-fn proj(on: Vec3, vec: Vec3) -> Vec3 {
-    vec.dot(on) * on / on.magnitude_squared()
 }
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct PhysicsObject {
-    pub rb: RidgidBody,
+    pub rb: Rigidbody,
     pub colliders: Vec<Collider>,
 }
 
 impl PhysicsObject {
-    pub fn new(rb: RidgidBody, colider: Collider) -> Self {
+    pub fn new(rb: Rigidbody, collider: Collider) -> Self {
         Self {
             rb,
-            colliders: vec![colider],
+            colliders: vec![collider],
         }
     }
 }
@@ -179,15 +134,15 @@ fn get_world_position(pos: Vec3, scale: Vec3, rotation: Quaternion, local_positi
     pos + rotation * local_position * scale
 }
 
-/// returns the world position of a collider given transform and colider
+/// returns the world position of a collider given transform and collider
 fn get_position(transform: &Transform, collider: &Collider) -> Vec3 {
     get_world_position(
         transform.position,
         transform.scale,
         transform.rotation,
         match collider {
-            Collider::SphereColider(c) => c.local_position,
-            Collider::BoxColider(c) => c.local_position,
+            Collider::Sphere(c) => c.local_position,
+            Collider::Box(c) => c.local_position,
         },
     )
 }
@@ -196,37 +151,4 @@ fn get_position(transform: &Transform, collider: &Collider) -> Vec3 {
 pub struct PhysicsMaterial {
     pub friction: f32,
     pub restfullness: f32, // bounciness
-}
-
-pub fn raycast(t: &Transform, cols: &Vec<Collider>, ray: Ray) -> Option<RayCastHit> {
-    debug_assert_normalized!(ray.direction);
-    debug_assert_finite!(ray.origin);
-
-    let mut distance = f32::INFINITY;
-    let mut normal = Vec3::zero();
-
-    for c in cols {
-        let w = get_position(t, c);
-        if let Some(hit) = raycast_collider(t, c, Ray::new(ray.origin - w, ray.direction)) {
-            if hit.distance < distance {
-                distance = hit.distance;
-                normal = hit.normal;
-                debug_assert_normalized!(hit.normal);
-            }
-        }
-    }
-
-    if distance < f32::INFINITY {
-        Some(RayCastHit::new(distance, normal))
-    } else {
-        None
-    }
-}
-
-/// rotation, collider, ray -> distance, normal
-pub fn raycast_collider(t: &Transform, c: &Collider, ray: Ray) -> Option<RayCastHit> {
-    match c {
-        Collider::SphereColider(s) => raycast_sphere(t, s, ray),
-        Collider::BoxColider(b) => raycast_box(t, b, ray),
-    }
 }

@@ -1,9 +1,16 @@
 use common::{Ray, Transform, Vec3};
 
-use crate::{BoxColider, Tri};
+use crate::BoxCollider;
+
+pub type Tri = [Vec3; 3];
+
+/// given a trangle that is counter clockwise, it will return the normal that is normalized
+pub fn get_normal_from_tri(tri: &Tri) -> Vec3 {
+    return -(tri[1] - tri[2]).cross(tri[0] - tri[2]).normalized();
+}
 
 /// get proper vertex position in world position
-pub fn get_vertex(w: &Vec3, t: &Transform, c: &BoxColider) -> Vec<Vec3> {
+pub fn get_vertex(w: &Vec3, t: &Transform, c: &BoxCollider) -> Vec<Vec3> {
     let s = c.scale * t.scale;
     let r = t.rotation * c.local_rotation;
     let mut vec: Vec<Vec3> = Vec::with_capacity(8);
@@ -21,8 +28,7 @@ pub fn get_vertex(w: &Vec3, t: &Transform, c: &BoxColider) -> Vec<Vec3> {
 
 /// in binary order, aka v000 v001 v010, not rotated where v000 is min and v111 is max,
 /// note that it does not apply rotation or world position
-#[must_use]
-pub fn get_verts(t: &Transform, c: &BoxColider) -> [Vec3; 8] {
+pub fn get_verts(t: &Transform, c: &BoxCollider) -> [Vec3; 8] {
     let c = t.scale * c.scale;
     let v111 = c;
     let v000 = -c;
@@ -55,7 +61,7 @@ fn test_get_verts() {
         restfullness: 1.0,
     };
 
-    let c = BoxColider::new(Vec3::one(), material);
+    let c = BoxCollider::new(Vec3::one(), material);
     let verts = get_verts(&t, &c);
 
     for x in [-1, 1] {
@@ -71,7 +77,6 @@ fn test_get_verts() {
     }
 }
 
-#[must_use]
 pub fn get_rays_for_box(verts: &[Vec3; 8]) -> [Ray; 12] {
     let [v000, v001, v010, v011, v100, v101, v110, _v111] = *verts;
     [
@@ -90,7 +95,6 @@ pub fn get_rays_for_box(verts: &[Vec3; 8]) -> [Ray; 12] {
     ]
 }
 
-#[must_use]
 pub fn get_tris_for_box(verts: &[Vec3; 8]) -> [Tri; 12] {
     let [v000, v001, v010, v011, v100, v101, v110, v111] = *verts;
 

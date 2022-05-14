@@ -5,14 +5,28 @@ use crate::{
     get_position,
     macros::debug_assert_finite,
     macros::debug_assert_normalized,
-    proj,
     r#box::collision::collide_box_vs_box,
-    r#box::collision::is_colliding_box_vs_box,
-    sphere::collision::collide_sphere_vs_box,
+    r#box::{collision::is_colliding_box_vs_box, BoxCollider},
     sphere::collision::collide_sphere_vs_sphere,
     sphere::collision::{is_colliding_sphere_vs_box, is_colliding_sphere_vs_sphere},
-    Collider, PhysicsMaterial, PhysicsObject, RidgidBody,
+    sphere::{collision::collide_sphere_vs_box, SphereCollider},
+    PhysicsMaterial, PhysicsObject, Rigidbody,
 };
+
+#[derive(Debug, PartialEq, Clone, Copy)]
+pub enum Collider {
+    Sphere(SphereCollider),
+    Box(BoxCollider),
+}
+
+impl Collider {
+    pub fn inv_inertia_tensor(&self) -> Mat3 {
+        match self {
+            Self::Sphere(a) => a.inv_inertia_tensor(),
+            Self::Box(a) => a.inv_inertia_tensor(),
+        }
+    }
+}
 
 /// Returns true if 2 objects are colliding
 pub fn is_colliding(c1: &Collider, t1: &Transform, c2: &Collider, t2: &Transform) -> bool {
@@ -22,25 +36,33 @@ pub fn is_colliding(c1: &Collider, t1: &Transform, c2: &Collider, t2: &Transform
     debug_assert_finite!(w1);
     debug_assert_finite!(w2);
 
-    match c1 {
-        Collider::SphereColider(sc1) => match c2 {
-            Collider::SphereColider(sc2) => is_colliding_sphere_vs_sphere(w1, w2, sc1, t1, sc2, t2),
-            Collider::BoxColider(bc2) => is_colliding_sphere_vs_box(w1, w2, sc1, t1, bc2, t2),
-        },
-        Collider::BoxColider(bc1) => match c2 {
-            Collider::BoxColider(bc2) => is_colliding_box_vs_box(w1, w2, bc1, t1, bc2, t2),
-            Collider::SphereColider(_) => is_colliding(c2, t2, c1, t1), // reuse code
-        },
+    match (c1, c2) {
+        (Collider::Sphere(sc1), Collider::Sphere(sc2)) => {
+            is_colliding_sphere_vs_sphere(w1, w2, sc1, t1, sc2, t2)
+        }
+        (Collider::Box(bc1), Collider::Box(bc2)) => {
+            is_colliding_box_vs_box(w1, w2, bc1, t1, bc2, t2)
+        }
+        (Collider::Sphere(sc), Collider::Box(bc)) => {
+            is_colliding_sphere_vs_box(w1, w2, sc, t1, bc, t2)
+        }
+        (Collider::Box(bc), Collider::Sphere(sc)) => {
+            is_colliding_sphere_vs_box(w2, w1, sc, t2, bc, t1)
+        }
     }
 }
 
 pub fn bounce(input: Vec3, normal: Vec3) -> Vec3 {
+    fn proj(on: Vec3, vec: Vec3) -> Vec3 {
+        vec.dot(on) * on / on.magnitude_squared()
+    }
+
     return input - 2.0 * proj(normal, input);
 }
 
 pub fn standard_collision(
     normal: Vec3,
-    rb: (&mut RidgidBody, &mut RidgidBody),
+    rb: (&mut Rigidbody, &mut Rigidbody),
     // coll: (&Collider, &Collider),
     trans: (&Transform, &Transform),
     // inverted inertia matrices
@@ -58,7 +80,7 @@ pub fn standard_collision(
 
     // all these calculations are done the same way for the two objects, so it's separated out for clarity
     // v_i, m_i, w_i, v_pi, inertia, inertia term
-    let do_calcs = |rb: &mut RidgidBody,
+    let do_calcs = |rb: &mut Rigidbody,
                     inertia: Mat3,
                     rot: Mat3,
                     r: Vec3,
@@ -100,7 +122,7 @@ pub fn standard_collision(
 
     let epsilon = 0.001;
     // rb, tangent, inertia tensor, offset, forces
-    let do_friction = |rb: &mut RidgidBody, i: Mat3, r: Vec3, _t: &Transform| {
+    let do_friction = |rb: &mut Rigidbody, i: Mat3, r: Vec3, _t: &Transform| {
         let relative_velocity = rb.velocity() + rb.angular_velocity(i).cross(r);
 
         let tangent_velocity = relative_velocity - normal * relative_velocity.dot(normal);
@@ -154,11 +176,11 @@ pub fn pop_colliders(
     normal_distance: Vec3,
     t1: &mut Transform,
     t2: &mut Transform,
-    rb1: &RidgidBody,
-    rb2: &RidgidBody,
+    rb1: &Rigidbody,
+    rb2: &Rigidbody,
 ) {
     //debug_assert!(normal_distance.magnitude_squared() > 0.0); //TODO
-    // cant move static coliders
+    // cant move static colliders
     if rb1.is_static && rb2.is_static {
         return;
     }
@@ -177,10 +199,10 @@ pub fn pop_colliders(
 
 pub fn solve_colliding(
     c1: &Collider,
-    rb1: &mut RidgidBody,
+    rb1: &mut Rigidbody,
     t1: &mut Transform,
     c2: &Collider,
-    rb2: &mut RidgidBody,
+    rb2: &mut Rigidbody,
     t2: &mut Transform,
 ) {
     let w1 = get_position(t1, c1);
@@ -189,34 +211,37 @@ pub fn solve_colliding(
     debug_assert_finite!(w1);
     debug_assert_finite!(w2);
 
-    match c1 {
-        Collider::SphereColider(b1) => match c2 {
-            Collider::SphereColider(b2) => {
-                collide_sphere_vs_sphere(b1, rb1, t1, w1, b2, rb2, t2, w2)
-            }
-            Collider::BoxColider(b2) => collide_sphere_vs_box(b1, rb1, t1, w1, b2, rb2, t2, w2),
-        },
-        Collider::BoxColider(b1) => match c2 {
-            Collider::SphereColider(b2) => collide_sphere_vs_box(b2, rb2, t2, w2, b1, rb1, t1, w1),
-            Collider::BoxColider(b2) => collide_box_vs_box(b1, rb1, t1, w1, b2, rb2, t2, w2),
-        },
+    match (c1, c2) {
+        (Collider::Sphere(sc1), Collider::Sphere(sc2)) => {
+            collide_sphere_vs_sphere(sc1, rb1, t1, w1, sc2, rb2, t2, w2)
+        }
+        (Collider::Box(bc1), Collider::Box(bc2)) => {
+            collide_box_vs_box(bc1, rb1, t1, w1, bc2, rb2, t2, w2)
+        }
+        (Collider::Sphere(sc), Collider::Box(bc)) => {
+            collide_sphere_vs_box(sc, rb1, t1, w1, bc, rb2, t2, w2)
+        }
+        (Collider::Box(bc), Collider::Sphere(sc)) => {
+            collide_sphere_vs_box(sc, rb2, t2, w2, bc, rb1, t1, w1)
+        }
     }
 }
 
+// Returns `true` if there was a collision
 pub fn collide(
-    rb1: &mut RidgidBody,
+    rb1: &mut Rigidbody,
     t1: &mut Transform,
     cc1: &Vec<Collider>,
     t2: &mut Transform,
-    rb2: &mut RidgidBody,
+    rb2: &mut Rigidbody,
     cc2: &Vec<Collider>,
 ) -> bool {
-    let mut has_colided = false;
+    let mut has_collided = false;
 
     for c1 in cc1 {
         for c2 in cc2 {
             if is_colliding(c1, t1, c2, t2) {
-                has_colided = true;
+                has_collided = true;
 
                 let rot_1 = Mat3::from(t1.rotation);
                 let rot_2 = Mat3::from(t2.rotation);
@@ -234,90 +259,8 @@ pub fn collide(
         }
     }
 
-    rb1.is_colliding_this_frame = has_colided || rb1.is_colliding_this_frame;
-    rb2.is_colliding_this_frame = has_colided || rb2.is_colliding_this_frame;
+    rb1.is_colliding_this_frame = has_collided || rb1.is_colliding_this_frame;
+    rb2.is_colliding_this_frame = has_collided || rb2.is_colliding_this_frame;
 
-    has_colided
-}
-
-impl RidgidBody {
-    pub fn add_force(&mut self, force: Vec3) {
-        self.linear_momentum += force;
-    }
-
-    pub fn step(&mut self, dt: f32, transform: &mut Transform, inv_inertia_tensor: Mat3) {
-        if self.is_static {
-            return;
-        }
-
-        debug_assert_finite!(self.velocity());
-
-        //TODO https://en.wikipedia.org/wiki/Verlet_integration
-
-        transform.position += self.velocity() * dt;
-        debug_assert_finite!(transform.position);
-
-        self.add_force(self.acceleration * dt * self.mass);
-
-        // apply rotation
-        let i_inv = Mat3::from(transform.rotation)
-            * inv_inertia_tensor
-            * Mat3::from(transform.rotation).transposed();
-        let angular_velocity = self.angular_velocity(i_inv);
-
-        transform.rotation.rotate_x(angular_velocity.x * dt);
-        transform.rotation.rotate_y(angular_velocity.y * dt);
-        transform.rotation.rotate_z(angular_velocity.z * dt);
-    }
-}
-
-pub fn update(
-    is_paused: &mut bool,
-    dt: f32,
-    transforms: &mut Vec<Transform>,
-    phx_objects: &mut Vec<PhysicsObject>,
-) {
-    let real_dt = dt;
-    let phx_length = phx_objects.len();
-
-    for i in 0..phx_length {
-        phx_objects[i].rb.is_colliding_this_frame = false;
-
-        // this needs to be changed somehow if we want multible coliders on a dynamic object
-        let tensor = phx_objects[i].colliders[0].inv_inertia_tensor();
-
-        // simulate one step in the simulation
-        phx_objects[i].rb.step(real_dt, &mut transforms[i], tensor);
-    }
-    for i in 0..phx_length {
-        let (phx_first, phx_last) = phx_objects.split_at_mut(i + 1);
-
-        let (trans_first, trans_last) = transforms.split_at_mut(i + 1);
-
-        let mut has_colided = false;
-
-        // pop coliders and apply force on all colliding objects
-        for (transform, phx_obj) in trans_last.iter_mut().zip(phx_last.iter_mut()) {
-            // simply dont care about collison if both are static
-            if phx_first[i].rb.is_static && phx_obj.rb.is_static {
-                continue;
-            }
-            if collide(
-                &mut phx_first[i].rb,
-                &mut trans_first[i],
-                &phx_first[i].colliders,
-                transform,
-                &mut phx_obj.rb,
-                &phx_obj.colliders,
-            ) {
-                has_colided = true;
-            }
-        }
-        if has_colided {
-            *is_paused = true;
-        }
-    }
-    for i in 0..phx_length {
-        phx_objects[i].rb.is_colliding = phx_objects[i].rb.is_colliding_this_frame;
-    }
+    has_collided
 }

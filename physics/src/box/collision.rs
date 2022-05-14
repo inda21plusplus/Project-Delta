@@ -3,21 +3,21 @@ use common::{Ray, Transform, Vec3};
 use crate::{
     collision::standard_collision,
     macros::{debug_assert_finite, debug_assert_normalized},
-    RayCastHit, RidgidBody, Tri,
+    RayCastHit, Rigidbody,
 };
 
 use super::{
-    mesh::{get_rays_for_box, get_tris_for_box, get_verts},
+    mesh::{get_normal_from_tri, get_rays_for_box, get_tris_for_box, get_verts},
     sat::{get_axis_and_verts, proj_has_overlap, proj_has_overlap_extra},
-    BoxColider,
+    BoxCollider,
 };
 
 pub fn is_colliding_box_vs_box(
     w1: Vec3,
     w2: Vec3,
-    bc1: &BoxColider,
+    bc1: &BoxCollider,
     t1: &Transform,
-    bc2: &BoxColider,
+    bc2: &BoxCollider,
     t2: &Transform,
 ) -> bool {
     let (axis, a_verts, b_verts) = get_axis_and_verts(&w1, &w2, &t1, &t2, bc1, bc2);
@@ -25,12 +25,12 @@ pub fn is_colliding_box_vs_box(
 }
 
 pub fn collide_box_vs_box(
-    c1: &BoxColider,
-    rb1: &mut RidgidBody,
+    c1: &BoxCollider,
+    rb1: &mut Rigidbody,
     t1: &mut Transform,
     w1: Vec3, // world position
-    c2: &BoxColider,
-    rb2: &mut RidgidBody,
+    c2: &BoxCollider,
+    rb2: &mut Rigidbody,
     t2: &mut Transform,
     w2: Vec3, // world position
 ) {
@@ -44,18 +44,13 @@ pub fn collide_box_vs_box(
     }
 }
 
-/// given a trangle that is counter clockwise, it will return the normal that is normalized
-fn get_normal_from_tri(tri: &Tri) -> Vec3 {
-    return -(tri[1] - tri[2]).cross(tri[0] - tri[2]).normalized();
-}
-
 fn collide_box_vs_box_single(
-    c1: &BoxColider,
-    rb1: &mut RidgidBody,
+    c1: &BoxCollider,
+    rb1: &mut Rigidbody,
     t1: &mut Transform,
     w1: Vec3, // world position
-    c2: &BoxColider,
-    rb2: &mut RidgidBody,
+    c2: &BoxCollider,
+    rb2: &mut Rigidbody,
     t2: &mut Transform,
     w2: Vec3, // world position
 ) {
@@ -131,33 +126,4 @@ fn collide_box_vs_box_single(
     }
 
     t1.position += post_offset;
-}
-
-pub fn raycast_box(t: &Transform, c: &BoxColider, ray: Ray) -> Option<RayCastHit> {
-    let v = get_verts(t, c);
-    let tris = get_tris_for_box(&v);
-    let r = t.rotation * c.local_rotation;
-    let r_inv = r.inverse();
-    let fixed_ray = Ray::new(r_inv * ray.origin, r_inv * ray.direction);
-    let mut min_d = f32::INFINITY;
-    let mut normal = Vec3::zero();
-    for tri in tris {
-        if let Some(d) = fixed_ray.triangle_intersection(tri) {
-            if d < std::f32::EPSILON {
-                continue;
-            }
-
-            if d < min_d {
-                min_d = d;
-                normal = get_normal_from_tri(&tri);
-            }
-        }
-    }
-    if min_d < f32::INFINITY {
-        debug_assert_finite!(normal);
-        debug_assert_normalized!(normal);
-        Some(RayCastHit::new(min_d, r * normal))
-    } else {
-        None
-    }
 }
