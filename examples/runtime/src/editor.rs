@@ -55,7 +55,6 @@ impl Editor {
                 [0.229, 0.507, 0.921],
             )
             .with_context(|| format!("failed to create the renderer"))?,
-            world: World::default(),
         };
 
         let camera_controller = CameraController::new(
