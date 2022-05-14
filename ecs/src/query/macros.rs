@@ -242,24 +242,32 @@ macro_rules! _query_defvars_combs {
     };
 }
 
-#[allow(clippy::needless_lifetimes)]
+#[allow(clippy::needless_lifetimes, clippy::missing_safety_doc)]
 pub unsafe fn _as_ref_lt<'a, T>(_lifetime: &'a (), ptr: *const T) -> &'a T {
     &*ptr
 }
 
-#[allow(clippy::mut_from_ref, clippy::needless_lifetimes)]
+#[allow(
+    clippy::mut_from_ref,
+    clippy::needless_lifetimes,
+    clippy::missing_safety_doc
+)]
 pub unsafe fn _as_mut_lt<'a, T>(_lifetime: &'a (), ptr: *mut T) -> &'a mut T {
     &mut *ptr
 }
 
 use std::ptr::NonNull;
 
-#[allow(clippy::needless_lifetimes)]
+#[allow(clippy::needless_lifetimes, clippy::missing_safety_doc)]
 pub unsafe fn _as_opt_ref_lt<'a, T>(_lifetime: &'a (), ptr: *const T) -> Option<&'a T> {
     NonNull::new(ptr as *mut T).map(|ptr| ptr.as_ref())
 }
 
-#[allow(clippy::mut_from_ref, clippy::needless_lifetimes)]
+#[allow(
+    clippy::mut_from_ref,
+    clippy::needless_lifetimes,
+    clippy::missing_safety_doc
+)]
 pub unsafe fn _as_opt_mut_lt<'a, T>(_lifetime: &'a (), ptr: *mut T) -> Option<&'a mut T> {
     NonNull::new(ptr).map(|mut ptr| ptr.as_mut())
 }
