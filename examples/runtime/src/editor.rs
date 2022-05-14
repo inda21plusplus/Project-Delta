@@ -9,7 +9,11 @@ use winit::{
 };
 
 use common::{Vec2, Vec3};
-use game_engine::{rendering::Renderer, Context};
+use game_engine::{
+    physics,
+    rendering::{Line, Renderer},
+    Context,
+};
 
 use crate::{
     camera_controller::CameraController,
@@ -168,7 +172,7 @@ impl Editor {
 
         let raw_input = self.state.take_egui_input(&self.window.winit_window());
         let full_output = self.egui_context.run(raw_input, |ctx| {
-            egui::Window::new("Light controls")
+            egui::Window::new("The Stuff®")
                 .auto_sized()
                 .show(&ctx, |ui| {
                     ui.label("Light position");
@@ -176,28 +180,35 @@ impl Editor {
                     ui.add(Slider::new(&mut self.scene.light.pos.x, pos_r()).text("x"));
                     ui.add(Slider::new(&mut self.scene.light.pos.y, pos_r()).text("y"));
                     ui.add(Slider::new(&mut self.scene.light.pos.z, pos_r()).text("z"));
+
                     ui.label("scene.Light attenuation factors");
                     ui.add(Slider::new(&mut self.scene.light.k_constant, k_r()).text("k_c"));
                     ui.add(Slider::new(&mut self.scene.light.k_linear, k_r()).text("k_l"));
                     ui.add(Slider::new(&mut self.scene.light.k_quadratic, k_r()).text("k_q"));
+
                     ui.label("Light color");
                     egui::widgets::color_picker::color_edit_button_rgb(
                         ui,
                         &mut self.scene.light.color,
                     );
+
+                    if let Some(gravity) = self.scene.world.resource_mut::<physics::Gravity>() {
+                        ui.label("Gravity");
+                        ui.add(Slider::new(&mut gravity.0.y, -20.0..=20.0).text("k_q"));
+                    }
                 });
         });
 
-        // let mut lines = collision::LINE_ATLAS
-        //     .lock()
-        //     .unwrap()
-        //     .values()
-        //     .copied()
-        //     .collect::<Vec<_>>();
+        let lines = self
+            .scene
+            .world
+            .resource::<Vec<Line>>()
+            .map(|v| v.as_slice())
+            .unwrap_or(&[]);
 
         if self.window.inner_size() != (0, 0) {
             match self.context.renderer.render(
-                &[], // &lines[..],
+                lines,
                 &[self.scene.light],
                 &self.egui_context,
                 full_output,

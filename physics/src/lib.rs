@@ -15,6 +15,14 @@ pub use raycast::RayCastHit;
 pub use rigidbody::Rigidbody;
 pub use sphere::SphereCollider;
 
+pub struct Gravity(pub Vec3);
+
+impl std::default::Default for Gravity {
+    fn default() -> Self {
+        Gravity(Vec3::new(0., -9.81, 0.))
+    }
+}
+
 /// returns the overlap between [a_min,a_max] and [b_min,b_max], will return a negative value if range is inverted, overlap(a,b) = -overlap(b,a)
 fn overlap(a_min: f32, a_max: f32, b_min: f32, b_max: f32) -> f32 {
     debug_assert!(a_min <= a_max, "a min <= max");

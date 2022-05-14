@@ -5,15 +5,19 @@ use common::{Quaternion, Transform, Vec3};
 use game_engine::{
     ecs::{query_iter, World},
     physics::{self, BoxCollider, Collider, PhysicsMaterial, Rigidbody, SphereCollider},
-    rendering::{model::ModelIndex, Light},
+    rendering::{model::ModelIndex, Light, Line},
     Context,
 };
 
 pub struct PhysicsScene {
     pub world: World,
+    // TODO: move into world
     pub cube_model: ModelIndex,
+    // TODO: move into world
     pub ball_model: ModelIndex,
+    // TODO: move into world
     pub light: Light,
+    // TODO: move into world
     pub extra_dt: f32,
 }
 
@@ -27,6 +31,9 @@ impl PhysicsScene {
             friction: 1.0,
             restfullness: 0.0,
         };
+
+        world.add_resource(physics::Gravity::default());
+        world.add_resource::<Vec<Line>>(vec![]);
 
         let platform = world.spawn();
         world.add(

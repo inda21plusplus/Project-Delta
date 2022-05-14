@@ -1,19 +1,21 @@
-use common::{Transform, Vec3};
+use common::{Mat3, Transform, Vec3};
 use ecs::{query_iter, query_iter_combs, World};
 
-use crate::{collision::collide, Collider, Rigidbody};
+use crate::{collision::collide, Collider, Gravity, Rigidbody};
 
 pub fn update(world: &mut World, dt: f32) {
-    // TODO: this should also apply to entities without a collider, but we need to somehow come up
-    // with a default inertia tensor.
-    query_iter!(world, (transform: mut Transform, rb: mut Rigidbody, collider: Collider) => {
-        rb.is_colliding_this_frame = false;
+    let gravity = world
+        .resource::<Gravity>()
+        .map(|g| g.0)
+        .unwrap_or(Vec3::zero());
 
-        // this needs to be changed somehow if we want multible colliders on a dynamic object
-        let tensor = collider.inv_inertia_tensor();
+    query_iter!(world, (transform: mut Transform, rb: mut Rigidbody, collider: Option<Collider>) => {
+        rb.add_force(gravity / rb.mass, dt);
 
-        // TODO: customizable gravity
-        rb.add_force(Vec3::new(0., -9.82, 0.) / rb.mass, dt);
+        // NOTE: not 100% sure but `identity` seems to be reasonable
+        let tensor = collider
+            .map(|c| c.inv_inertia_tensor())
+            .unwrap_or_else(|| Mat3::identity());
 
         // simulate one step in the simulation
         rb.step(dt, transform, tensor);
@@ -28,14 +30,10 @@ pub fn update(world: &mut World, dt: f32) {
         collide(
             tr1,
             rb1,
-            &vec![*c1],
+            c1,
             tr2,
             rb2,
-            &vec![*c2],
+            c2,
         );
-    });
-
-    query_iter!(world, (rb: mut Rigidbody) => {
-        rb.is_colliding = rb.is_colliding_this_frame;
     });
 }

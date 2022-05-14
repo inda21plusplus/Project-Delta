@@ -12,9 +12,6 @@ pub struct Rigidbody {
 
     // TODO: remove this. A static rigidbody is the same as no rigidbody
     pub is_static: bool,
-
-    pub is_colliding: bool, // not used atm
-    pub is_colliding_this_frame: bool,
 }
 
 impl Default for Rigidbody {
@@ -30,8 +27,6 @@ impl Rigidbody {
             angular_momentum: Vec3::zero(),
             linear_momentum: Vec3::zero(),
             is_static: false,
-            is_colliding: false,
-            is_colliding_this_frame: false,
         }
     }
 

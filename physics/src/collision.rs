@@ -230,38 +230,25 @@ pub fn solve_colliding(
 pub fn collide(
     t1: &mut Transform,
     rb1: &mut Rigidbody,
-    cc1: &Vec<Collider>,
+    c1: &Collider,
     t2: &mut Transform,
     rb2: &mut Rigidbody,
-    cc2: &Vec<Collider>,
-) -> bool {
-    let mut has_collided = false;
+    c2: &Collider,
+) {
+    if is_colliding(c1, t1, c2, t2) {
+        if cfg!(debug_assertions) {
+            let rot_1 = Mat3::from(t1.rotation);
+            let rot_2 = Mat3::from(t2.rotation);
 
-    for c1 in cc1 {
-        for c2 in cc2 {
-            if is_colliding(c1, t1, c2, t2) {
-                has_collided = true;
+            let i_1 = rot_1 * c1.inv_inertia_tensor() * rot_1.transposed();
+            let i_2 = rot_2 * c2.inv_inertia_tensor() * rot_2.transposed();
 
-                if cfg!(debug_assertions) {
-                    let rot_1 = Mat3::from(t1.rotation);
-                    let rot_2 = Mat3::from(t2.rotation);
-
-                    let i_1 = rot_1 * c1.inv_inertia_tensor() * rot_1.transposed();
-                    let i_2 = rot_2 * c2.inv_inertia_tensor() * rot_2.transposed();
-
-                    debug_assert_finite!(rb1.velocity());
-                    debug_assert_finite!(rb2.velocity());
-                    debug_assert_finite!(rb1.angular_velocity(i_1));
-                    debug_assert_finite!(rb2.angular_velocity(i_2));
-                }
-
-                solve_colliding(c1, rb1, t1, c2, rb2, t2);
-            }
+            debug_assert_finite!(rb1.velocity());
+            debug_assert_finite!(rb2.velocity());
+            debug_assert_finite!(rb1.angular_velocity(i_1));
+            debug_assert_finite!(rb2.angular_velocity(i_2));
         }
+
+        solve_colliding(c1, rb1, t1, c2, rb2, t2);
     }
-
-    rb1.is_colliding_this_frame = has_collided || rb1.is_colliding_this_frame;
-    rb2.is_colliding_this_frame = has_collided || rb2.is_colliding_this_frame;
-
-    has_collided
 }
