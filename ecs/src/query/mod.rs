@@ -6,7 +6,7 @@ use crate::{
     BorrowMutError, Entity, World,
 };
 
-mod macros;
+pub mod macros;
 
 pub use self::macros::*;
 
