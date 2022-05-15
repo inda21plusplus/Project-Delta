@@ -19,7 +19,6 @@
     "react-dom": "^18.1.0",
     "react-scripts": "5.0.1",
     "sass": "^1.51.0",
-    "tutorial1-window": "../wgpu-test/pkg/",
     "typescript": "^4.4.2",
     "web-vitals": "^2.1.0"
   },
