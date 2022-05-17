@@ -220,6 +220,10 @@ pub fn collide(
     rb2: &mut Rigidbody,
     c2: &Collider,
 ) {
+    if rb1.is_static && rb2.is_static {
+        return;
+    }
+
     if is_colliding(c1, t1, c2, t2) {
         if cfg!(debug_assertions) {
             let rot_1 = Mat3::from(t1.rotation);

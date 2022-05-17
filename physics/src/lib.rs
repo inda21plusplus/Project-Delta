@@ -7,8 +7,8 @@ mod collision;
 mod raycast;
 mod rigidbody;
 mod sphere;
-pub mod systems;
 
+pub use collision::collide;
 pub use collision::Collider;
 pub use r#box::BoxCollider;
 pub use raycast::RayCastHit;

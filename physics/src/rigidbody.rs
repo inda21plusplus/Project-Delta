@@ -1,6 +1,6 @@
 use common::{Mat3, Transform, Vec3};
 
-use crate::macros::debug_assert_finite;
+use crate::{macros::debug_assert_finite, Collider};
 
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub struct Rigidbody {
@@ -57,8 +57,15 @@ impl Rigidbody {
         self.add_impulse(force * dt);
     }
 
-    /// Applies this rigidbody's velocities to `transform`.
-    pub fn step(&self, dt: f32, transform: &mut Transform, inv_inertia_tensor: Mat3) {
+    /// Applies this rigidbody's velocities to `transform`. `collider` is used to calculate
+    /// the angular inertia.
+    // TODO: if we saved the angular velocity we wouldn't need to take the `collider` here.
+    pub fn step(&self, dt: f32, transform: &mut Transform, collider: Option<&Collider>) {
+        // NOTE: not 100% sure but `identity` seems to be reasonable
+        let inv_inertia_tensor = collider
+            .map(|c| c.inv_inertia_tensor())
+            .unwrap_or_else(Mat3::identity);
+
         if self.is_static {
             return;
         }
