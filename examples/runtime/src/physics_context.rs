@@ -3,14 +3,14 @@ use rand::Rng as _;
 
 use common::{Quaternion, Transform, Vec3};
 use game_engine::{
-    ecs::{query_iter, World},
+    ecs::query_iter,
     physics::{self, BoxCollider, Collider, PhysicsMaterial, Rigidbody, SphereCollider},
     rendering::{model::ModelIndex, Light, Line},
-    Context,
+    Engine,
 };
 
+// TODO: remove
 pub struct PhysicsScene {
-    pub world: World,
     // TODO: move into world
     pub cube_model: ModelIndex,
     // TODO: move into world
@@ -22,10 +22,10 @@ pub struct PhysicsScene {
 }
 
 impl PhysicsScene {
-    pub fn new(context: &mut Context) -> Result<Self, anyhow::Error> {
+    pub fn new(engine: &mut Engine) -> Result<Self, anyhow::Error> {
         let mut rng = rand::thread_rng();
 
-        let mut world = World::default();
+        let world = &mut engine.world;
 
         let physics_material = PhysicsMaterial {
             friction: 1.0,
@@ -80,12 +80,11 @@ impl PhysicsScene {
         }
 
         Ok(Self {
-            world,
-            cube_model: context
+            cube_model: engine
                 .renderer
                 .load_model("res/cube.obj")
                 .with_context(|| "failed to open cube.obj")?,
-            ball_model: context
+            ball_model: engine
                 .renderer
                 .load_model("res/ball.obj")
                 .with_context(|| "failed to open ball.obj")?,
@@ -100,18 +99,11 @@ impl PhysicsScene {
         })
     }
 
-    pub fn update(&mut self, dt: f32, ctx: &mut Context) {
-        const FIXED_DT: f32 = 0.02f32;
-        self.extra_dt += dt;
-        while self.extra_dt > FIXED_DT {
-            physics::systems::update(&mut self.world, FIXED_DT);
-            self.extra_dt -= FIXED_DT;
-        }
-
-        let mut mgr = ctx.renderer.get_models_mut();
+    pub fn update(&mut self, engine: &mut Engine) {
+        let mut mgr = engine.renderer.get_models_mut();
         let mut cube_transforms = vec![];
         let mut ball_transforms = vec![];
-        query_iter!(self.world, (transform: Transform, collider: Collider) => {
+        query_iter!(engine.world, (transform: Transform, collider: Collider) => {
             match collider {
                 Collider::Box(_) => &mut cube_transforms,
                 Collider::Sphere(_) => &mut ball_transforms,

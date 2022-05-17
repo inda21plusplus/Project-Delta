@@ -12,7 +12,7 @@ use common::{Vec2, Vec3};
 use game_engine::{
     physics,
     rendering::{Line, Renderer},
-    Context,
+    Engine,
 };
 
 use crate::{
@@ -22,10 +22,10 @@ use crate::{
 };
 
 pub struct Editor {
+    engine: Engine,
     window: Window,
     state: EguiWinitState,
     egui_context: EguiContext,
-    context: Context,
     camera_controller: CameraController,
     scene: PhysicsScene,
     last_frame: Instant,
@@ -48,14 +48,14 @@ impl Editor {
 
         let window =
             Window::new(&event_loop, icon).with_context(|| "failed to open the winit window")?;
-        let mut context = Context {
-            renderer: Renderer::new(
+        let mut engine = Engine::new(
+            Renderer::new(
                 window.raw_window_handle(),
                 window.inner_size(),
                 [0.229, 0.507, 0.921],
             )
             .with_context(|| "failed to create the renderer")?,
-        };
+        );
 
         let camera_controller = CameraController::new(
             10.0,
@@ -64,8 +64,7 @@ impl Editor {
             Vec2::new(-0.3, 135f32.to_radians()),
         );
 
-        let scene =
-            PhysicsScene::new(&mut context).with_context(|| "failed to create the scene")?;
+        let scene = PhysicsScene::new(&mut engine).with_context(|| "failed to create the scene")?;
         let state = EguiWinitState::new(4096, window.winit_window());
         let egui_context = EguiContext::default();
         {
@@ -76,10 +75,10 @@ impl Editor {
         Ok((
             event_loop,
             Self {
+                engine,
                 window,
                 state,
                 egui_context,
-                context,
                 camera_controller,
                 scene,
                 last_frame: Instant::now(),
@@ -103,7 +102,7 @@ impl Editor {
                 window_id,
             } if window_id == self.window.winit_window().id() => {
                 log::info!("Resized window, new size: ({}, {})", width, height);
-                self.context.renderer.resize((width, height));
+                self.engine.renderer.resize((width, height));
                 self.window.update_size();
             }
             Event::WindowEvent { event, .. } => {
@@ -124,10 +123,7 @@ impl Editor {
             }
             Event::MainEventsCleared => self.window.winit_window().request_redraw(),
             Event::RedrawRequested(_) => {
-                let now = Instant::now();
-                let dt = now.duration_since(self.last_frame).as_secs_f32();
-                self.last_frame = now;
-                self.update(dt);
+                self.update();
             }
             _ => {}
         }
@@ -161,11 +157,17 @@ impl Editor {
         ControlFlow::Continue(())
     }
 
-    fn update(&mut self, dt: f32) {
-        self.scene.update(dt, &mut self.context);
+    fn update(&mut self) {
+        let now = Instant::now();
+        let dt = now.duration_since(self.last_frame).as_secs_f32();
+        self.last_frame = now;
+
+        self.engine.update();
+        self.scene.update(&mut self.engine);
+
         self.camera_controller
-            .update_camera(dt, &mut self.context.renderer.camera);
-        self.context.renderer.update_camera();
+            .update_camera(dt, &mut self.engine.renderer.camera);
+        self.engine.renderer.update_camera();
 
         let pos_r = || -100.0..=100.0;
         let k_r = || 0.0..=1.0;
@@ -192,7 +194,7 @@ impl Editor {
                         &mut self.scene.light.color,
                     );
 
-                    if let Some(gravity) = self.scene.world.resource_mut::<physics::Gravity>() {
+                    if let Some(gravity) = self.engine.world.resource_mut::<physics::Gravity>() {
                         ui.label("Gravity");
                         ui.add(Slider::new(&mut gravity.0.y, -20.0..=20.0).text("k_q"));
                     }
@@ -200,14 +202,14 @@ impl Editor {
         });
 
         let lines = self
-            .scene
+            .engine
             .world
             .resource::<Vec<Line>>()
             .map(|v| v.as_slice())
             .unwrap_or(&[]);
 
         if self.window.inner_size() != (0, 0) {
-            match self.context.renderer.render(
+            match self.engine.renderer.render(
                 lines,
                 &[self.scene.light],
                 &self.egui_context,
