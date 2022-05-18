@@ -1,7 +1,6 @@
 use std::iter;
 use std::mem;
 
-use egui;
 use pollster::FutureExt;
 use raw_window_handle::HasRawWindowHandle;
 
@@ -297,11 +296,11 @@ impl Renderer {
 
         let shader = device.create_shader_module(&wgpu::ShaderModuleDescriptor {
             label: Some("shader.wgsl"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("../shader.wgsl").into()),
+            source: wgpu::ShaderSource::Wgsl(include_str!("../shaders/shader.wgsl").into()),
         });
         let line_shader = device.create_shader_module(&wgpu::ShaderModuleDescriptor {
             label: Some("line_shader.wgsl"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("../line_shader.wgsl").into()),
+            source: wgpu::ShaderSource::Wgsl(include_str!("../shaders/line_shader.wgsl").into()),
         });
 
         let depth_texture = texture::Texture::new_depth_texture(&device, &config, true);
@@ -380,7 +379,7 @@ impl Renderer {
     }
 
     pub fn update_camera(&mut self) {
-        self.worlds[0].camera = self.camera.clone();
+        self.worlds[0].camera = self.camera;
         self.worlds[0].update_camera(&self.queue, self.painter.last_aspect);
     }
 
@@ -482,8 +481,7 @@ impl Renderer {
                 &mut ui_render_pass,
                 meshes,
                 pixels_per_point,
-                self.config.height,
-                self.config.width,
+                (self.config.width, self.config.height),
             );
         }
 

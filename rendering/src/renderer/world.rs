@@ -174,11 +174,10 @@ impl Light {
             ..
         } = self;
         let almost_black = 1.0 / (5.0 / 256.0 / 12.92); // convert sRGB to linear
-        let radius = (-linear
-            + f32::sqrt(linear * linear - 4.0 * quadratic * (constant - almost_black * light_max)))
-            / (2.0 * quadratic);
 
-        radius
+        (-linear
+            + f32::sqrt(linear.powi(2) - 4.0 * quadratic * (constant - almost_black * light_max)))
+            / (2.0 * quadratic)
     }
 }
 
@@ -552,7 +551,7 @@ impl World {
 
         let deferred_shader = rd
             .device
-            .create_shader_module(&wgpu::include_wgsl!("../../deferred.wgsl"));
+            .create_shader_module(&wgpu::include_wgsl!("../../shaders/deferred.wgsl"));
 
         let blend = Some(wgpu::BlendState {
             color: wgpu::BlendComponent::REPLACE,
@@ -624,7 +623,7 @@ impl World {
         // this pipeline does nothing but copy over color data
         let copy_shader = rd
             .device
-            .create_shader_module(&wgpu::include_wgsl!("../../gbuffer_copy.wgsl"));
+            .create_shader_module(&wgpu::include_wgsl!("../../shaders/gbuffer_copy.wgsl"));
         let copy_pipeline_layout =
             rd.device
                 .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -670,7 +669,7 @@ impl World {
 
         let light_shader = rd
             .device
-            .create_shader_module(&wgpu::include_wgsl!("../../deferred-light.wgsl"));
+            .create_shader_module(&wgpu::include_wgsl!("../../shaders/deferred-light.wgsl"));
         let light_pipeline_layout =
             rd.device
                 .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -928,7 +927,7 @@ impl World {
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Render Pass"),
                 color_attachments: &[wgpu::RenderPassColorAttachment {
-                    view: &render_target,
+                    view: render_target,
                     resolve_target: None,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Clear(wgpu::Color { r, g, b, a: 1.0 }),
@@ -1036,7 +1035,7 @@ impl World {
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Line Render Pass"),
                 color_attachments: &[wgpu::RenderPassColorAttachment {
-                    view: &render_target,
+                    view: render_target,
                     resolve_target: None,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Load,

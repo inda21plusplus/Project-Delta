@@ -135,7 +135,7 @@ impl Painter {
 
         let shader = device.create_shader_module(&wgpu::ShaderModuleDescriptor {
             label: Some("egui_shader.wgsl"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("../egui_shader.wgsl").into()),
+            source: wgpu::ShaderSource::Wgsl(include_str!("../shaders/egui_shader.wgsl").into()),
         });
 
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -270,8 +270,7 @@ impl Painter {
         pass: &mut wgpu::RenderPass<'a>,
         meshes: Vec<egui::ClippedMesh>,
         pixels_per_point: f32,
-        physical_height: u32,
-        physical_width: u32,
+        physical_size: (u32, u32),
     ) {
         // find the highest number of vertices and whatnot beforehand
         // this is annoying to do in the loop later due to renderpass
@@ -346,8 +345,8 @@ impl Painter {
                 let ScissorRect { x, y, w, h } = transform_rect_to_ndc(
                     clip_rect,
                     pixels_per_point,
-                    physical_height,
-                    physical_width,
+                    physical_size.0,
+                    physical_size.1,
                 );
                 // Skip rendering with zero-sized clip areas.
                 if w == 0 || h == 0 {
@@ -507,15 +506,13 @@ impl Painter {
             // the entry API, possibly we could move away from ahash altogether.
             let tex_exists = self.textures.get(&id).is_some();
 
-            let texture;
-
-            if tex_exists {
-                texture = &self.textures.get(&id).unwrap().tex;
+            let texture = if tex_exists {
+                &self.textures.get(&id).unwrap().tex
             } else {
                 let tex = self.make_tex(id, device, texture_size);
                 self.textures.insert(id, tex);
-                texture = &self.textures.get(&id).unwrap().tex;
-            }
+                &self.textures.get(&id).unwrap().tex
+            };
 
             // I think offset is just an index into the image buffer?
             // if it isn't then this is **completely** wrong,
@@ -575,8 +572,8 @@ struct ScissorRect {
 fn transform_rect_to_ndc(
     clip_rect: egui::Rect,
     pixels_per_point: f32,
-    physical_height: u32,
     physical_width: u32,
+    physical_height: u32,
 ) -> ScissorRect {
     // code from https://github.com/hasenbanck/egui_wgpu_backend
 

@@ -158,7 +158,7 @@ impl GBuffer {
         }
     }
 
-    pub fn color_attachments<'a>(&'a self) -> [wgpu::RenderPassColorAttachment<'a>; 3] {
+    pub fn color_attachments(&self) -> [wgpu::RenderPassColorAttachment; 3] {
         let diffuse = wgpu::RenderPassColorAttachment {
             view: &self.diffuse.view,
             resolve_target: None,

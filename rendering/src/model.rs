@@ -398,7 +398,7 @@ fn load_material(
         texture::Texture::load(device, queue, containing_folder.join(diffuse_path))?;
 
     let normal_path = mat.normal_texture;
-    let normal_texture = if normal_path == "" {
+    let normal_texture = if normal_path.is_empty() {
         let img = image::Rgb32FImage::from_pixel(1, 1, image::Rgb([0.0, 0.0, 1.0]));
         texture::Texture::from_image(
             device,
