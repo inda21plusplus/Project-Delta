@@ -1,5 +1,9 @@
 use std::time::Duration;
 
+use ecs::World;
+
+pub const TIME_STEP: Duration = Duration::from_millis(20);
+
 #[derive(Default)]
 pub struct Time {
     pub(crate) time_since_startup: Duration,
@@ -7,6 +11,17 @@ pub struct Time {
 }
 
 impl Time {
+    pub(crate) fn system(world: &mut World) {
+        let time = if let Some(time) = world.resource_mut::<Time>() {
+            time
+        } else {
+            world.add_resource(Time::default());
+            world.resource_mut().unwrap()
+        };
+        time.time_since_startup += TIME_STEP;
+        time.dt = TIME_STEP;
+    }
+
     pub fn dt(&self) -> Duration {
         self.dt
     }
