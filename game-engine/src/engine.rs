@@ -9,7 +9,7 @@ pub struct Engine {
     pub renderer: Renderer,
     pub world: World,
 
-    last_update: Instant,
+    last_update: Option<Instant>,
 }
 
 impl Engine {
@@ -17,23 +17,29 @@ impl Engine {
         Self {
             renderer,
             world: World::default(),
-            last_update: Instant::now(),
+            last_update: None,
         }
     }
 
     pub fn update(&mut self) {
         let now = Instant::now();
-        let mut delta = now - self.last_update;
+        let mut last_update = if let Some(last_update) = self.last_update {
+            last_update
+        } else {
+            now - TIME_STEP
+        };
+        let mut delta = now - last_update;
 
         let mut i = 0;
         while delta >= TIME_STEP && i < 2 {
             Time::system(&mut self.world);
 
-            physics_systems::update(&mut self.world, TIME_STEP.as_secs_f32());
+            physics_systems::update(&mut self.world);
 
-            self.last_update += delta;
+            last_update += delta;
             delta -= TIME_STEP;
             i += 1;
         }
+        self.last_update = Some(last_update);
     }
 }
