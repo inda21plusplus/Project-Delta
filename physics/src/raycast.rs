@@ -1,10 +1,10 @@
 use common::{Ray, Transform, Vec3};
 
 use crate::{
+    cube::mesh::{get_normal_from_tri, get_tris_for_cube, get_verts},
     get_position,
     macros::{debug_assert_finite, debug_assert_normalized},
-    r#box::mesh::{get_normal_from_tri, get_tris_for_box, get_verts},
-    BoxCollider, Collider, SphereCollider,
+    Collider, CubeCollider, SphereCollider,
 };
 
 #[derive(Debug, PartialEq, Clone, Copy)]
@@ -49,13 +49,13 @@ pub fn raycast(t: &Transform, cols: &Vec<Collider>, ray: Ray) -> Option<RayCastH
 pub fn raycast_collider(t: &Transform, c: &Collider, ray: Ray) -> Option<RayCastHit> {
     match c {
         Collider::Sphere(s) => raycast_sphere(t, s, ray),
-        Collider::Box(b) => raycast_box(t, b, ray),
+        Collider::Cube(b) => raycast_cube(t, b, ray),
     }
 }
 
-pub fn raycast_box(t: &Transform, c: &BoxCollider, ray: Ray) -> Option<RayCastHit> {
+pub fn raycast_cube(t: &Transform, c: &CubeCollider, ray: Ray) -> Option<RayCastHit> {
     let v = get_verts(t, c);
-    let tris = get_tris_for_box(&v);
+    let tris = get_tris_for_cube(&v);
     let r = t.rotation * c.local_rotation;
     let r_inv = r.inverse();
     let fixed_ray = Ray::new(r_inv * ray.origin, r_inv * ray.direction);

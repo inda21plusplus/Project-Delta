@@ -1,28 +1,28 @@
 use common::{Mat3, Transform, Vec3};
 
 use crate::{
+    cube::collision::collide_cube_vs_cube,
+    cube::{collision::is_colliding_cube_vs_cube, CubeCollider},
     get_position,
     macros::debug_assert_finite,
     macros::debug_assert_normalized,
-    r#box::collision::collide_box_vs_box,
-    r#box::{collision::is_colliding_box_vs_box, BoxCollider},
     sphere::collision::collide_sphere_vs_sphere,
-    sphere::collision::{is_colliding_sphere_vs_box, is_colliding_sphere_vs_sphere},
-    sphere::{collision::collide_sphere_vs_box, SphereCollider},
+    sphere::collision::{is_colliding_sphere_vs_cube, is_colliding_sphere_vs_sphere},
+    sphere::{collision::collide_sphere_vs_cube, SphereCollider},
     PhysicsMaterial, Rigidbody,
 };
 
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub enum Collider {
     Sphere(SphereCollider),
-    Box(BoxCollider),
+    Cube(CubeCollider),
 }
 
 impl Collider {
     pub fn inv_inertia_tensor(&self) -> Mat3 {
         match self {
             Self::Sphere(a) => a.inv_inertia_tensor(),
-            Self::Box(a) => a.inv_inertia_tensor(),
+            Self::Cube(a) => a.inv_inertia_tensor(),
         }
     }
 }
@@ -39,14 +39,14 @@ pub fn is_colliding(c1: &Collider, t1: &Transform, c2: &Collider, t2: &Transform
         (Collider::Sphere(sc1), Collider::Sphere(sc2)) => {
             is_colliding_sphere_vs_sphere(w1, w2, sc1, t1, sc2, t2)
         }
-        (Collider::Box(bc1), Collider::Box(bc2)) => {
-            is_colliding_box_vs_box(w1, w2, bc1, t1, bc2, t2)
+        (Collider::Cube(bc1), Collider::Cube(bc2)) => {
+            is_colliding_cube_vs_cube(w1, w2, bc1, t1, bc2, t2)
         }
-        (Collider::Sphere(sc), Collider::Box(bc)) => {
-            is_colliding_sphere_vs_box(w1, w2, sc, t1, bc, t2)
+        (Collider::Sphere(sc), Collider::Cube(bc)) => {
+            is_colliding_sphere_vs_cube(w1, w2, sc, t1, bc, t2)
         }
-        (Collider::Box(bc), Collider::Sphere(sc)) => {
-            is_colliding_sphere_vs_box(w2, w1, sc, t2, bc, t1)
+        (Collider::Cube(bc), Collider::Sphere(sc)) => {
+            is_colliding_sphere_vs_cube(w2, w1, sc, t2, bc, t1)
         }
     }
 }
@@ -199,14 +199,14 @@ pub fn solve_colliding(
         (Collider::Sphere(sc1), Collider::Sphere(sc2)) => {
             collide_sphere_vs_sphere(sc1, rb1, t1, w1, sc2, rb2, t2, w2)
         }
-        (Collider::Box(bc1), Collider::Box(bc2)) => {
-            collide_box_vs_box(bc1, rb1, t1, w1, bc2, rb2, t2, w2)
+        (Collider::Cube(bc1), Collider::Cube(bc2)) => {
+            collide_cube_vs_cube(bc1, rb1, t1, w1, bc2, rb2, t2, w2)
         }
-        (Collider::Sphere(sc), Collider::Box(bc)) => {
-            collide_sphere_vs_box(sc, rb1, t1, w1, bc, rb2, t2, w2)
+        (Collider::Sphere(sc), Collider::Cube(bc)) => {
+            collide_sphere_vs_cube(sc, rb1, t1, w1, bc, rb2, t2, w2)
         }
-        (Collider::Box(bc), Collider::Sphere(sc)) => {
-            collide_sphere_vs_box(sc, rb2, t2, w2, bc, rb1, t1, w1)
+        (Collider::Cube(bc), Collider::Sphere(sc)) => {
+            collide_sphere_vs_cube(sc, rb2, t2, w2, bc, rb1, t1, w1)
         }
     }
 }

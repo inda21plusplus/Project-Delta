@@ -1,7 +1,7 @@
 use common::{Transform, Vec3};
 
 use super::mesh::get_vertex;
-use crate::{overlap, BoxCollider};
+use crate::{overlap, CubeCollider};
 
 /// SAT algo on 3d
 /// https://hitokageproduction.com/article/11
@@ -75,7 +75,7 @@ fn get_min_max_vert(normal: Vec3, verts: &Vec<Vec3>) -> (f32, f32) {
 }
 
 /// returns (1,0,0) (0,1,0) (0,0,1) with rotation aka positive normals
-pub fn get_axis(t: &Transform, c: &BoxCollider) -> (Vec3, Vec3, Vec3) {
+pub fn get_axis(t: &Transform, c: &CubeCollider) -> (Vec3, Vec3, Vec3) {
     let rotation = t.rotation * c.local_rotation;
     (
         rotation * Vec3::unit_x(),
@@ -91,8 +91,8 @@ pub fn get_axis_and_verts(
     w2: &Vec3,
     t1: &Transform,
     t2: &Transform,
-    bc1: &BoxCollider,
-    bc2: &BoxCollider,
+    bc1: &CubeCollider,
+    bc2: &CubeCollider,
 ) -> (Vec<Vec3>, Vec<Vec3>, Vec<Vec3>) {
     let (a0, a1, a2) = get_axis(t1, bc1);
     let (b0, b1, b2) = get_axis(t2, bc2);

@@ -2,8 +2,8 @@ use common::{Transform, Vec3};
 
 use crate::{
     collision::{pop_colliders, standard_collision},
+    cube::{get_closest_point, CubeCollider},
     macros::debug_assert_finite,
-    r#box::{get_closest_point, BoxCollider},
     Rigidbody, SphereCollider,
 };
 
@@ -26,12 +26,12 @@ pub fn is_colliding_sphere_vs_sphere(
     w1.distance_squared(w2) <= total_radius * total_radius
 }
 
-pub fn is_colliding_sphere_vs_box(
+pub fn is_colliding_sphere_vs_cube(
     w1: Vec3,
     w2: Vec3,
     sc1: &SphereCollider,
     t1: &Transform,
-    bc2: &BoxCollider,
+    bc2: &CubeCollider,
     t2: &Transform,
 ) -> bool {
     let r = sc1.get_radius(t1.scale);
@@ -83,12 +83,12 @@ pub fn collide_sphere_vs_sphere(
     pop_colliders(distance_pop * normal, t1, t2, rb1, rb2);
 }
 
-pub fn collide_sphere_vs_box(
+pub fn collide_sphere_vs_cube(
     c1: &SphereCollider,
     rb1: &mut Rigidbody,
     t1: &mut Transform,
     w1: Vec3, // world position
-    c2: &BoxCollider,
+    c2: &CubeCollider,
     rb2: &mut Rigidbody,
     t2: &mut Transform,
     w2: Vec3, // world position

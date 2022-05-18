@@ -2,15 +2,15 @@ use common::{Quaternion, Transform, Vec3};
 
 use macros::debug_assert_finite;
 
-mod r#box;
 mod collision;
+mod cube;
 mod raycast;
 mod rigidbody;
 mod sphere;
 
 pub use collision::collide;
 pub use collision::Collider;
-pub use r#box::BoxCollider;
+pub use cube::CubeCollider;
 pub use raycast::RayCastHit;
 pub use rigidbody::Rigidbody;
 pub use sphere::SphereCollider;
@@ -69,7 +69,7 @@ fn get_position(transform: &Transform, collider: &Collider) -> Vec3 {
         transform.rotation,
         match collider {
             Collider::Sphere(c) => c.local_position,
-            Collider::Box(c) => c.local_position,
+            Collider::Cube(c) => c.local_position,
         },
     )
 }

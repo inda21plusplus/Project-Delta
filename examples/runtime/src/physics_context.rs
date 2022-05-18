@@ -4,7 +4,7 @@ use rand::Rng as _;
 use common::{Quaternion, Transform, Vec3};
 use game_engine::{
     ecs::query_iter,
-    physics::{self, BoxCollider, Collider, PhysicsMaterial, Rigidbody, SphereCollider},
+    physics::{self, Collider, CubeCollider, PhysicsMaterial, Rigidbody, SphereCollider},
     rendering::{model::ModelIndex, Light, Line},
     Engine,
 };
@@ -47,7 +47,7 @@ impl PhysicsScene {
         world.add(platform, Rigidbody::new_static());
         world.add(
             platform,
-            Collider::Box(BoxCollider::new(Vec3::one(), physics_material)),
+            Collider::Cube(CubeCollider::new(Vec3::one(), physics_material)),
         );
 
         for i in 0..40 {
@@ -72,7 +72,7 @@ impl PhysicsScene {
             world.add(
                 entity,
                 if i < 20 {
-                    Collider::Box(BoxCollider::new(Vec3::one(), physics_material))
+                    Collider::Cube(CubeCollider::new(Vec3::one(), physics_material))
                 } else {
                     Collider::Sphere(SphereCollider::new(1., physics_material))
                 },
@@ -105,7 +105,7 @@ impl PhysicsScene {
         let mut ball_transforms = vec![];
         query_iter!(engine.world, (transform: Transform, collider: Collider) => {
             match collider {
-                Collider::Box(_) => &mut cube_transforms,
+                Collider::Cube(_) => &mut cube_transforms,
                 Collider::Sphere(_) => &mut ball_transforms,
             }.push(*transform);
         });
