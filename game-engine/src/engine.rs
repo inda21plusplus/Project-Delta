@@ -36,7 +36,7 @@ impl Engine {
 
             physics_systems::update(&mut self.world);
 
-            last_update += delta;
+            last_update += TIME_STEP;
             delta -= TIME_STEP;
             i += 1;
         }
