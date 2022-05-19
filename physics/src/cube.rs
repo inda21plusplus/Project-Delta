@@ -1,20 +1,20 @@
-use crate::physics::{clamp, macros::debug_assert_finite};
+use common::{Mat3, Quaternion, Vec3};
+
 pub(crate) mod collision;
 pub(crate) mod mesh;
 pub(crate) mod sat;
 
-use super::PhysicsMaterial;
-use common::{Mat3, Quaternion, Vec3};
+use crate::{clamp, macros::debug_assert_finite, PhysicsMaterial};
 
 #[derive(Debug, PartialEq, Clone, Copy)]
-pub struct BoxColider {
+pub struct CubeCollider {
     pub local_position: Vec3,
     pub local_rotation: Quaternion,
     pub scale: Vec3,
     pub material: PhysicsMaterial,
 }
 
-impl BoxColider {
+impl CubeCollider {
     pub fn new(scale: Vec3, material: PhysicsMaterial) -> Self {
         Self {
             local_position: Vec3::zero(),

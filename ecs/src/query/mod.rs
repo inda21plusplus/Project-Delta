@@ -1,4 +1,4 @@
-use std::{collections::HashSet, ptr::NonNull};
+use std::collections::HashSet;
 
 use crate::{
     component::{ComponentEntryRef, ComponentId},
@@ -6,7 +6,7 @@ use crate::{
     BorrowMutError, Entity, World,
 };
 
-mod macros;
+pub mod macros;
 
 pub use self::macros::*;
 
@@ -24,6 +24,7 @@ pub struct Query {
 pub struct ComponentQuery {
     pub id: ComponentId,
     pub mutable: bool,
+    pub optional: bool,
 }
 
 impl Query {
@@ -73,7 +74,7 @@ impl<'w, 'q> QueryResponse<'w, 'q> {
     /// Same as `try_get` but panics if `None` would be returned.
     /// # Safety
     /// See documentation for `try_get`
-    pub unsafe fn get(&mut self, entity: Entity) -> Vec<NonNull<u8>> {
+    pub unsafe fn get(&mut self, entity: Entity) -> Vec<*mut u8> {
         self.try_get(entity)
             .expect("The given entity does not match the query or has been despawned")
     }
@@ -85,24 +86,33 @@ impl<'w, 'q> QueryResponse<'w, 'q> {
     /// All pointers returned are technically mutable **BUT** modifying the pointers to components
     /// not marked as mutable in the query is undefined behaviour.
     /// The pointers must not outlive this `QueryResponse`
-    pub unsafe fn try_get(&mut self, entity: Entity) -> Option<Vec<NonNull<u8>>> {
-        self.try_get_by_index(entity.get_id_unchecked())
+    pub unsafe fn try_get(&mut self, entity: Entity) -> Option<Vec<*mut u8>> {
+        self.world
+            .entities()
+            .id(entity)
+            .and_then(|index| self.try_get_by_index(index))
     }
 
-    unsafe fn try_get_by_index(&mut self, index: u32) -> Option<Vec<NonNull<u8>>> {
+    unsafe fn try_get_by_index(&mut self, index: u32) -> Option<Vec<*mut u8>> {
         let mut res = Vec::with_capacity(self.entries.len());
-        for (e, _) in self.entries.iter().zip(self.query.components().iter()) {
-            res.push(NonNull::new(
-                e.get().storage.get_ptr(index as usize) as *mut _
-            )?);
+        for (e, cq) in self.entries.iter().zip(self.query.components().iter()) {
+            let ptr = e.get().storage.get_ptr(index as usize) as *mut u8;
+            if ptr.is_null() && !cq.optional {
+                return None;
+            }
+            res.push(ptr);
         }
         Some(res)
     }
 
+    /// # Safety
+    /// See documentation for `try_get`
     pub unsafe fn iter<'a>(&'a mut self) -> Iter<'a, 'w, 'q> {
         Iter::new(self)
     }
 
+    /// # Safety
+    /// See documentation for `try_get`
     pub unsafe fn iter_combinations<'a>(&'a mut self) -> IterCombinations<'a, 'w, 'q> {
         IterCombinations::new(self)
     }
@@ -122,7 +132,7 @@ impl<'a, 'w, 'q> Iter<'a, 'w, 'q> {
 
 // TODO: for sparse components this could be optimized
 impl<'a, 'r, 'q> Iterator for Iter<'a, 'r, 'q> {
-    type Item = (Entity, Vec<NonNull<u8>>);
+    type Item = (Entity, Vec<*mut u8>);
 
     fn next(&mut self) -> Option<Self::Item> {
         self.entity_iter.next().and_then(|e| unsafe {
@@ -147,19 +157,23 @@ impl<'a, 'w, 'q> IterCombinations<'a, 'w, 'q> {
 
 // TODO: for sparse components this could be optimized
 impl<'a, 'r, 'q> Iterator for IterCombinations<'a, 'r, 'q> {
-    type Item = ((Entity, Vec<NonNull<u8>>), (Entity, Vec<NonNull<u8>>));
+    type Item = ((Entity, Vec<*mut u8>), (Entity, Vec<*mut u8>));
 
     fn next(&mut self) -> Option<Self::Item> {
         // SAFETY: we know that `EntityIterCombinations` won't return the same entity in both
         // values of the tuple, so we know that the components are safe to access.
-        self.entity_iter.next().and_then(|(e1, e2)| unsafe {
-            self.res
-                .try_get_by_index(self.entity_iter.entities().id(e1).unwrap())
-                .and_then(|comps1| {
+        loop {
+            let (e1, e2) = self.entity_iter.next()?;
+            if let (Some(comps1), Some(comps2)) = unsafe {
+                (
                     self.res
-                        .try_get_by_index(self.entity_iter.entities().id(e2).unwrap())
-                        .map(|comps2| ((e1, comps1), (e2, comps2)))
-                })
-        })
+                        .try_get_by_index(self.entity_iter.entities().id(e1).unwrap()),
+                    self.res
+                        .try_get_by_index(self.entity_iter.entities().id(e2).unwrap()),
+                )
+            } {
+                return Some(((e1, comps1), (e2, comps2)));
+            }
+        }
     }
 }

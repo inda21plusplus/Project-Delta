@@ -147,7 +147,8 @@ impl ComponentRegistry {
     ) -> ComponentId {
         let id = ComponentId(self.entries.len().try_into().unwrap());
 
-        debug_assert!(self.rust_types.insert(type_id, id).is_none());
+        let old = self.rust_types.insert(type_id, id);
+        debug_assert!(old.is_none());
         assert!(self.check_exclusive_access());
 
         let info = ComponentInfo {

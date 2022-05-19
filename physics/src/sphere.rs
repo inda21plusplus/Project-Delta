@@ -1,15 +1,17 @@
-use super::PhysicsMaterial;
 use common::{Mat3, Vec3};
-pub(crate) mod collision;
+
+pub mod collision;
+
+use crate::PhysicsMaterial;
 
 #[derive(Debug, PartialEq, Clone, Copy)]
-pub struct SphereColider {
+pub struct SphereCollider {
     pub local_position: Vec3,
     pub radius: f32,
     pub material: PhysicsMaterial,
 }
 
-impl SphereColider {
+impl SphereCollider {
     pub fn new(radius: f32, material: PhysicsMaterial) -> Self {
         Self {
             radius,
@@ -19,9 +21,12 @@ impl SphereColider {
     }
 
     pub fn get_radius(&self, scale: Vec3) -> f32 {
-        let scale = scale.x; // TODO FIX, this is left to the user to discover
+        // TODO: add support for non-uniformly scaled "spheres"
+        let scale = (scale.x + scale.y + scale.z) / 3.;
+
         debug_assert!(self.radius >= 0.0);
         debug_assert!(scale >= 0.0);
+
         self.radius * scale
     }
 

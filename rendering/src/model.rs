@@ -553,6 +553,10 @@ impl<'a> ModelManager<'a> {
             .or_insert_with(|| self.storage.get_transforms(model, range).to_vec())
     }
 
+    pub fn set_all_transforms(&mut self, all : HashMap<ModelIndex, Vec<Transform>>) {
+        self.pending_writes = all;
+    }
+
     pub fn set_transforms(&mut self, model: ModelIndex, transforms: Vec<Transform>) {
         self.pending_writes.insert(model, transforms);
     }

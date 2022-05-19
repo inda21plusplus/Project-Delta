@@ -996,8 +996,9 @@ name = "game-engine"
 version = "0.1.0"
 dependencies = [
  "common",
- "lazy_static",
+ "ecs",
  "log",
+ "physics",
  "rendering",
  "thiserror",
 ]
@@ -1126,24 +1127,6 @@ name = "humantime"
 version = "2.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9a3a5bfb195931eeb336b2a7b4d761daec841b97f947d34394601737a7bba5e4"
-
-[[package]]
-name = "ide"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "common",
- "egui",
- "egui-winit",
- "env_logger",
- "game-engine",
- "image",
- "log",
- "rand 0.8.5",
- "raw-window-handle",
- "thiserror",
- "winit",
-]
 
 [[package]]
 name = "ident_case"
@@ -1743,6 +1726,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d4fd5641d01c8f18a23da7b6fe29298ff4b55afcccdf78973b24cf3175fee32e"
 
 [[package]]
+name = "physics"
+version = "0.1.0"
+dependencies = [
+ "common",
+ "rendering",
+]
+
+[[package]]
 name = "pin-project"
 version = "1.0.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2032,6 +2023,24 @@ dependencies = [
  "thiserror",
  "tobj",
  "wgpu",
+]
+
+[[package]]
+name = "runtime"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "common",
+ "egui",
+ "egui-winit",
+ "env_logger",
+ "game-engine",
+ "image",
+ "log",
+ "rand 0.8.5",
+ "raw-window-handle",
+ "thiserror",
+ "winit",
 ]
 
 [[package]]
