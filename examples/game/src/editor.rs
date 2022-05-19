@@ -143,6 +143,14 @@ impl Editor {
             map.insert(keycode, state == ElementState::Pressed);
         }
 
+        if let Some(map) = self
+            .engine
+            .world
+            .resource_mut::<HashMap<VirtualKeyCode, bool>>()
+        {
+            map.insert(keycode, state == ElementState::Pressed);
+        }
+
         if state != ElementState::Pressed {
             return ControlFlow::Continue(());
         }

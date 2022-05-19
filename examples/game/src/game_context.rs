@@ -347,7 +347,7 @@ impl GameScene {
                     let direction_by_offset = Vec3::new(transform.position.x - camera.eye.x, 0.0, transform.position.z - camera.eye.z).normalized();
                     let direction = direction_by_normal * 1.0 + direction_by_offset * 0.0;
 
-                    if is_key_down(VirtualKeyCode::Delete) {
+                    if is_key_down(VirtualKeyCode::Delete) || is_key_down(VirtualKeyCode::F) {
                         rb.add_impulse(direction * game.force);
                     } else {
                         hit_line = Some(Line { start: transform.position, end: transform.position + direction, color: Vec3::new(1.0,0.0,0.0) });
@@ -377,7 +377,7 @@ impl GameScene {
             lines.push(Line {
                 start: line.start + direction * BALL_RADIUS,
                 end: line.start + direction * min_distance * force_scale,
-                color: Vec3::new(force_scale, 1.0-force_scale, 0.0),
+                color: Vec3::new(force_scale, 1.0 - force_scale, 0.0),
             });
         }
 
