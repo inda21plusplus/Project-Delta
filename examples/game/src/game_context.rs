@@ -29,6 +29,7 @@ const BALL_SPACING: f32 = 0.00;
 const BALL_MASS: f32 = 1.70;
 const MIN_SPEED: f32 = 0.5;
 
+#[derive(Debug)]
 pub struct GameBall {
     pub turn: u8,         // how many times played
     pub player_index: u8, // what player is to play, start as 0
@@ -113,7 +114,7 @@ impl GameScene {
                 },
             );
             world.add(ball, Rigidbody::new(BALL_MASS));
-            
+
             if i == 0 {
                 println!("Added gameball");
                 world.add(
@@ -125,14 +126,13 @@ impl GameScene {
                     },
                 );
             }
-            
+
             world.add(
                 ball,
                 Collider::Sphere(SphereCollider::new(1.0, ball_material)),
             );
 
             world.add(ball, ball_models[i]);
-
 
             // ugly ik, but I dont want to solve a leet problem rn
             x += 1;
@@ -165,7 +165,7 @@ impl GameScene {
         let mut mgr = engine.renderer.get_models_mut();
         let mut transforms: HashMap<ModelIndex, Vec<Transform>> = HashMap::new();
 
-        query_iter!(engine.world, (game : GameBall) => {
+        query_iter!(engine.world, (rb: mut Rigidbody, t: GameBall) => {
             //if rb.velocity().magnitude_squared() < MIN_SPEED * MIN_SPEED {
                 println!("can play");
                // rb.linear_momentum = Vec3::zero();
