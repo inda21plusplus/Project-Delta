@@ -144,12 +144,12 @@ pub fn standard_collision(
     };
 
     if !rb.0.is_static {
-        rb.0.linear_momentum += j_r * normal / m_1;
+        rb.0.linear_momentum += j_r * normal; // / m_1;
         rb.0.angular_momentum += -j_r * (i_1 * r.0.cross(normal));
         do_friction(rb.0, i_1, r.0, trans.0);
     }
     if !rb.1.is_static {
-        rb.1.linear_momentum += -j_r * normal / m_2;
+        rb.1.linear_momentum += -j_r * normal; // / m_2;
         rb.1.angular_momentum += -j_r * (i_2 * r.1.cross(normal));
         do_friction(rb.1, i_2, r.1, trans.1);
     }

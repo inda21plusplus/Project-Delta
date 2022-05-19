@@ -30,8 +30,6 @@ const BALL_COUNT: usize = 15;
 const BALL_RADIUS: f32 = 0.5715;
 const BALL_SPACING: f32 = 0.00;
 const BALL_MASS: f32 = 1.70;
-const TABLE_WIDTH: f32 = 12.7 / 2.0;
-const TABLE_HEIGHT: f32 = 25.4 / 2.0;
 const MIN_SPEED: f32 = 0.2;
 const HIT_FORCE: f32 = 90.0;
 
@@ -49,7 +47,11 @@ struct UnityTransform {
 }
 
 fn vec3_to_quaternion(rotation: Vec3) -> Quaternion {
-    return to_quaternion(rotation.x.to_radians(), -rotation.y.to_radians(), rotation.z.to_radians());
+    return to_quaternion(
+        rotation.x.to_radians(),
+        -rotation.y.to_radians(),
+        rotation.z.to_radians(),
+    );
 }
 
 //https://en.wikipedia.org/wiki/Conversion_between_quaternions_and_Euler_angles
@@ -73,6 +75,9 @@ fn to_quaternion(yaw: f32, pitch: f32, roll: f32) -> Quaternion // yaw (Z), pitc
 
 impl GameScene {
     pub fn new(engine: &mut Engine) -> Result<Self, anyhow::Error> {
+        let world = &mut engine.world;
+        world.add_resource(HashMap::<VirtualKeyCode, bool>::new());
+
         // models
         let table_model = engine
             .renderer
@@ -89,7 +94,10 @@ impl GameScene {
                     .with_context(|| "failed to open ball obj")?,
             );
         }
-
+        let ball_material = PhysicsMaterial {
+            friction: 1.0,
+            restfullness: 1.0,
+        };
         let mut rng = rand::thread_rng();
 
         let world = &mut engine.world;
@@ -99,17 +107,20 @@ impl GameScene {
             restfullness: 1.0,
         };
 
-        let ball_material = PhysicsMaterial {
+        let ground_material = PhysicsMaterial {
             friction: 1.0,
-            restfullness: 1.0,
+            restfullness: 0.0,
         };
-
-        world.add_resource(HashMap::<VirtualKeyCode, bool>::new());
 
         world.add_resource(physics::Gravity::default());
         world.add_resource::<Vec<Line>>(vec![]);
 
         let unity_export: Vec<UnityTransform> = vec![
+            UnityTransform {
+                position: Vec3::new(0.0000, 0.0000, 0.0000),
+                rotation: Vec3::new(0.0000, 0.0000, 0.0000),
+                scale: Vec3::new(2.5400, 0.1000, 1.2700),
+            },
             UnityTransform {
                 position: Vec3::new(-1.4480, -0.1010, -0.8150),
                 rotation: Vec3::new(0.0000, 45.0000, 0.0000),
@@ -170,48 +181,36 @@ impl GameScene {
                 rotation: Vec3::new(0.0000, 0.0000, 0.0000),
                 scale: Vec3::new(1.0500, 0.5000, 0.1000),
             },
-            UnityTransform {
-                position: Vec3::new(0.0000, 0.0000, 0.0000),
-                rotation: Vec3::new(0.0000, 0.0000, 0.0000),
-                scale: Vec3::new(2.5400, 0.1000, 1.2700),
-            },
         ];
 
-        for transform in unity_export {
+        for i in 0..unity_export.len() {
+            let transform = &unity_export[i];
             let cube = world.spawn();
             world.add(
                 cube,
                 Transform {
-                    position: transform.position*10.0,
+                    position: transform.position * 10.0,
                     rotation: vec3_to_quaternion(transform.rotation),
-                    scale: transform.scale*5.0,
+                    scale: transform.scale * 5.0,
                 },
             );
             world.add(cube, Rigidbody::new_static());
+
             world.add(
                 cube,
-                Collider::Cube(CubeCollider::new(Vec3::one(), table_material)),
+                Collider::Cube(CubeCollider::new(
+                    Vec3::one(),
+                    if i == 0 {
+                        ground_material
+                    } else {
+                        table_material
+                    },
+                )),
             );
+
             world.add(cube, table_model);
         }
-/*
-        let platform = world.spawn();
 
-        world.add(
-            platform,
-            Transform {
-                position: Vec3::new(0.0, 0.0, 0.0),
-                rotation: Quaternion::rotation_x(0.0f32.to_radians()),
-                scale: Vec3::new(TABLE_HEIGHT, 1.0, TABLE_WIDTH),
-            },
-        );
-        world.add(platform, Rigidbody::new_static());
-        world.add(
-            platform,
-            Collider::Cube(CubeCollider::new(Vec3::one(), table_material)),
-        );
-        world.add(platform, table_model);
-*/
         let mut x = -1;
         let mut y = 0;
         let mut max = 0;
@@ -222,11 +221,11 @@ impl GameScene {
                 ball,
                 Transform {
                     position: if i == 0 {
-                        Vec3::new(-5.0, 0.1 + BALL_RADIUS, 0.0)
+                        Vec3::new(-5.0, 1.1 + BALL_RADIUS, 0.0)
                     } else {
                         Vec3::new(
                             diagonal_radius * (y as f32),
-                            0.1 + BALL_RADIUS,
+                            1.1 + BALL_RADIUS,
                             ((x as f32) - (max as f32) / 2.0) * (BALL_RADIUS * 2.0 + BALL_SPACING),
                         )
                     },
@@ -279,7 +278,6 @@ impl GameScene {
                 })
             }
         }
-
         Ok(Self {
             ball_models,
             cube_model: table_model,
@@ -312,28 +310,43 @@ impl GameScene {
 
         // phx drag
         query_iter!(engine.world, (rb: mut Rigidbody) => {
-            let sub = 0.05*time.dt().as_secs_f32();
-           // rb.linear_momentum -= rb.linear_momentum*sub;
-           // rb.angular_momentum -= rb.angular_momentum*sub;
+
             if rb.velocity().magnitude_squared() < MIN_SPEED * MIN_SPEED {
-                rb.linear_momentum = Vec3::zero();
+               rb.linear_momentum = Vec3::zero();
+               rb.angular_momentum = Vec3::zero();
+            } else {
+                let sub_max = 0.4*time.dt().as_secs_f32(); //* ;
+                let sub_of =sub_max*( rb.linear_momentum.magnitude().min(5.0) / rb.linear_momentum.magnitude());
+
+                rb.linear_momentum -= rb.linear_momentum * sub_of;
+                rb.angular_momentum -= rb.angular_momentum * sub_of;
+                rb.linear_momentum = Vec3::new(rb.linear_momentum.x,rb.linear_momentum.y.min(0.0),rb.linear_momentum.z).normalized() * rb.linear_momentum.magnitude();
             }
         });
-
+        let mut lines: Vec<Line> = Vec::new();
         // raycast
         query_iter!(engine.world, (rb: mut Rigidbody, collider : Collider, transform : Transform, game: GameBall) => {
-            if rb.velocity().magnitude_squared() <= MIN_SPEED*MIN_SPEED*10.0 {
-                if is_key_down(VirtualKeyCode::Delete) {
-                    if let Some(hit) = raycast(transform, &vec![*collider], Ray::new(camera.eye,camera.target - camera.eye)) {
-                        let direction_by_normal = Vec3::new(-hit.normal.x, 0.0, -hit.normal.z).normalized();
-                        let direction_by_offset = Vec3::new(transform.position.x - camera.eye.x, 0.0, transform.position.z - camera.eye.z).normalized();
-                        let direction = direction_by_normal * 0.2 + direction_by_offset * 0.8;
-                        println!("Hit at {:?}",direction);
+            if rb.velocity().magnitude_squared() <= MIN_SPEED*MIN_SPEED {
+                if let Some(hit) = raycast(transform, &vec![*collider], Ray::new(camera.eye, (camera.target - camera.eye).normalized())) {
+                    let direction_by_normal = Vec3::new(-hit.normal.x, 0.0, -hit.normal.z).normalized();
+                    let direction_by_offset = Vec3::new(transform.position.x - camera.eye.x, 0.0, transform.position.z - camera.eye.z).normalized();
+                    let direction = direction_by_normal * 1.0 + direction_by_offset * 0.0;
+
+                    if is_key_down(VirtualKeyCode::Delete) {
                         rb.add_impulse(direction * HIT_FORCE);
+                    } else {
+                        lines.push(Line { start: transform.position, end: transform.position + direction * 10.0, color: Vec3::new(1.0,0.0,0.0) })
                     }
                 }
             }
         });
+
+        query_iter!(engine.world, (rb: Rigidbody, transform : Transform) => {
+            //lines.push(Line { start: transform.position, end: transform.position + rb.linear_momentum, color: Vec3::new(1.0,0.0,0.0) })
+        });
+
+        let lines_res = engine.world.resource_mut::<Vec<Line>>().unwrap();
+        *lines_res = lines;
 
         let mut mgr = engine.renderer.get_models_mut();
 

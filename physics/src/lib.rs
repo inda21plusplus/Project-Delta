@@ -17,6 +17,12 @@ pub use sphere::SphereCollider;
 
 pub struct Gravity(pub Vec3);
 
+impl Gravity {
+    pub fn zero() -> Self {
+        Gravity(Vec3::zero())
+    }
+}
+
 impl std::default::Default for Gravity {
     fn default() -> Self {
         Gravity(Vec3::new(0., -9.81, 0.))

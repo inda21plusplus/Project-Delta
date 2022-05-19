@@ -22,6 +22,6 @@ pub fn update(world: &mut World) {
     // TODO: this should apply to pairs of entities where at least one of them has a rigidbody, not
     // necessarily both.
     query_iter_combs!(world, ((tr1, tr2): mut Transform, (rb1, rb2): mut Rigidbody, (c1, c2): Collider) => {
-        collide(tr1, rb1, c1, tr2, rb2, c2);
+        collide(tr2, rb2, c2, tr1, rb1, c1);
     });
 }

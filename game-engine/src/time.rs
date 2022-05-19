@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use ecs::World;
 
-pub const TIME_STEP: Duration = Duration::from_millis(20);
+pub const TIME_STEP: Duration = Duration::from_millis(10);
 
 #[derive(Default)]
 pub struct Time {
