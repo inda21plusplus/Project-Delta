@@ -5,13 +5,12 @@ pub mod component;
 mod entity;
 mod error;
 #[macro_use]
-mod query;
+pub mod query;
 mod world;
 
 pub use commands::{CommandBuffer, Commands};
 pub use entity::{Entities, Entity};
 pub use error::BorrowMutError;
-pub use query::{ComponentQuery, Query, _as_mut_lt, _as_ref_lt};
 pub use world::World;
 
 #[cfg(test)]
@@ -26,7 +25,10 @@ mod tests {
         time::{Duration, Instant},
     };
 
-    use crate::component::{ComponentRegistry, Storage, StorageType};
+    use crate::{
+        component::{ComponentRegistry, Storage, StorageType},
+        query::{ComponentQuery, Query},
+    };
 
     use super::*;
 

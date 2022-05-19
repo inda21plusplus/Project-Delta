@@ -1,6 +1,6 @@
 use crate::component::{ComponentId, ComponentRegistry};
 use crate::query::QueryResponse;
-use crate::{BorrowMutError, Entities, Entity, Query};
+use crate::{query::Query, BorrowMutError, Entities, Entity};
 
 pub struct ResourceId(ComponentId);
 

@@ -4,15 +4,15 @@ macro_rules! query_iter {
         let mut command_buffer = $crate::CommandBuffer::new();
         let mut $commands = $crate::Commands::new(&mut command_buffer, $world.entities());
 
-        query_iter!($world, ($($query)*) => $body);
+        $crate::query_iter!($world, ($($query)*) => $body);
 
         command_buffer.apply(&mut $world);
     }};
     ( $world:expr, ($($query:tt)*) => $body:block ) => {{
         #[allow(unused_mut)]
         let mut v = vec![];
-        _query_definition!($world, v, ($($query)*));
-        let q = Query::new(v).expect("Query violates rusts borrow rules");
+        $crate::_query_definition!($world, v, ($($query)*));
+        let q = $crate::query::Query::new(v).expect("Query violates rusts borrow rules");
 
         let mut res = $world.query(&q);
 
@@ -31,19 +31,18 @@ macro_rules! query_iter_combs {
         let mut command_buffer = $crate::CommandBuffer::new();
         let mut $commands = $crate::Commands::new(&mut command_buffer, $world.entities());
 
-        query_iter_combs!($world, ($($query)*) => $body);
+        $crate::query_iter_combs!($world, ($($query)*) => $body);
 
         command_buffer.apply(&mut $world);
     }};
     ( $world:expr, ($($query:tt)*) => $body:block ) => {{
         #[allow(unused_mut)]
         let mut v = vec![];
-        _query_definition!($world, v, ($($query)*));
-        let q = Query::new(v).expect("Query violates rusts borrow rules");
+        $crate::_query_definition!($world, v, ($($query)*));
+        let q = $crate::query::Query::new(v).expect("Query violates rusts borrow rules");
 
         let mut res = $world.query(&q);
 
-        // (e1, e2): Entity, (p1, p2): Pos, (v1, v2): mut Vel
         #[allow(unused_variables)]
         for ((e1, comps1), (e2, comps2)) in unsafe { res.iter_combinations() } {
             let lt = ();
@@ -57,51 +56,66 @@ macro_rules! query_iter_combs {
 macro_rules! _query_definition {
     // entity
     ( $world:expr, $vec:expr, ($name:tt: Entity, $($tail:tt)*) ) => {{
-        _query_definition!($world, $vec, ($($tail)*));
+        $crate::_query_definition!($world, $vec, ($($tail)*));
     }};
     // opt
     ( $world:expr, $vec:expr, ($name:tt: Option<$type:ty>, $($tail:tt)*) ) => {{
         $vec.push(ComponentQuery {
-            id: $world.component_registry().id::<$type>().unwrap(),
+            id: $world.component_registry().id::<$type>().expect(&format!(
+                    "Tried querying for unregistered type {}",
+                    std::any::type_name::<$type>(),
+            )),
             mutable: false,
             optional: false,
         });
-        _query_definition!($world, $vec, ($($tail)*));
+        $crate::_query_definition!($world, $vec, ($($tail)*));
     }};
     // opt mut
     ( $world:expr, $vec:expr, ($name:tt: mut Option<$type:ty>, $($tail:tt)*) ) => {{
         $vec.push(ComponentQuery {
-            id: $world.component_registry().id::<$type>().unwrap(),
+            id: $world.component_registry().id::<$type>().expect(&format!(
+                    "Tried querying for unregistered type {}",
+                    std::any::type_name::<$type>(),
+            )),
             mutable: true,
             optional: true,
         });
-        _query_definition!($world, $vec, ($($tail)*));
+        $crate::_query_definition!($world, $vec, ($($tail)*));
     }};
     // comp
     ( $world:expr, $vec:expr, ($name:tt: $type:ty, $($tail:tt)*) ) => {{
-        $vec.push(ComponentQuery {
-            id: $world.component_registry().id::<$type>().unwrap(),
+        $vec.push($crate::query::ComponentQuery {
+            id: $world.component_registry().id::<$type>().expect(&format!(
+                    "Tried querying for unregistered type {}",
+                    std::any::type_name::<$type>(),
+            )),
             mutable: false,
             optional: false,
         });
-        _query_definition!($world, $vec, ($($tail)*));
+        $crate::_query_definition!($world, $vec, ($($tail)*));
     }};
     // mut
     ( $world:expr, $vec:expr, ($name:tt: mut $type:ty, $($tail:tt)*) ) => {{
-        $vec.push(ComponentQuery {
-            id: $world.component_registry().id::<$type>().unwrap(),
+        $vec.push($crate::query::ComponentQuery {
+            id: $world.component_registry().id::<$type>().expect(&format!(
+                    "Tried querying for unregistered type {}",
+                    std::any::type_name::<$type>(),
+            )),
             mutable: true,
             optional: false,
         });
-        _query_definition!($world, $vec, ($($tail)*));
+        $crate::_query_definition!($world, $vec, ($($tail)*));
     }};
 
     // Last entry
     ( $world:expr, $vec:expr, ($name:tt: Entity) ) => { };
     // opt
     ( $world:expr, $vec:expr, ($name:tt: Option<$type:ty>) ) => {{
-        $vec.push(ComponentQuery {
-            id: $world.component_registry().id::<$type>().unwrap(),
+        $vec.push($crate::query::ComponentQuery {
+            id: $world.component_registry().id::<$type>().expect(&format!(
+                    "Tried querying for unregistered type {}",
+                    std::any::type_name::<$type>(),
+            )),
             mutable: false,
             optional: true,
         });
@@ -109,23 +123,32 @@ macro_rules! _query_definition {
     // mut opt
     ( $world:expr, $vec:expr, ($name:tt: mut Option<$type:ty>) ) => {{
         $vec.push(ComponentQuery {
-            id: $world.component_registry().id::<$type>().expect(&format!("{}", std::any::type_name::<$type>())),
+            id: $world.component_registry().id::<$type>().expect(&format!(
+                    "Tried querying for unregistered type {}",
+                    std::any::type_name::<$type>(),
+            )),
             mutable: true,
             optional: true,
         });
     }};
     // comp
     ( $world:expr, $vec:expr, ($name:tt: $type:ty) ) => {{
-        $vec.push(ComponentQuery {
-            id: $world.component_registry().id::<$type>().unwrap(),
+        $vec.push($crate::query::ComponentQuery {
+            id: $world.component_registry().id::<$type>().expect(&format!(
+                    "Tried querying for unregistered type {}",
+                    std::any::type_name::<$type>(),
+            )),
             mutable: false,
             optional: false,
         });
     }};
     // mut
     ( $world:expr, $vec:expr, ($name:tt: mut $type:ty) ) => {{
-        $vec.push(ComponentQuery {
-            id: $world.component_registry().id::<$type>().unwrap(),
+        $vec.push($crate::query::ComponentQuery {
+            id: $world.component_registry().id::<$type>().expect(&format!(
+                    "Tried querying for unregistered type {}",
+                    std::any::type_name::<$type>(),
+            )),
             mutable: true,
             optional: false,
         });
@@ -137,27 +160,27 @@ macro_rules! _query_defvars {
     // Entity
     ( $comps:expr, $lt:expr, $entity:expr, ($name:ident: Entity, $($tail:tt)*) ) => {
         let $name = $entity;
-        _query_defvars!($comps[..], $lt, $entity, ($($tail)*));
+        $crate::_query_defvars!($comps[..], $lt, $entity, ($($tail)*));
     };
     // opt
     ( $comps:expr, $lt:expr, $entity:expr, ($name:ident: Option<$type:ty>, $($tail:tt)*) ) => {
         let $name = unsafe { $crate::query::_as_opt_ref_lt($lt, $comps[0].cast::<$type>()) };
-        _query_defvars!($comps[1..], $lt, $entity, ($($tail)*));
+        $crate::_query_defvars!($comps[1..], $lt, $entity, ($($tail)*));
     };
     // mut opt
     ( $comps:expr, $lt:expr, $entity:expr, ($name:ident: mut Option<$type:ty>, $($tail:tt)*) ) => {
         let $name = unsafe { $crate::query::_as_opt_mut_lt($lt, $comps[0].cast::<$type>()) };
-        _query_defvars!($comps[1..], $lt, $entity, ($($tail)*));
+        $crate::_query_defvars!($comps[1..], $lt, $entity, ($($tail)*));
     };
     // comp
     ( $comps:expr, $lt:expr, $entity:expr, ($name:ident: $type:ty, $($tail:tt)*) ) => {
         let $name = unsafe { $crate::query::_as_ref_lt($lt, $comps[0].cast::<$type>()) };
-        _query_defvars!($comps[1..], $lt, $entity, ($($tail)*));
+        $crate::_query_defvars!($comps[1..], $lt, $entity, ($($tail)*));
     };
     // mut
     ( $comps:expr, $lt:expr, $entity:expr, ($name:ident: mut $type:ty, $($tail:tt)*) ) => {
         let $name = unsafe { $crate::query::_as_mut_lt($lt, $comps[0].cast::<$type>()) };
-        _query_defvars!($comps[1..], $lt, $entity, ($($tail)*));
+        $crate::_query_defvars!($comps[1..], $lt, $entity, ($($tail)*));
     };
 
     // Last entry
@@ -187,7 +210,7 @@ macro_rules! _query_defvars_combs {
     // entity
     ( $comps1:expr, $comps2:expr, $lt:expr, $entity:expr, ($name:tt: Entity, $($tail:tt)*) ) => {
         let $name = $entity;
-        _query_defvars_combs!($comps1, $comps2, $lt, $entity, ($($tail)*));
+        $crate::_query_defvars_combs!($comps1, $comps2, $lt, $entity, ($($tail)*));
     };
     // opt
     ( $comps1:expr, $comps2:expr, $lt:expr, $entity:expr, ($name:tt: Option<$type:ty>, $($tail:tt)*) ) => {
@@ -195,7 +218,7 @@ macro_rules! _query_defvars_combs {
             $crate::query::_as_opt_ref_lt($lt, $comps1[0].cast::<$type>()),
             $crate::query::_as_opt_ref_lt($lt, $comps2[0].cast::<$type>()),
         ) };
-        _query_defvars_combs!($comps1[1..], $comps2[1..], $lt, $entity, ($($tail)*));
+        $crate::_query_defvars_combs!($comps1[1..], $comps2[1..], $lt, $entity, ($($tail)*));
     };
     // opt mut
     ( $comps1:expr, $comps2:expr, $lt:expr, $entity:expr, ($name:tt: mut Option<$type:ty>, $($tail:tt)*) ) => {
@@ -203,7 +226,7 @@ macro_rules! _query_defvars_combs {
             $crate::query::_as_opt_mut_lt($lt, $comps1[0].cast::<$type>()),
             $crate::query::_as_opt_mut_lt($lt, $comps2[0].cast::<$type>()),
         ) };
-        _query_defvars_combs!($comps[1..], $lt, $entity, ($($tail)*));
+        $crate::_query_defvars_combs!($comps[1..], $lt, $entity, ($($tail)*));
     };
     // comp
     ( $comps1:expr, $comps2:expr, $lt:expr, $entity:expr, ($name:tt: $type:ty, $($tail:tt)*) ) => {
@@ -211,7 +234,7 @@ macro_rules! _query_defvars_combs {
             $crate::query::_as_ref_lt($lt, $comps1[0].cast::<$type>()),
             $crate::query::_as_ref_lt($lt, $comps2[0].cast::<$type>()),
         ) };
-        _query_defvars_combs!($comps1[1..], $comps2[1..], $lt, $entity, ($($tail)*));
+        $crate::_query_defvars_combs!($comps1[1..], $comps2[1..], $lt, $entity, ($($tail)*));
     };
     // mut
     ( $comps1:expr, $comps2:expr, $lt:expr, $entity:expr, ($name:tt: mut $type:ty, $($tail:tt)*) ) => {
@@ -219,7 +242,7 @@ macro_rules! _query_defvars_combs {
             $crate::query::_as_mut_lt($lt, $comps1[0].cast::<$type>()),
             $crate::query::_as_mut_lt($lt, $comps2[0].cast::<$type>()),
         ) };
-        _query_defvars_combs!($comps[1..], $lt, $entity, ($($tail)*));
+        $crate::_query_defvars_combs!($comps1[1..], $comps2[1..], $lt, $entity, ($($tail)*));
     };
 
     // Last entry

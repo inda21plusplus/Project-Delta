@@ -7,7 +7,7 @@ pub struct CameraController {
     /// Degrees per pixel
     pub mouse_sensitivity: f32,
     pub position: Vec3,
-    /// Pitch, Yaw
+    /// (Pitch, Yaw)
     pub rotation: Vec2,
     pub is_forward_pressed: bool,
     pub is_backward_pressed: bool,
@@ -125,7 +125,5 @@ impl CameraController {
 
         camera.eye = self.position;
         camera.target = self.position + forward;
-
-        //println!("{:?} {:?}", camera.eye, self.rotation);
     }
 }

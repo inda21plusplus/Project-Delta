@@ -6,7 +6,7 @@ use crate::{
     BorrowMutError, Entity, World,
 };
 
-mod macros;
+pub mod macros;
 
 pub use self::macros::*;
 
@@ -105,10 +105,14 @@ impl<'w, 'q> QueryResponse<'w, 'q> {
         Some(res)
     }
 
+    /// # Safety
+    /// See documentation for `try_get`
     pub unsafe fn iter<'a>(&'a mut self) -> Iter<'a, 'w, 'q> {
         Iter::new(self)
     }
 
+    /// # Safety
+    /// See documentation for `try_get`
     pub unsafe fn iter_combinations<'a>(&'a mut self) -> IterCombinations<'a, 'w, 'q> {
         IterCombinations::new(self)
     }

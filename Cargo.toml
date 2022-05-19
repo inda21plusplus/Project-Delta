@@ -2,4 +2,12 @@
 
 resolver = "2"
 
-members = ["examples/runtime", "game-engine", "ecs", "rendering", "common"]
+members = [
+    "common",
+    "ecs",
+    "game-engine",
+    "physics",
+    "rendering",
+
+    "examples/runtime",
+]
