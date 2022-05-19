@@ -1,4 +1,9 @@
-use std::{alloc::Layout, any::TypeId, borrow::Cow, mem, ptr};
+use std::{
+    alloc::{self, Layout},
+    any::TypeId,
+    borrow::Cow,
+    mem, ptr,
+};
 
 use crate::{Entity, World};
 
@@ -41,7 +46,13 @@ impl Command {
                             .register_raw(*type_id, name, *layout, *drop)
                     },
                 };
-                unsafe { world.add_raw(*entity, *component, comp_id) };
+                unsafe {
+                    world.add_raw(*entity, *component, comp_id);
+                    // NOTE: the world takes ownership of the value of component, so we don't run
+                    // its destructor here, but we still own the allocation so we need to free it
+                    // here
+                    alloc::dealloc(*component, *layout);
+                };
                 *component = ptr::null_mut();
             }
         }
@@ -52,9 +63,13 @@ impl Drop for Command {
     fn drop(&mut self) {
         match self {
             &mut Command::AddComponent {
-                component, drop, ..
+                component,
+                drop,
+                layout,
+                ..
             } if !component.is_null() => unsafe {
                 drop(component);
+                alloc::dealloc(component, layout);
             },
             _ => {}
         }

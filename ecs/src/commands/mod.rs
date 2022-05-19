@@ -1,7 +1,8 @@
 use std::{
-    alloc::Layout,
+    alloc::{self, Layout},
     any::{self, TypeId},
     borrow::Cow,
+    ptr,
 };
 
 mod command;
@@ -29,7 +30,8 @@ use crate::{Entities, Entity};
 /// commands.despawn(e1);
 ///
 /// assert!(world.entities().exists(e2)); // NOTE: some commands, like spawning entities happen immediately
-/// assert!(world.entities().exists(e1)); // but others happen when the command buffer is applied
+/// assert!(world.entities().exists(e1)); // but others, like despawning happen when the command
+///                                       // buffer is applied
 /// assert!(world.get::<Position>(e2).is_none());
 ///
 /// command_buffer.apply(&mut world);
@@ -50,7 +52,7 @@ impl<'b, 'e> Commands<'b, 'e> {
     }
 
     /// Creates a new `entity`. See `Entities::spawn` for more information.
-    pub fn spawn(&mut self) -> Entity {
+    pub fn spawn(&self) -> Entity {
         self.entities.spawn()
     }
 
@@ -67,15 +69,18 @@ impl<'b, 'e> Commands<'b, 'e> {
         unsafe fn drop<T: 'static>(ptr: *mut u8) {
             ptr.cast::<T>().drop_in_place();
         }
-        let component = Box::new(component);
-        let component = Box::into_raw(component);
-        let component = component as *mut u8;
+        let layout = Layout::new::<T>();
+        let component = unsafe {
+            let p = alloc::alloc(layout);
+            ptr::write(p as *mut T, component);
+            p
+        };
         self.buffer.add(Command::AddComponent {
             entity,
             type_id: TypeId::of::<T>(),
             name: Cow::Borrowed(any::type_name::<T>()),
             component,
-            layout: Layout::new::<T>(),
+            layout,
             drop: drop::<T>,
         });
     }
