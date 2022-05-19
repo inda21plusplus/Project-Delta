@@ -8,16 +8,17 @@ use winit::{
     event_loop::EventLoop,
 };
 
-use common::{Vec2, Vec3};
+use common::{Transform, Vec2, Vec3};
 use game_engine::{
+    ecs::query_iter,
     physics,
-    rendering::{Line, Renderer},
+    rendering::{Camera, Light, Line, Renderer, WorldId},
     Engine,
 };
 
 use crate::{
     camera_controller::CameraController,
-    physics_context::PhysicsScene,
+    physics_context::setup_scene,
     window::{Window, WindowMode},
 };
 
@@ -27,7 +28,7 @@ pub struct Editor {
     state: EguiWinitState,
     egui_context: EguiContext,
     camera_controller: CameraController,
-    scene: PhysicsScene,
+    camera: Camera,
     last_frame: Instant,
 }
 
@@ -64,7 +65,16 @@ impl Editor {
             Vec2::new(-0.3, 135f32.to_radians()),
         );
 
-        let scene = PhysicsScene::new(&mut engine).with_context(|| "failed to create the scene")?;
+        let camera = Camera {
+            eye: (0.0, 5.0, -10.0).into(),
+            target: (0.0, 0.0, 0.0).into(),
+            up: Vec3::unit_y(),
+            fovy: 45f32.to_radians(),
+            znear: 0.1,
+            zfar: 2000.0,
+        };
+
+        setup_scene(&mut engine).with_context(|| "failed to set up scene")?;
         let state = EguiWinitState::new(4096, window.winit_window());
         let egui_context = EguiContext::default();
         {
@@ -80,7 +90,7 @@ impl Editor {
                 state,
                 egui_context,
                 camera_controller,
-                scene,
+                camera,
                 last_frame: Instant::now(),
             },
         ))
@@ -163,11 +173,11 @@ impl Editor {
         self.last_frame = now;
 
         self.engine.update();
-        self.scene.update(&mut self.engine);
 
-        self.camera_controller
-            .update_camera(dt, &mut self.engine.renderer.camera);
-        self.engine.renderer.update_camera();
+        let world_id = *self.engine.world.resource::<WorldId>().unwrap();
+
+        self.camera_controller.update_camera(dt, &mut self.camera);
+        self.engine.renderer.set_camera(world_id, self.camera);
 
         let pos_r = || -100.0..=100.0;
         let k_r = || 0.0..=1.0;
@@ -177,23 +187,25 @@ impl Editor {
             egui::Window::new("The Stuff®")
                 .auto_sized()
                 .show(ctx, |ui| {
-                    ui.label("Light position");
-                    ui.spacing_mut().slider_width *= 2.0;
-                    ui.add(Slider::new(&mut self.scene.light.pos.x, pos_r()).text("x"));
-                    ui.add(Slider::new(&mut self.scene.light.pos.y, pos_r()).text("y"));
-                    ui.add(Slider::new(&mut self.scene.light.pos.z, pos_r()).text("z"));
+                    let mut deferred = self.engine.renderer.get_deferred(world_id);
+                    ui.checkbox(&mut deferred, "Use deferred rendering");
+                    self.engine.renderer.set_deferred(world_id, deferred);
+                    query_iter!(self.engine.world, (transform: mut Transform, light: mut Light) => {
+                        ui.label("Light position");
+                        ui.spacing_mut().slider_width *= 2.0;
+                        ui.add(Slider::new(&mut transform.position.x, pos_r()).text("x"));
+                        ui.add(Slider::new(&mut transform.position.y, pos_r()).text("y"));
+                        ui.add(Slider::new(&mut transform.position.z, pos_r()).text("z"));
 
-                    ui.label("scene.Light attenuation factors");
-                    ui.add(Slider::new(&mut self.scene.light.k_constant, k_r()).text("k_c"));
-                    ui.add(Slider::new(&mut self.scene.light.k_linear, k_r()).text("k_l"));
-                    ui.add(Slider::new(&mut self.scene.light.k_quadratic, k_r()).text("k_q"));
+                        ui.label("scene.Light attenuation factors");
+                        ui.add(Slider::new(&mut light.k_constant, k_r()).text("k_c"));
+                        ui.add(Slider::new(&mut light.k_linear, k_r()).text("k_l"));
+                        ui.add(Slider::new(&mut light.k_quadratic, k_r()).text("k_q"));
 
-                    ui.label("Light color");
-                    egui::widgets::color_picker::color_edit_button_rgb(
-                        ui,
-                        &mut self.scene.light.color,
-                    );
+                        ui.label("Light color");
+                        egui::widgets::color_picker::color_edit_button_rgb(ui, &mut light.color);
 
+                    });
                     if let Some(gravity) = self.engine.world.resource_mut::<physics::Gravity>() {
                         ui.label("Gravity");
                         ui.add(Slider::new(&mut gravity.0.y, -20.0..=20.0).text("k_q"));
@@ -210,12 +222,11 @@ impl Editor {
 
         if self.window.inner_size() != (0, 0) {
             match self.engine.renderer.render(
+                world_id,
                 lines,
-                &[self.scene.light],
                 &self.egui_context,
                 full_output,
                 self.egui_context.pixels_per_point(),
-                false,
             ) {
                 Ok(_) => (),
                 Err(e) => log::error!("Failed to render: {}", e),

@@ -398,6 +398,8 @@ impl Painter {
             texture::Texture::new_render_target("egui ui texture", device, (width, height), format),
         );
 
+        self.last_aspect = Some(config.width as f32 / config.height as f32);
+
         queue.write_buffer(
             &self.local_buffer,
             0,

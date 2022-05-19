@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::mem;
 use std::ops::{Range, RangeBounds};
 use std::path::Path;
@@ -534,58 +533,12 @@ pub struct ModelStorage {
     instance_buffers: Vec<wgpu::Buffer>,
 }
 
-#[derive(Debug)]
-pub struct ModelManager<'a> {
-    device: &'a wgpu::Device,
-    queue: &'a wgpu::Queue,
-    storage: &'a mut ModelStorage,
-    pending_writes: HashMap<ModelIndex, Vec<Transform>>,
-}
-
-impl<'a> ModelManager<'a> {
-    pub fn get_transforms_mut<R: RangeBounds<usize>>(
-        &mut self,
-        model: ModelIndex,
-        range: R,
-    ) -> &mut [Transform] {
-        self.pending_writes
-            .entry(model)
-            .or_insert_with(|| self.storage.get_transforms(model, range).to_vec())
-    }
-
-    pub fn set_transforms(&mut self, model: ModelIndex, transforms: Vec<Transform>) {
-        self.pending_writes.insert(model, transforms);
-    }
-}
-
-impl<'a> Drop for ModelManager<'a> {
-    fn drop(&mut self) {
-        for (model, data) in &mut self.pending_writes.drain() {
-            self.storage
-                .set_transforms(self.device, self.queue, model, data);
-        }
-    }
-}
-
 impl ModelStorage {
     pub fn new() -> Self {
         Self {
             models: vec![],
             instances: vec![],
             instance_buffers: vec![],
-        }
-    }
-
-    pub fn get_manager<'a>(
-        &'a mut self,
-        device: &'a wgpu::Device,
-        queue: &'a wgpu::Queue,
-    ) -> ModelManager<'a> {
-        ModelManager {
-            device,
-            queue,
-            storage: self,
-            pending_writes: HashMap::new(),
         }
     }
 
