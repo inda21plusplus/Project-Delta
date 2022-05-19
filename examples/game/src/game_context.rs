@@ -31,13 +31,15 @@ const BALL_RADIUS: f32 = 0.5715;
 const BALL_SPACING: f32 = 0.00;
 const BALL_MASS: f32 = 1.70;
 const MIN_SPEED: f32 = 0.2;
-const HIT_FORCE: f32 = 90.0;
+const HIT_MAX_FORCE: f32 = 90.0;
+const HIT_MIN_FORCE: f32 = 5.0;
 
 #[derive(Debug)]
 pub struct GameBall {
-    pub turn: u8,         // how many times played
-    pub player_index: u8, // what player is to play, start as 0
-    pub players: u8,      // how many players
+    pub _turn: u8,         // how many times played
+    pub _player_index: u8, // what player is to play, start as 0
+    pub _players: u8,      // how many players
+    pub force: f32,
 }
 
 struct UnityTransform {
@@ -243,9 +245,10 @@ impl GameScene {
                 world.add(
                     ball,
                     GameBall {
-                        turn: 0,
-                        player_index: 0,
-                        players: 2,
+                        _turn: 0,
+                        _player_index: 0,
+                        _players: 2,
+                        force: HIT_MAX_FORCE / 2.0,
                     },
                 );
             }
@@ -309,37 +312,78 @@ impl GameScene {
         };
 
         // phx drag
-        query_iter!(engine.world, (rb: mut Rigidbody) => {
-
+        query_iter!(engine.world, (rb: mut Rigidbody, transform : Transform) => {
             if rb.velocity().magnitude_squared() < MIN_SPEED * MIN_SPEED {
                rb.linear_momentum = Vec3::zero();
                rb.angular_momentum = Vec3::zero();
             } else {
-                let sub_max = 0.4*time.dt().as_secs_f32(); //* ;
-                let sub_of =sub_max*( rb.linear_momentum.magnitude().min(5.0) / rb.linear_momentum.magnitude());
+                if transform.position.y > BALL_RADIUS {
+                    let sub_max = 0.4*time.dt().as_secs_f32(); //* ;
+                    let sub_of =sub_max*( rb.linear_momentum.magnitude().min(5.0) / rb.linear_momentum.magnitude());
 
-                rb.linear_momentum -= rb.linear_momentum * sub_of;
-                rb.angular_momentum -= rb.angular_momentum * sub_of;
-                rb.linear_momentum = Vec3::new(rb.linear_momentum.x,rb.linear_momentum.y.min(0.0),rb.linear_momentum.z).normalized() * rb.linear_momentum.magnitude();
+                    rb.linear_momentum -= rb.linear_momentum * sub_of;
+                    rb.angular_momentum -= rb.angular_momentum * sub_of;
+                    rb.linear_momentum = Vec3::new(rb.linear_momentum.x,rb.linear_momentum.y.min(0.0),rb.linear_momentum.z).normalized() * rb.linear_momentum.magnitude();
+                }
             }
         });
-        let mut lines: Vec<Line> = Vec::new();
+        let mut hit_line: Option<Line> = None;
+        let mut force = 0.0;
         // raycast
-        query_iter!(engine.world, (rb: mut Rigidbody, collider : Collider, transform : Transform, game: GameBall) => {
+        query_iter!(engine.world, (rb: mut Rigidbody, collider : Collider, transform : Transform, game: mut GameBall) => {
             if rb.velocity().magnitude_squared() <= MIN_SPEED*MIN_SPEED {
+                let dt = time.dt().as_secs_f32();
+                if is_key_down(VirtualKeyCode::Up) {
+                    game.force += dt * HIT_MAX_FORCE;
+                }
+                if is_key_down(VirtualKeyCode::Down) {
+                    game.force -= dt * HIT_MAX_FORCE;
+                }
+                game.force = game.force.max(HIT_MIN_FORCE).min(HIT_MAX_FORCE);
+                force = game.force;
+
                 if let Some(hit) = raycast(transform, &vec![*collider], Ray::new(camera.eye, (camera.target - camera.eye).normalized())) {
                     let direction_by_normal = Vec3::new(-hit.normal.x, 0.0, -hit.normal.z).normalized();
                     let direction_by_offset = Vec3::new(transform.position.x - camera.eye.x, 0.0, transform.position.z - camera.eye.z).normalized();
                     let direction = direction_by_normal * 1.0 + direction_by_offset * 0.0;
 
                     if is_key_down(VirtualKeyCode::Delete) {
-                        rb.add_impulse(direction * HIT_FORCE);
+                        rb.add_impulse(direction * game.force);
                     } else {
-                        lines.push(Line { start: transform.position, end: transform.position + direction * 10.0, color: Vec3::new(1.0,0.0,0.0) })
+                        hit_line = Some(Line { start: transform.position, end: transform.position + direction, color: Vec3::new(1.0,0.0,0.0) });
                     }
                 }
             }
         });
+        let mut lines: Vec<Line> = Vec::new();
+
+        if let Some(line) = hit_line {
+            let direction = (line.end - line.start).normalized();
+            let mut min_distance = 10.0;
+            query_iter!(engine.world, (collider : Collider, transform : Transform) => {
+                if let Some(hit) = raycast(transform, &vec![*collider], Ray::new(line.start, direction)) {
+                    if hit.distance < min_distance && hit.distance > BALL_RADIUS {
+                        min_distance = hit.distance;
+                    }
+                }
+            });
+
+            lines.push(Line {
+                start: line.start + direction * BALL_RADIUS,
+                end: line.start + direction * min_distance,
+                color: Vec3::new(1.0, 1.0, 1.0),
+            });
+            let force_scale = (force / HIT_MAX_FORCE);
+            lines.push(Line {
+                start: line.start + direction * BALL_RADIUS,
+                end: line.start + direction * min_distance * force_scale,
+                color: Vec3::new(force_scale, 1.0-force_scale, 0.0),
+            });
+        }
+
+        //query_iter!(engine.world, (collider : Collider, transform : Transform) => {
+
+        //}
 
         query_iter!(engine.world, (rb: Rigidbody, transform : Transform) => {
             //lines.push(Line { start: transform.position, end: transform.position + rb.linear_momentum, color: Vec3::new(1.0,0.0,0.0) })
