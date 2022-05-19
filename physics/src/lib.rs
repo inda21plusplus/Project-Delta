@@ -4,7 +4,7 @@ use macros::debug_assert_finite;
 
 mod collision;
 mod cube;
-mod raycast;
+pub mod raycast;
 mod rigidbody;
 mod sphere;
 

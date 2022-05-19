@@ -27,5 +27,10 @@ fn vs_main(in: VertexInput) -> VertexOutput {
 fn fs_main(in: VertexOutput) -> [[location(0)]] vec4<f32> {
     var color = textureSample(t_diffuse, s_diffuse, in.uv);
     color = vec4<f32>(color.xyz * 0.001, color.w);
+
+    if (length(in.uv - vec2<f32>(0.5)) < 0.01) {
+        color = vec4<f32>(1.0, 0.0, 0.0, 1.0);
+    }
+
     return color;
 }

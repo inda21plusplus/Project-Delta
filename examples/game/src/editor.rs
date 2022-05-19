@@ -1,4 +1,4 @@
-use std::{ops::ControlFlow, time::Instant};
+use std::{collections::HashMap, ops::ControlFlow, time::Instant};
 
 use anyhow::Context as _;
 use egui::{Context as EguiContext, Slider};
@@ -135,9 +135,18 @@ impl Editor {
         keycode: VirtualKeyCode,
         state: ElementState,
     ) -> ControlFlow<()> {
+        if let Some(map) = self
+            .engine
+            .world
+            .resource_mut::<HashMap<VirtualKeyCode, bool>>()
+        {
+            map.insert(keycode, state == ElementState::Pressed);
+        }
+
         if state != ElementState::Pressed {
             return ControlFlow::Continue(());
         }
+
         match keycode {
             VirtualKeyCode::Q => {
                 self.window
@@ -174,31 +183,30 @@ impl Editor {
 
         let raw_input = self.state.take_egui_input(self.window.winit_window());
         let full_output = self.egui_context.run(raw_input, |ctx| {
-            egui::Window::new("The Stuff®")
-                .auto_sized();
-                /* .show(ctx, |ui| {
-                    ui.label("Light position");
-                    ui.spacing_mut().slider_width *= 2.0;
-                    ui.add(Slider::new(&mut self.scene.light.pos.x, pos_r()).text("x"));
-                    ui.add(Slider::new(&mut self.scene.light.pos.y, pos_r()).text("y"));
-                    ui.add(Slider::new(&mut self.scene.light.pos.z, pos_r()).text("z"));
+            egui::Window::new("The Stuff®").auto_sized();
+            /* .show(ctx, |ui| {
+                ui.label("Light position");
+                ui.spacing_mut().slider_width *= 2.0;
+                ui.add(Slider::new(&mut self.scene.light.pos.x, pos_r()).text("x"));
+                ui.add(Slider::new(&mut self.scene.light.pos.y, pos_r()).text("y"));
+                ui.add(Slider::new(&mut self.scene.light.pos.z, pos_r()).text("z"));
 
-                    ui.label("scene.Light attenuation factors");
-                    ui.add(Slider::new(&mut self.scene.light.k_constant, k_r()).text("k_c"));
-                    ui.add(Slider::new(&mut self.scene.light.k_linear, k_r()).text("k_l"));
-                    ui.add(Slider::new(&mut self.scene.light.k_quadratic, k_r()).text("k_q"));
+                ui.label("scene.Light attenuation factors");
+                ui.add(Slider::new(&mut self.scene.light.k_constant, k_r()).text("k_c"));
+                ui.add(Slider::new(&mut self.scene.light.k_linear, k_r()).text("k_l"));
+                ui.add(Slider::new(&mut self.scene.light.k_quadratic, k_r()).text("k_q"));
 
-                    ui.label("Light color");
-                    egui::widgets::color_picker::color_edit_button_rgb(
-                        ui,
-                        &mut self.scene.light.color,
-                    );
+                ui.label("Light color");
+                egui::widgets::color_picker::color_edit_button_rgb(
+                    ui,
+                    &mut self.scene.light.color,
+                );
 
-                    if let Some(gravity) = self.engine.world.resource_mut::<physics::Gravity>() {
-                        ui.label("Gravity");
-                        ui.add(Slider::new(&mut gravity.0.y, -20.0..=20.0).text("k_q"));
-                    }
-                });*/
+                if let Some(gravity) = self.engine.world.resource_mut::<physics::Gravity>() {
+                    ui.label("Gravity");
+                    ui.add(Slider::new(&mut gravity.0.y, -20.0..=20.0).text("k_q"));
+                }
+            });*/
         });
 
         let lines = self
@@ -211,11 +219,11 @@ impl Editor {
         if self.window.inner_size() != (0, 0) {
             match self.engine.renderer.render(
                 lines,
-                &[self.scene.light],
+                &self.scene.lights,
                 &self.egui_context,
                 full_output,
                 self.egui_context.pixels_per_point(),
-                false,
+                true,
             ) {
                 Ok(_) => (),
                 Err(e) => log::error!("Failed to render: {}", e),

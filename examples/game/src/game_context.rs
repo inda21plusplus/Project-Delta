@@ -3,13 +3,16 @@ use std::collections::HashMap;
 use anyhow::Context as _;
 use rand::Rng as _;
 
-use common::{Quaternion, Transform, Vec3};
+use common::{Quaternion, Ray, Transform, Vec3};
 use game_engine::{
     ecs::query_iter,
-    physics::{self, Collider, CubeCollider, PhysicsMaterial, Rigidbody, SphereCollider},
+    physics::{
+        self, raycast::raycast, Collider, CubeCollider, PhysicsMaterial, Rigidbody, SphereCollider,
+    },
     rendering::{model::ModelIndex, Light, Line},
-    Engine,
+    Engine, Time,
 };
+use winit::event::VirtualKeyCode;
 
 // TODO: remove
 pub struct GameScene {
@@ -19,7 +22,7 @@ pub struct GameScene {
     // TODO: move into world
     pub ball_model: ModelIndex,
     // TODO: move into world
-    pub light: Light,
+    pub lights: Vec<Light>,
     // TODO: move into world
     pub extra_dt: f32,
 }
@@ -27,7 +30,8 @@ const BALL_COUNT: usize = 15;
 const BALL_RADIUS: f32 = 0.5715;
 const BALL_SPACING: f32 = 0.00;
 const BALL_MASS: f32 = 1.70;
-const MIN_SPEED: f32 = 0.5;
+const MIN_SPEED: f32 = 0.2;
+const HIT_FORCE: f32 = 90.0;
 
 #[derive(Debug)]
 pub struct GameBall {
@@ -61,13 +65,15 @@ impl GameScene {
 
         let table_material = PhysicsMaterial {
             friction: 1.0,
-            restfullness: 0.0,
+            restfullness: -2.0,
         };
 
         let ball_material = PhysicsMaterial {
             friction: 1.0,
-            restfullness: 0.0,
+            restfullness: 1.5,
         };
+
+        world.add_resource(HashMap::<VirtualKeyCode, bool>::new());
 
         world.add_resource(physics::Gravity::default());
         world.add_resource::<Vec<Line>>(vec![]);
@@ -98,11 +104,11 @@ impl GameScene {
                 ball,
                 Transform {
                     position: if i == 0 {
-                        Vec3::new(0.0, 3.0, -5.0)
+                        Vec3::new(0.0, 1.0 + BALL_RADIUS, -5.0)
                     } else {
                         Vec3::new(
                             ((x as f32) - (max as f32) / 2.0) * (BALL_RADIUS * 2.0 + BALL_SPACING),
-                            3.0,
+                            1.0 + BALL_RADIUS,
                             diagonal_radius * (y as f32),
                         )
                     },
@@ -143,6 +149,19 @@ impl GameScene {
             }
         }
 
+        let mut lights: Vec<Light> = Vec::new();
+        for x in [-1.0, 1.0] {
+            for z in [-1.0, 1.0] {
+                lights.push(Light {
+                    pos: Vec3::new(x * 4.0, 3.0, z * 4.0),
+                    color: [1.0; 3],
+                    k_constant: 1.0,
+                    k_linear: 0.14,
+                    k_quadratic: 0.07,
+                })
+            }
+        }
+
         Ok(Self {
             ball_models,
             cube_model: table_model,
@@ -150,28 +169,50 @@ impl GameScene {
                 .renderer
                 .load_model("res/ball.obj")
                 .with_context(|| "failed to open ball.obj")?,
-            light: Light {
-                pos: Vec3::unit_y() * 30.0,
-                color: [1.0; 3],
-                k_constant: 1.0,
-                k_linear: 0.0014,
-                k_quadratic: 0.000007,
-            },
+            lights,
             extra_dt: 0.0,
         })
     }
 
     pub fn update(&mut self, engine: &mut Engine) {
-        let mut mgr = engine.renderer.get_models_mut();
         let mut transforms: HashMap<ModelIndex, Vec<Transform>> = HashMap::new();
+        let camera = engine.renderer.camera;
+        let key_map = engine
+            .world
+            .resource::<HashMap<VirtualKeyCode, bool>>()
+            .unwrap();
 
-        query_iter!(engine.world, (rb: mut Rigidbody, t: GameBall) => {
-            //if rb.velocity().magnitude_squared() < MIN_SPEED * MIN_SPEED {
-                println!("can play");
-               // rb.linear_momentum = Vec3::zero();
-            //}
+        let time = engine.world.resource::<Time>().unwrap();
+
+        let is_key_down = |keycode: VirtualKeyCode| -> bool {
+            if let Some(is_down) = key_map.get(&keycode) {
+                return *is_down;
+            } else {
+                false
+            }
+        };
+
+        query_iter!(engine.world, (rb: mut Rigidbody, collider : Collider, transform : Transform, game: GameBall) => {
+            if rb.velocity().magnitude_squared() < MIN_SPEED * MIN_SPEED {
+                rb.linear_momentum = Vec3::zero();
+                if is_key_down(VirtualKeyCode::Delete) {
+                    if let Some(hit) = raycast(transform, &vec![*collider], Ray::new(camera.eye,camera.target - camera.eye)) {
+                        //let direction = Vec3::new(-hit.normal.x, 0.0, -hit.normal.z).normalized();
+                        let direction =Vec3::new(transform.position.x - camera.eye.x, 0.0, transform.position.z - camera.eye.z).normalized();
+
+                        println!("Hit at {:?}",direction);
+                        rb.add_impulse(direction * HIT_FORCE);
+                    }
+                }
+            }
         });
 
+        let mut mgr = engine.renderer.get_models_mut();
+        query_iter!(engine.world, (rb: mut Rigidbody) => {
+            let sub = 0.05*time.dt().as_secs_f32();
+            rb.linear_momentum -= rb.linear_momentum*sub;
+            rb.angular_momentum -= rb.angular_momentum*sub; 
+        });
         query_iter!(engine.world, (transform: Transform, id: ModelIndex) => {
             match transforms.get_mut(id) {
                 Some(items) => {
