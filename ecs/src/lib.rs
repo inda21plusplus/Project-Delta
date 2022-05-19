@@ -604,7 +604,7 @@ mod tests {
         let pos_id = world.component_registry_mut().register::<Position>();
         let vel_id = world.component_registry_mut().register::<Velocity>();
 
-        for i in 0..1000 {
+        for i in 0..100 {
             let entity = world.spawn();
             world.add(entity, Position(i as f32));
             world.add(entity, Velocity(1.5));
@@ -896,7 +896,7 @@ mod tests {
             let mut commands = Commands::new(&mut command_buffer, world.entities());
 
             let e1 = commands.spawn();
-            commands.add(e1, Counter::named(counter.clone(), "a"));
+            commands.add(e1, Counter::new(counter.clone()));
             assert_eq!(counter.get(), 1);
         }
 

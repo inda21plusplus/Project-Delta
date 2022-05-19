@@ -1,12 +1,12 @@
 use std::iter;
 use std::mem;
 
-use egui;
 use pollster::FutureExt;
 use raw_window_handle::HasRawWindowHandle;
 
 use crate::model::ModelIndex;
-use crate::model::ModelManager;
+use crate::ui;
+use crate::Light;
 use crate::{texture, Camera, RenderingError};
 use common::{Mat3, Mat4, Transform, Vec3, Vec4};
 
@@ -14,84 +14,14 @@ pub mod gbuffer;
 pub mod world;
 use world::World;
 
-#[repr(C)]
-#[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
-pub struct RawTranslationMatrix {
-    model: [[f32; 4]; 4],
-    rotation: [[f32; 3]; 3],
-}
-
-impl RawTranslationMatrix {
-    pub fn new(transform: Transform) -> Self {
-        let Vec3 { x, y, z } = transform.scale;
-
-        Self {
-            model: unsafe {
-                mem::transmute::<Mat4, _>(
-                    Mat4::translation_3d(transform.position)
-                        * Mat4::from(transform.rotation)
-                        * Mat4::with_diagonal(Vec4::new(x, y, z, 1.0)),
-                )
-            },
-            rotation: unsafe { mem::transmute::<Mat3, _>(Mat3::from(transform.rotation)) },
-        }
-    }
-}
-
-impl RawTranslationMatrix {
-    fn desc<'a>() -> wgpu::VertexBufferLayout<'a> {
-        wgpu::VertexBufferLayout {
-            array_stride: mem::size_of::<RawTranslationMatrix>() as wgpu::BufferAddress,
-            step_mode: wgpu::VertexStepMode::Instance,
-            attributes: &[
-                wgpu::VertexAttribute {
-                    offset: 0,
-                    shader_location: 5,
-                    format: wgpu::VertexFormat::Float32x4,
-                },
-                wgpu::VertexAttribute {
-                    offset: 4 * 4,
-                    shader_location: 6,
-                    format: wgpu::VertexFormat::Float32x4,
-                },
-                wgpu::VertexAttribute {
-                    offset: 2 * 4 * 4,
-                    shader_location: 7,
-                    format: wgpu::VertexFormat::Float32x4,
-                },
-                wgpu::VertexAttribute {
-                    offset: 3 * 4 * 4,
-                    shader_location: 8,
-                    format: wgpu::VertexFormat::Float32x4,
-                },
-                wgpu::VertexAttribute {
-                    offset: mem::size_of::<[f32; 16]>() as wgpu::BufferAddress,
-                    shader_location: 9,
-                    format: wgpu::VertexFormat::Float32x3,
-                },
-                wgpu::VertexAttribute {
-                    offset: mem::size_of::<[f32; 19]>() as wgpu::BufferAddress,
-                    shader_location: 10,
-                    format: wgpu::VertexFormat::Float32x3,
-                },
-                wgpu::VertexAttribute {
-                    offset: mem::size_of::<[f32; 22]>() as wgpu::BufferAddress,
-                    shader_location: 11,
-                    format: wgpu::VertexFormat::Float32x3,
-                },
-            ],
-        }
-    }
-}
-
 pub struct Renderer {
-    pub camera: Camera,
-    painter: crate::ui::Painter,
+    painter: ui::Painter,
     surface: wgpu::Surface,
     device: wgpu::Device,
     queue: wgpu::Queue,
     config: wgpu::SurfaceConfiguration,
     size: (u32, u32),
+
     line_render_pipeline_layout: wgpu::PipelineLayout,
     line_shader: wgpu::ShaderModule,
     shader: wgpu::ShaderModule,
@@ -99,82 +29,9 @@ pub struct Renderer {
     camera_bind_group_layout: wgpu::BindGroupLayout,
     light_bind_group_layout: wgpu::BindGroupLayout,
     depth_texture: texture::Texture,
-    worlds: Vec<World>,
+
     clear_color: [f64; 3],
-}
-
-#[repr(C)]
-#[derive(Debug, Copy, Clone)]
-pub struct Line {
-    pub start: Vec3,
-    pub end: Vec3,
-    pub color: Vec3,
-}
-
-impl Line {
-    fn into_raw(self) -> RawLine {
-        let Line {
-            start:
-                Vec3 {
-                    x: s_x,
-                    y: s_y,
-                    z: s_z,
-                },
-            end:
-                Vec3 {
-                    x: e_x,
-                    y: e_y,
-                    z: e_z,
-                },
-            color: Vec3 { x: r, y: g, z: b },
-        } = self;
-        let color = [r, g, b];
-        RawLine {
-            start: RawLineVertex {
-                pos: [s_x, s_y, s_z],
-                color,
-            },
-            end: RawLineVertex {
-                pos: [e_x, e_y, e_z],
-                color,
-            },
-        }
-    }
-}
-
-#[repr(C)]
-#[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
-struct RawLine {
-    start: RawLineVertex,
-    end: RawLineVertex,
-}
-
-#[repr(C)]
-#[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
-struct RawLineVertex {
-    pub pos: [f32; 3],
-    pub color: [f32; 3],
-}
-
-impl RawLineVertex {
-    fn desc<'a>() -> wgpu::VertexBufferLayout<'a> {
-        wgpu::VertexBufferLayout {
-            array_stride: mem::size_of::<RawLineVertex>() as wgpu::BufferAddress,
-            step_mode: wgpu::VertexStepMode::Vertex,
-            attributes: &[
-                wgpu::VertexAttribute {
-                    offset: 0,
-                    shader_location: 0,
-                    format: wgpu::VertexFormat::Float32x3,
-                },
-                wgpu::VertexAttribute {
-                    offset: mem::size_of::<[f32; 3]>() as wgpu::BufferAddress,
-                    shader_location: 1,
-                    format: wgpu::VertexFormat::Float32x3,
-                },
-            ],
-        }
-    }
+    worlds: Vec<World>,
 }
 
 impl Renderer {
@@ -255,16 +112,6 @@ impl Renderer {
                 label: Some("texture bind group layout"),
             });
 
-        let camera = Camera {
-            eye: (0.0, 5.0, -10.0).into(),
-            target: (0.0, 0.0, 0.0).into(),
-            up: Vec3::unit_y(),
-            aspect: config.width as f32 / config.height as f32,
-            fovy: 45f32.to_radians(),
-            znear: 0.1,
-            zfar: 2000.0,
-        };
-
         let camera_bind_group_layout =
             device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
                 entries: &[wgpu::BindGroupLayoutEntry {
@@ -297,11 +144,11 @@ impl Renderer {
 
         let shader = device.create_shader_module(&wgpu::ShaderModuleDescriptor {
             label: Some("shader.wgsl"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("../shader.wgsl").into()),
+            source: wgpu::ShaderSource::Wgsl(include_str!("../shaders/shader.wgsl").into()),
         });
         let line_shader = device.create_shader_module(&wgpu::ShaderModuleDescriptor {
             label: Some("line_shader.wgsl"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("../line_shader.wgsl").into()),
+            source: wgpu::ShaderSource::Wgsl(include_str!("../shaders/line_shader.wgsl").into()),
         });
 
         let depth_texture = texture::Texture::new_depth_texture(&device, &config, true);
@@ -324,9 +171,9 @@ impl Renderer {
                 push_constant_ranges: &[],
             });
 
-        let painter = crate::ui::Painter::new(&device, &queue, &config);
+        let painter = ui::Painter::new(&device, &queue, &config);
 
-        let mut this = Self {
+        Ok(Self {
             surface,
             device,
             queue,
@@ -336,25 +183,31 @@ impl Renderer {
             render_pipeline_layout,
             line_shader,
             line_render_pipeline_layout,
-            camera,
             camera_bind_group_layout,
             light_bind_group_layout,
             depth_texture,
             clear_color,
             worlds: vec![],
             painter,
-        };
+        })
+    }
 
-        this.worlds = vec![World::new(&this, camera)];
+    pub fn create_world(&mut self) -> WorldId {
+        let id = self.worlds.len();
 
-        Ok(this)
+        self.worlds.push(World::new(&self));
+
+        WorldId(
+            id.try_into()
+                .expect("Can't create more than u32::MAX worlds"),
+        )
     }
 
     pub fn resize(&mut self, (width, height): (u32, u32)) {
         if width > 0 && height > 0 {
             self.config.width = width;
             self.config.height = height;
-            self.camera.aspect = width as f32 / height as f32;
+            // TODO: self.camera.aspect = width as f32 / height as f32;
             self.size = (width, height);
             self.surface.configure(&self.device, &self.config);
             self.depth_texture =
@@ -367,26 +220,41 @@ impl Renderer {
         }
     }
 
+    // TODO: maybe just hand out a &mut World given the id?
+
     /// Load an obj file and all its associate files.
     pub fn load_model<P: AsRef<std::path::Path>>(
         &mut self,
+        world: WorldId,
         path: P,
     ) -> Result<ModelIndex, RenderingError> {
-        self.worlds[0].load_model(&self.device, &self.queue, path)
+        self.worlds[world.i()].load_model(&self.device, &self.queue, path)
     }
 
-    pub fn get_models_mut(&mut self) -> ModelManager {
-        self.worlds[0].get_models_mut(&self.device, &self.queue)
+    /// Sets the world to render from `camera`.
+    pub fn set_camera(&mut self, world: WorldId, camera: Camera) {
+        let aspect = self.size.0 as f32 / self.size.1 as f32;
+        self.worlds[world.i()].update_camera(&self.queue, &camera, aspect);
     }
 
-    pub fn update_camera(&mut self) {
-        self.worlds[0].camera = self.camera.clone();
-        self.worlds[0].update_camera(&self.queue, self.painter.last_aspect);
+    pub fn update_instances<'a>(
+        &mut self,
+        world: WorldId,
+        instances: impl Iterator<Item = (ModelIndex, &'a [Transform])>,
+    ) {
+        self.worlds[world.i()].update_instances(&self.device, &self.queue, instances)
     }
 
-    #[deprecated = "use the model manager for this functionality instead"]
-    pub fn update_instances(&mut self, instances: &[(ModelIndex, &[Transform])]) {
-        self.worlds[0].update_instances(&self.device, &self.queue, instances)
+    pub fn set_lights(&mut self, world: WorldId, lights: Vec<(Light, Vec3)>) {
+        self.worlds[world.i()].set_lights(lights);
+    }
+
+    pub fn get_deferred(&self, world: WorldId) -> bool {
+        self.worlds[world.i()].deferred
+    }
+
+    pub fn set_deferred(&mut self, world: WorldId, deferred: bool) {
+        self.worlds[world.i()].deferred = deferred;
     }
 
     pub fn make_egui_render_target(&mut self, ctx: &egui::Context) -> egui::TextureHandle {
@@ -423,12 +291,11 @@ impl Renderer {
     // entirely distinct ways to interact with what is being rendered.
     pub fn render(
         &mut self,
+        world: WorldId,
         lines: &[Line],
-        lights: &[world::Light],
         ui: &egui::Context,
         egui_output: egui::FullOutput,
         pixels_per_point: f32,
-        deferred: bool,
     ) -> Result<(), RenderingError> {
         let output = self.surface.get_current_texture()?;
         let view = output
@@ -446,11 +313,7 @@ impl Renderer {
         } else {
             &view
         };
-        if deferred {
-            self.worlds[0].render_deferred(&self.device, lines, lights, render_tex, &self.queue)?;
-        } else {
-            self.worlds[0].render(&self.device, lines, render_tex, None, &self.queue)?;
-        }
+        self.worlds[world.i()].render(&self.device, lines, render_tex, None, &self.queue)?;
 
         {
             let mut ui_render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
@@ -482,8 +345,7 @@ impl Renderer {
                 &mut ui_render_pass,
                 meshes,
                 pixels_per_point,
-                self.config.height,
-                self.config.width,
+                (self.config.width, self.config.height),
             );
         }
 
@@ -493,5 +355,163 @@ impl Renderer {
         output.present();
 
         Ok(())
+    }
+
+    /// Get the renderer's size.
+    pub fn size(&self) -> (u32, u32) {
+        self.size
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct WorldId(u32);
+
+impl WorldId {
+    fn i(&self) -> usize {
+        self.0 as usize
+    }
+}
+
+#[repr(C)]
+#[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct RawTranslationMatrix {
+    model: [[f32; 4]; 4],
+    rotation: [[f32; 3]; 3],
+}
+
+impl RawTranslationMatrix {
+    pub fn new(transform: Transform) -> Self {
+        let Vec3 { x, y, z } = transform.scale;
+
+        Self {
+            model: unsafe {
+                mem::transmute::<Mat4, _>(
+                    Mat4::translation_3d(transform.position)
+                        * Mat4::from(transform.rotation)
+                        * Mat4::with_diagonal(Vec4::new(x, y, z, 1.0)),
+                )
+            },
+            rotation: unsafe { mem::transmute::<Mat3, _>(Mat3::from(transform.rotation)) },
+        }
+    }
+}
+
+impl RawTranslationMatrix {
+    fn desc<'a>() -> wgpu::VertexBufferLayout<'a> {
+        wgpu::VertexBufferLayout {
+            array_stride: mem::size_of::<RawTranslationMatrix>() as wgpu::BufferAddress,
+            step_mode: wgpu::VertexStepMode::Instance,
+            attributes: &[
+                wgpu::VertexAttribute {
+                    offset: 0,
+                    shader_location: 5,
+                    format: wgpu::VertexFormat::Float32x4,
+                },
+                wgpu::VertexAttribute {
+                    offset: 4 * 4,
+                    shader_location: 6,
+                    format: wgpu::VertexFormat::Float32x4,
+                },
+                wgpu::VertexAttribute {
+                    offset: 2 * 4 * 4,
+                    shader_location: 7,
+                    format: wgpu::VertexFormat::Float32x4,
+                },
+                wgpu::VertexAttribute {
+                    offset: 3 * 4 * 4,
+                    shader_location: 8,
+                    format: wgpu::VertexFormat::Float32x4,
+                },
+                wgpu::VertexAttribute {
+                    offset: mem::size_of::<[f32; 16]>() as wgpu::BufferAddress,
+                    shader_location: 9,
+                    format: wgpu::VertexFormat::Float32x3,
+                },
+                wgpu::VertexAttribute {
+                    offset: mem::size_of::<[f32; 19]>() as wgpu::BufferAddress,
+                    shader_location: 10,
+                    format: wgpu::VertexFormat::Float32x3,
+                },
+                wgpu::VertexAttribute {
+                    offset: mem::size_of::<[f32; 22]>() as wgpu::BufferAddress,
+                    shader_location: 11,
+                    format: wgpu::VertexFormat::Float32x3,
+                },
+            ],
+        }
+    }
+}
+
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct Line {
+    pub start: Vec3,
+    pub end: Vec3,
+    pub color: Vec3,
+}
+
+impl Line {
+    fn into_raw(self) -> RawLine {
+        let Line {
+            start:
+                Vec3 {
+                    x: s_x,
+                    y: s_y,
+                    z: s_z,
+                },
+            end:
+                Vec3 {
+                    x: e_x,
+                    y: e_y,
+                    z: e_z,
+                },
+            color: Vec3 { x: r, y: g, z: b },
+        } = self;
+        let color = [r, g, b];
+        RawLine {
+            start: RawLineVertex {
+                pos: [s_x, s_y, s_z],
+                color,
+            },
+            end: RawLineVertex {
+                pos: [e_x, e_y, e_z],
+                color,
+            },
+        }
+    }
+}
+
+#[repr(C)]
+#[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+struct RawLine {
+    start: RawLineVertex,
+    end: RawLineVertex,
+}
+
+#[repr(C)]
+#[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+struct RawLineVertex {
+    pub pos: [f32; 3],
+    pub color: [f32; 3],
+}
+
+impl RawLineVertex {
+    fn desc<'a>() -> wgpu::VertexBufferLayout<'a> {
+        wgpu::VertexBufferLayout {
+            array_stride: mem::size_of::<RawLineVertex>() as wgpu::BufferAddress,
+            step_mode: wgpu::VertexStepMode::Vertex,
+            attributes: &[
+                wgpu::VertexAttribute {
+                    offset: 0,
+                    shader_location: 0,
+                    format: wgpu::VertexFormat::Float32x3,
+                },
+                wgpu::VertexAttribute {
+                    offset: mem::size_of::<[f32; 3]>() as wgpu::BufferAddress,
+                    shader_location: 1,
+                    format: wgpu::VertexFormat::Float32x3,
+                },
+            ],
+        }
     }
 }

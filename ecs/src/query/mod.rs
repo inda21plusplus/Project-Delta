@@ -135,11 +135,13 @@ impl<'a, 'r, 'q> Iterator for Iter<'a, 'r, 'q> {
     type Item = (Entity, Vec<*mut u8>);
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.entity_iter.next().and_then(|e| unsafe {
-            self.res
-                .try_get_by_index(self.entity_iter.entities().id(e).unwrap())
-                .map(|comps| (e, comps))
-        })
+        loop {
+            let entity = self.entity_iter.next()?;
+            let id = self.entity_iter.entities().id(entity).unwrap();
+            if let Some(comps) = unsafe { self.res.try_get_by_index(id) } {
+                return Some((entity, comps));
+            }
+        }
     }
 }
 

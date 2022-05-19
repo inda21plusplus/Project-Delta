@@ -10,9 +10,18 @@ pub type Mat4 = vek::mat::repr_c::Mat4<f32>;
 
 pub type Ray = vek::Ray<f32>;
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Debug, Copy, Clone, Default)]
 pub struct Transform {
     pub position: Vec3,
     pub rotation: Quaternion,
     pub scale: Vec3,
+}
+
+impl Transform {
+    pub fn at(position: Vec3) -> Self {
+        Transform {
+            position,
+            ..Default::default()
+        }
+    }
 }

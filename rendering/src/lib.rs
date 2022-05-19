@@ -13,4 +13,4 @@ mod renderer;
 pub use camera::Camera;
 pub use error::RenderingError;
 pub use renderer::world::Light;
-pub use renderer::{Line, Renderer};
+pub use renderer::{Line, Renderer, WorldId};

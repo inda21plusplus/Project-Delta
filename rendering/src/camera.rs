@@ -7,18 +7,17 @@ pub struct Camera {
     pub eye: Vec3,
     pub target: Vec3,
     pub up: Vec3,
-    pub aspect: f32,
     pub fovy: f32,
     pub znear: f32,
     pub zfar: f32,
 }
 
 impl Camera {
-    fn build_view_projection_matrix(&self) -> Mat4 {
+    fn build_view_projection_matrix(&self, aspect: f32) -> Mat4 {
         let view = Mat4::look_at_rh(self.eye, self.target, self.up);
         // This function just uses `width / height` to calculate the aspect ratio, so `aspect, 1.`
         // should effectively do what we want.
-        let proj = Mat4::perspective_fov_rh_zo(self.fovy, self.aspect, 1., self.znear, self.zfar);
+        let proj = Mat4::perspective_fov_rh_zo(self.fovy, aspect, 1., self.znear, self.zfar);
         proj * view
     }
 }
@@ -31,22 +30,40 @@ pub struct CameraUniform {
     _padding: u32,
 }
 
-impl CameraUniform {
-    pub fn new(camera: &Camera) -> Self {
+impl Default for CameraUniform {
+    fn default() -> Self {
         Self {
-            view_proj: Self::get_view_proj(camera),
+            view_proj: unsafe {
+                mem::transmute(
+                    opengl_to_wgpu_matrix()
+                        * Mat4::perspective_fov_rh_zo(30f32.to_radians(), 2., 1., 0.1, 1000.)
+                        * Mat4::look_at_rh(Vec3::zero(), -Vec3::unit_z(), Vec3::unit_y()),
+                )
+            },
+            world_pos: [0.; 3],
+            _padding: 0,
+        }
+    }
+}
+
+impl CameraUniform {
+    pub fn new(camera: &Camera, aspect: f32) -> Self {
+        Self {
+            view_proj: Self::get_view_proj(camera, aspect),
             world_pos: camera.eye.into_array(),
             _padding: 0,
         }
     }
 
-    pub fn update_view_proj(&mut self, camera: &Camera) {
-        self.view_proj = Self::get_view_proj(camera);
+    pub fn update_view_proj(&mut self, camera: &Camera, aspect: f32) {
+        self.view_proj = Self::get_view_proj(camera, aspect);
         self.world_pos = camera.eye.into_array();
     }
 
-    fn get_view_proj(camera: &Camera) -> [[f32; 4]; 4] {
-        unsafe { mem::transmute(opengl_to_wgpu_matrix() * camera.build_view_projection_matrix()) }
+    fn get_view_proj(camera: &Camera, aspect: f32) -> [[f32; 4]; 4] {
+        unsafe {
+            mem::transmute(opengl_to_wgpu_matrix() * camera.build_view_projection_matrix(aspect))
+        }
     }
 }
 

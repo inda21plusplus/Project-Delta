@@ -3,7 +3,7 @@ use std::time::Instant;
 use ecs::World;
 use rendering::Renderer;
 
-use crate::{physics_systems, time::TIME_STEP, Time};
+use crate::{physics_systems, rendering_systems, time::TIME_STEP, Time};
 
 pub struct Engine {
     pub renderer: Renderer,
@@ -13,10 +13,14 @@ pub struct Engine {
 }
 
 impl Engine {
-    pub fn new(renderer: Renderer) -> Self {
+    pub fn new(mut renderer: Renderer) -> Self {
+        let world_id = renderer.create_world();
+        let mut world = World::default();
+        world.add_resource(world_id);
+
         Self {
             renderer,
-            world: World::default(),
+            world,
             last_update: None,
         }
     }
@@ -41,5 +45,7 @@ impl Engine {
             i += 1;
         }
         self.last_update = Some(last_update);
+
+        rendering_systems::render(&mut self.renderer, &mut self.world);
     }
 }

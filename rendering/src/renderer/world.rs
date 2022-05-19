@@ -3,270 +3,12 @@ use wgpu::util::DeviceExt;
 use super::{gbuffer::GBuffer, Line, RawLine};
 use crate::camera::{Camera, CameraUniform};
 use crate::error::RenderingError;
-use crate::model::{DrawModel, Model, ModelIndex, ModelManager, ModelStorage, ModelVertex, Vertex};
+use crate::model::{DrawModel, Model, ModelIndex, ModelStorage, ModelVertex, Vertex};
 use crate::renderer::Renderer;
 use crate::texture;
-use common::Vec3;
+use common::{Transform, Vec3};
 
 use std::mem;
-
-pub struct ScreenQuad {
-    vtx: wgpu::Buffer,
-    idx: wgpu::Buffer,
-}
-
-pub struct LightSpheres {
-    vtx: wgpu::Buffer,
-    idx: wgpu::Buffer,
-    transforms: wgpu::Buffer, // just a float as we only need a scale value
-    n_elems: u32,
-    n_lights: u64,
-    lights: Vec<Light>,
-}
-
-#[repr(C)]
-#[derive(bytemuck::Zeroable, bytemuck::Pod, Debug, Copy, Clone)]
-pub struct RawLight {
-    world_pos: [f32; 3],
-    color: [f32; 3],
-    radius: f32,
-    k_c: f32,
-    k_l: f32,
-    k_q: f32,
-}
-
-#[repr(C)]
-#[derive(bytemuck::Zeroable, bytemuck::Pod, Debug, Copy, Clone)]
-struct LightUniform {
-    world_pos: [f32; 3],
-    radius: f32,
-    color: [f32; 4], // alpha isn't used, just padding
-    ks: [f32; 4],    // k_{c,l,q} and an extra for padding
-}
-
-impl From<&RawLight> for LightUniform {
-    fn from(l: &RawLight) -> Self {
-        let RawLight {
-            world_pos,
-            color,
-            radius,
-            k_c,
-            k_l,
-            k_q,
-        } = *l;
-        Self {
-            world_pos,
-            radius,
-            color: [color[0], color[1], color[2], 1.0],
-            ks: [k_c, k_l, k_q, 0.0],
-        }
-    }
-}
-
-impl From<&Light> for RawLight {
-    fn from(l: &Light) -> Self {
-        RawLight {
-            world_pos: l.pos.into_array(),
-            color: l.color,
-            radius: l.calc_radius(),
-            k_c: l.k_constant,
-            k_l: l.k_linear,
-            k_q: l.k_quadratic,
-        }
-    }
-}
-
-fn update_buffer<T: bytemuck::Pod>(
-    device: &wgpu::Device,
-    queue: &wgpu::Queue,
-    buffer: &mut wgpu::Buffer,
-    new_data: &[T],
-    buf_size: &mut u64,
-) {
-    if new_data.len() > *buf_size as usize {
-        *buf_size = new_data.len() as u64;
-        *buffer = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("Line Buffer"),
-            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-            mapped_at_creation: false,
-            size: *buf_size * mem::size_of::<T>() as wgpu::BufferAddress,
-        });
-    }
-    queue.write_buffer(&*buffer, 0, bytemuck::cast_slice(new_data));
-}
-
-impl LightSpheres {
-    fn desc<'a>() -> wgpu::VertexBufferLayout<'a> {
-        wgpu::VertexBufferLayout {
-            array_stride: mem::size_of::<[f32; 3]>() as wgpu::BufferAddress,
-            step_mode: wgpu::VertexStepMode::Vertex,
-            attributes: &[wgpu::VertexAttribute {
-                format: wgpu::VertexFormat::Float32x3,
-                offset: 0,
-                shader_location: 0,
-            }],
-        }
-    }
-
-    fn new(device: &wgpu::Device) -> Self {
-        use std::io::BufReader;
-        static LIGHT_SPHERE_OBJ: &[u8] = include_bytes!("lightsphere.obj");
-        let mut buf = BufReader::new(LIGHT_SPHERE_OBJ);
-        let sphere_obj = tobj::load_obj_buf(&mut buf, &tobj::GPU_LOAD_OPTIONS, |_| {
-            Err(tobj::LoadError::GenericFailure)
-        }).expect("failed importing the light sphere, this is a statically linked value and should never fail");
-        let mut verts: Vec<[f32; 3]> = Vec::new();
-        let mesh = (sphere_obj.0)[0].mesh.clone();
-        for i in 0..mesh.positions.len() / 3 {
-            verts.push([
-                mesh.positions[i * 3],
-                mesh.positions[i * 3 + 1],
-                mesh.positions[i * 3 + 2],
-            ])
-        }
-
-        let vtx = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Light sphere vertex buffer"),
-            usage: wgpu::BufferUsages::VERTEX,
-            contents: bytemuck::cast_slice(&verts),
-        });
-        let idx = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Light sphere index buffer"),
-            usage: wgpu::BufferUsages::INDEX,
-            contents: bytemuck::cast_slice(&mesh.indices),
-        });
-
-        let n_lights = 16;
-        let transforms = device.create_buffer(&wgpu::BufferDescriptor {
-            label: Some("Light sphere instance buffer"),
-            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
-            size: n_lights * mem::size_of::<RawLight>() as wgpu::BufferAddress,
-            mapped_at_creation: false,
-        });
-
-        Self {
-            vtx,
-            idx,
-            n_elems: mesh.indices.len() as u32,
-            n_lights,
-            transforms,
-            lights: vec![],
-        }
-    }
-}
-
-#[derive(Debug, Copy, Clone)]
-pub struct Light {
-    pub pos: Vec3,
-    pub color: [f32; 3],
-    pub k_quadratic: f32,
-    pub k_linear: f32,
-    pub k_constant: f32,
-}
-
-impl Light {
-    pub fn calc_radius(&self) -> f32 {
-        let light_max = Vec3::from(self.color).reduce_partial_max();
-        let &Self {
-            k_quadratic: quadratic,
-            k_linear: linear,
-            k_constant: constant,
-            ..
-        } = self;
-        let almost_black = 1.0 / (5.0 / 256.0 / 12.92); // convert sRGB to linear
-        let radius = (-linear
-            + f32::sqrt(linear * linear - 4.0 * quadratic * (constant - almost_black * light_max)))
-            / (2.0 * quadratic);
-
-        radius
-    }
-}
-
-impl ScreenQuad {
-    pub fn new(device: &wgpu::Device) -> Self {
-        const LOWER_LEFT: [f32; 2] = [-1.0, -1.0];
-        const UPPER_RIGHT: [f32; 2] = [1.0, 1.0];
-        const QUAD_VERTS: [[f32; 2]; 4] = [
-            LOWER_LEFT,
-            // upper left
-            [LOWER_LEFT[0], UPPER_RIGHT[1]],
-            UPPER_RIGHT,
-            // lower right
-            [UPPER_RIGHT[0], LOWER_LEFT[1]],
-        ];
-        // lower left-upper left-upper right
-        const QUAD_INDICES: [u16; 6] = [0, 1, 2, 2, 3, 0];
-
-        Self {
-            vtx: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("screen quad vertex buffer"),
-                usage: wgpu::BufferUsages::VERTEX,
-                contents: bytemuck::cast_slice(&QUAD_VERTS),
-            }),
-            idx: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-                label: Some("screen quad index buffer"),
-                usage: wgpu::BufferUsages::INDEX,
-                contents: bytemuck::cast_slice(&QUAD_INDICES),
-            }),
-        }
-    }
-
-    pub fn desc<'a>() -> wgpu::VertexBufferLayout<'a> {
-        wgpu::VertexBufferLayout {
-            array_stride: mem::size_of::<[f32; 2]>() as wgpu::BufferAddress,
-            step_mode: wgpu::VertexStepMode::Vertex,
-            attributes: &[wgpu::VertexAttribute {
-                format: wgpu::VertexFormat::Float32x2,
-                offset: 0,
-                shader_location: 0,
-            }],
-        }
-    }
-}
-
-impl Vertex for RawLight {
-    fn desc<'a>() -> wgpu::VertexBufferLayout<'a> {
-        wgpu::VertexBufferLayout {
-            array_stride: mem::size_of::<RawLight>() as wgpu::BufferAddress,
-            step_mode: wgpu::VertexStepMode::Instance,
-            attributes: &[
-                wgpu::VertexAttribute {
-                    format: wgpu::VertexFormat::Float32x3,
-                    offset: 0,
-                    shader_location: 1,
-                },
-                wgpu::VertexAttribute {
-                    format: wgpu::VertexFormat::Float32x3,
-                    offset: mem::size_of::<[f32; 3]>() as wgpu::BufferAddress,
-                    shader_location: 2,
-                },
-                wgpu::VertexAttribute {
-                    format: wgpu::VertexFormat::Float32,
-                    offset: 2 * mem::size_of::<[f32; 3]>() as wgpu::BufferAddress,
-                    shader_location: 3,
-                },
-                wgpu::VertexAttribute {
-                    format: wgpu::VertexFormat::Float32,
-                    offset: (2 * mem::size_of::<[f32; 3]>() + mem::size_of::<f32>())
-                        as wgpu::BufferAddress,
-                    shader_location: 4,
-                },
-                wgpu::VertexAttribute {
-                    format: wgpu::VertexFormat::Float32,
-                    offset: (2 * mem::size_of::<[f32; 3]>() + 2 * mem::size_of::<f32>())
-                        as wgpu::BufferAddress,
-                    shader_location: 5,
-                },
-                wgpu::VertexAttribute {
-                    format: wgpu::VertexFormat::Float32,
-                    offset: (2 * mem::size_of::<[f32; 3]>() + 3 * mem::size_of::<f32>())
-                        as wgpu::BufferAddress,
-                    shader_location: 6,
-                },
-            ],
-        }
-    }
-}
 
 // A world of "things" that can be rendered to an area of the screen
 pub struct World {
@@ -274,16 +16,13 @@ pub struct World {
     line_vertex_buffer: wgpu::Buffer,           // Line vertex buffer
     n_lines: u32,                               // How many lines the line buffer can fit
 
-    render_pipeline: wgpu::RenderPipeline, // the main (forward) render pipeline
-
-    model_storage: ModelStorage, // where all models are kept and managed
-
-    texture_bind_group_layout: wgpu::BindGroupLayout, // the bindgroup for all model textures
-
-    pub camera: Camera,                 // the camera data
     camera_bind_group: wgpu::BindGroup, // the camera's bindgroup
     camera_uniform: CameraUniform,      // the matching uniform
     camera_buffer: wgpu::Buffer,        // the camera's buffer
+
+    render_pipeline: wgpu::RenderPipeline, // the main (forward) render pipeline
+
+    texture_bind_group_layout: wgpu::BindGroupLayout, // the bindgroup for all model textures
 
     forward_light_bind_group: wgpu::BindGroup, // the forward-renderer's light bindgroup
     forward_light_buffer: wgpu::Buffer,        // the matching buffer
@@ -301,12 +40,16 @@ pub struct World {
     light_spheres: LightSpheres, // the manager for all lights and their corresponding light volumes
     gbuffer: GBuffer,        // the G-Buffer itself
 
+    model_storage: ModelStorage, // where all models are kept and managed
+
+    pub deferred: bool,
+
     clear_color: [f64; 3],
 }
 
 impl World {
-    pub fn new(rd: &Renderer, camera: Camera) -> Self {
-        let camera_uniform = CameraUniform::new(&camera);
+    pub fn new(rd: &Renderer) -> Self {
+        let camera_uniform = CameraUniform::default();
 
         let camera_buffer = rd
             .device
@@ -552,7 +295,7 @@ impl World {
 
         let deferred_shader = rd
             .device
-            .create_shader_module(&wgpu::include_wgsl!("../../deferred.wgsl"));
+            .create_shader_module(&wgpu::include_wgsl!("../../shaders/deferred.wgsl"));
 
         let blend = Some(wgpu::BlendState {
             color: wgpu::BlendComponent::REPLACE,
@@ -624,7 +367,7 @@ impl World {
         // this pipeline does nothing but copy over color data
         let copy_shader = rd
             .device
-            .create_shader_module(&wgpu::include_wgsl!("../../gbuffer_copy.wgsl"));
+            .create_shader_module(&wgpu::include_wgsl!("../../shaders/gbuffer_copy.wgsl"));
         let copy_pipeline_layout =
             rd.device
                 .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -670,7 +413,7 @@ impl World {
 
         let light_shader = rd
             .device
-            .create_shader_module(&wgpu::include_wgsl!("../../deferred-light.wgsl"));
+            .create_shader_module(&wgpu::include_wgsl!("../../shaders/deferred-light.wgsl"));
         let light_pipeline_layout =
             rd.device
                 .create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -723,7 +466,6 @@ impl World {
             });
 
         World {
-            camera,
             line_render_pipeline,
             line_vertex_buffer,
             n_lines,
@@ -744,6 +486,7 @@ impl World {
             light_pipeline,
             light_spheres: LightSpheres::new(&rd.device),
             screen_quad: ScreenQuad::new(&rd.device),
+            deferred: true,
             clear_color: rd.clear_color,
         }
     }
@@ -827,25 +570,27 @@ impl World {
         );
     }
 
-    fn upload_lights(&mut self, device: &wgpu::Device, queue: &wgpu::Queue, lights: &[Light]) {
-        self.light_spheres.lights = lights.to_vec();
+    pub fn set_lights(&mut self, lights: Vec<(Light, Vec3)>) {
+        self.light_spheres.lights = lights;
+    }
+
+    fn upload_lights(&mut self, device: &wgpu::Device, queue: &wgpu::Queue) {
+        let lights = &self.light_spheres.lights;
+        let raw_lights: Vec<_> = lights.iter().map(RawLight::from).collect();
         update_buffer(
             device,
             queue,
             &mut self.light_spheres.transforms,
-            &self
-                .light_spheres
-                .lights
-                .iter()
-                .map(RawLight::from)
-                .collect::<Vec<_>>(),
+            &raw_lights,
             &mut self.light_spheres.n_lights,
         );
-        queue.write_buffer(
-            &self.forward_light_buffer,
-            0,
-            bytemuck::cast_slice(&[LightUniform::from(&RawLight::from(&lights[0]))]),
-        );
+        if let Some(light) = raw_lights.get(0) {
+            queue.write_buffer(
+                &self.forward_light_buffer,
+                0,
+                bytemuck::cast_slice(&[LightUniform::from(light)]),
+            );
+        }
     }
 
     pub fn render_rpass<'a>(
@@ -875,19 +620,8 @@ impl World {
         Ok(idx)
     }
 
-    pub(crate) fn get_models_mut<'a>(
-        &'a mut self,
-        device: &'a wgpu::Device,
-        queue: &'a wgpu::Queue,
-    ) -> ModelManager<'a> {
-        self.model_storage.get_manager(device, queue)
-    }
-
-    pub fn update_camera(&mut self, queue: &wgpu::Queue, last_aspect: Option<f32>) {
-        if let Some(aspect) = last_aspect {
-            self.camera.aspect = aspect;
-        }
-        self.camera_uniform.update_view_proj(&self.camera);
+    pub fn update_camera(&mut self, queue: &wgpu::Queue, camera: &Camera, aspect: f32) {
+        self.camera_uniform.update_view_proj(camera, aspect);
 
         queue.write_buffer(
             &self.camera_buffer,
@@ -896,20 +630,34 @@ impl World {
         );
     }
 
-    //#[deprecated = "use the model manager for this functionality instead"]
-    pub fn update_instances(
+    pub fn update_instances<'a>(
         &mut self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
-        instances: &[(ModelIndex, &[super::Transform])],
+        instances: impl Iterator<Item = (ModelIndex, &'a [Transform])>,
     ) {
-        for (idx, data) in instances {
+        for (idx, transforms) in instances {
             self.model_storage
-                .set_transforms(device, queue, *idx, data.to_vec());
+                .set_transforms(device, queue, idx, transforms.to_vec());
         }
     }
 
     pub fn render(
+        &mut self,
+        device: &wgpu::Device,
+        lines: &[super::Line],
+        render_target: &wgpu::TextureView,
+        depth_attachment: Option<&texture::Texture>,
+        queue: &wgpu::Queue,
+    ) -> Result<(), RenderingError> {
+        if self.deferred {
+            self.render_deferred(device, lines, render_target, queue)
+        } else {
+            self.render_forward(device, lines, render_target, depth_attachment, queue)
+        }
+    }
+
+    fn render_forward(
         &mut self,
         device: &wgpu::Device,
         lines: &[super::Line],
@@ -928,7 +676,7 @@ impl World {
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Render Pass"),
                 color_attachments: &[wgpu::RenderPassColorAttachment {
-                    view: &render_target,
+                    view: render_target,
                     resolve_target: None,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Clear(wgpu::Color { r, g, b, a: 1.0 }),
@@ -951,16 +699,15 @@ impl World {
         Ok(())
     }
 
-    pub fn render_deferred(
+    fn render_deferred(
         &mut self,
         device: &wgpu::Device,
         lines: &[super::Line],
-        lights: &[Light],
         render_target: &wgpu::TextureView,
         queue: &wgpu::Queue,
     ) -> Result<(), RenderingError> {
         self.upload_lines(device, queue, lines);
-        self.upload_lights(device, queue, lights);
+        self.upload_lights(device, queue);
 
         let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
             label: Some("Render Encoder"),
@@ -1029,14 +776,14 @@ impl World {
             light_render_pass.draw_indexed(
                 0..self.light_spheres.n_elems,
                 0,
-                0..lights.len() as u32,
+                0..self.light_spheres.lights.len() as u32,
             );
         }
         {
             let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Line Render Pass"),
                 color_attachments: &[wgpu::RenderPassColorAttachment {
-                    view: &render_target,
+                    view: render_target,
                     resolve_target: None,
                     ops: wgpu::Operations {
                         load: wgpu::LoadOp::Load,
@@ -1061,5 +808,261 @@ impl World {
         queue.submit(std::iter::once(encoder.finish()));
 
         Ok(())
+    }
+}
+
+pub struct ScreenQuad {
+    vtx: wgpu::Buffer,
+    idx: wgpu::Buffer,
+}
+
+pub struct LightSpheres {
+    vtx: wgpu::Buffer,
+    idx: wgpu::Buffer,
+    transforms: wgpu::Buffer, // just a float as we only need a scale value
+    n_elems: u32,
+    n_lights: u64,
+    lights: Vec<(Light, Vec3)>,
+}
+
+#[repr(C)]
+#[derive(bytemuck::Zeroable, bytemuck::Pod, Debug, Copy, Clone)]
+pub struct RawLight {
+    world_pos: [f32; 3],
+    color: [f32; 3],
+    radius: f32,
+    k_c: f32,
+    k_l: f32,
+    k_q: f32,
+}
+
+#[repr(C)]
+#[derive(bytemuck::Zeroable, bytemuck::Pod, Debug, Copy, Clone)]
+struct LightUniform {
+    world_pos: [f32; 3],
+    radius: f32,
+    color: [f32; 4], // alpha isn't used, just padding
+    ks: [f32; 4],    // k_{c,l,q} and an extra for padding
+}
+
+impl From<&RawLight> for LightUniform {
+    fn from(l: &RawLight) -> Self {
+        let RawLight {
+            world_pos,
+            color,
+            radius,
+            k_c,
+            k_l,
+            k_q,
+        } = *l;
+        Self {
+            world_pos,
+            radius,
+            color: [color[0], color[1], color[2], 1.0],
+            ks: [k_c, k_l, k_q, 0.0],
+        }
+    }
+}
+
+impl From<&(Light, Vec3)> for RawLight {
+    fn from((light, pos): &(Light, Vec3)) -> Self {
+        RawLight {
+            world_pos: pos.into_array(),
+            color: light.color,
+            radius: light.calc_radius(),
+            k_c: light.k_constant,
+            k_l: light.k_linear,
+            k_q: light.k_quadratic,
+        }
+    }
+}
+
+fn update_buffer<T: bytemuck::Pod>(
+    device: &wgpu::Device,
+    queue: &wgpu::Queue,
+    buffer: &mut wgpu::Buffer,
+    new_data: &[T],
+    buf_size: &mut u64,
+) {
+    if new_data.len() > *buf_size as usize {
+        *buf_size = new_data.len() as u64;
+        *buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Line Buffer"),
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+            size: *buf_size * mem::size_of::<T>() as wgpu::BufferAddress,
+        });
+    }
+    queue.write_buffer(&*buffer, 0, bytemuck::cast_slice(new_data));
+}
+
+impl LightSpheres {
+    fn desc<'a>() -> wgpu::VertexBufferLayout<'a> {
+        wgpu::VertexBufferLayout {
+            array_stride: mem::size_of::<[f32; 3]>() as wgpu::BufferAddress,
+            step_mode: wgpu::VertexStepMode::Vertex,
+            attributes: &[wgpu::VertexAttribute {
+                format: wgpu::VertexFormat::Float32x3,
+                offset: 0,
+                shader_location: 0,
+            }],
+        }
+    }
+
+    fn new(device: &wgpu::Device) -> Self {
+        use std::io::BufReader;
+        static LIGHT_SPHERE_OBJ: &[u8] = include_bytes!("lightsphere.obj");
+        let mut buf = BufReader::new(LIGHT_SPHERE_OBJ);
+        let sphere_obj = tobj::load_obj_buf(&mut buf, &tobj::GPU_LOAD_OPTIONS, |_| {
+            Err(tobj::LoadError::GenericFailure)
+        }).expect("failed importing the light sphere, this is a statically linked value and should never fail");
+        let mut verts: Vec<[f32; 3]> = Vec::new();
+        let mesh = (sphere_obj.0)[0].mesh.clone();
+        for i in 0..mesh.positions.len() / 3 {
+            verts.push([
+                mesh.positions[i * 3],
+                mesh.positions[i * 3 + 1],
+                mesh.positions[i * 3 + 2],
+            ])
+        }
+
+        let vtx = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Light sphere vertex buffer"),
+            usage: wgpu::BufferUsages::VERTEX,
+            contents: bytemuck::cast_slice(&verts),
+        });
+        let idx = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Light sphere index buffer"),
+            usage: wgpu::BufferUsages::INDEX,
+            contents: bytemuck::cast_slice(&mesh.indices),
+        });
+
+        let n_lights = 16;
+        let transforms = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("Light sphere instance buffer"),
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            size: n_lights * mem::size_of::<RawLight>() as wgpu::BufferAddress,
+            mapped_at_creation: false,
+        });
+
+        Self {
+            vtx,
+            idx,
+            n_elems: mesh.indices.len() as u32,
+            n_lights,
+            transforms,
+            lights: vec![],
+        }
+    }
+}
+
+#[derive(Debug, Copy, Clone)]
+pub struct Light {
+    pub color: [f32; 3],
+    pub k_quadratic: f32,
+    pub k_linear: f32,
+    pub k_constant: f32,
+}
+
+impl Light {
+    pub fn calc_radius(&self) -> f32 {
+        let light_max = Vec3::from(self.color).reduce_partial_max();
+        let &Self {
+            k_quadratic: quadratic,
+            k_linear: linear,
+            k_constant: constant,
+            ..
+        } = self;
+        let almost_black = 1.0 / (5.0 / 256.0 / 12.92); // convert sRGB to linear
+
+        (-linear
+            + f32::sqrt(linear.powi(2) - 4.0 * quadratic * (constant - almost_black * light_max)))
+            / (2.0 * quadratic)
+    }
+}
+
+impl ScreenQuad {
+    pub fn new(device: &wgpu::Device) -> Self {
+        const LOWER_LEFT: [f32; 2] = [-1.0, -1.0];
+        const UPPER_RIGHT: [f32; 2] = [1.0, 1.0];
+        const QUAD_VERTS: [[f32; 2]; 4] = [
+            LOWER_LEFT,
+            // upper left
+            [LOWER_LEFT[0], UPPER_RIGHT[1]],
+            UPPER_RIGHT,
+            // lower right
+            [UPPER_RIGHT[0], LOWER_LEFT[1]],
+        ];
+        // lower left-upper left-upper right
+        const QUAD_INDICES: [u16; 6] = [0, 1, 2, 2, 3, 0];
+
+        Self {
+            vtx: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("screen quad vertex buffer"),
+                usage: wgpu::BufferUsages::VERTEX,
+                contents: bytemuck::cast_slice(&QUAD_VERTS),
+            }),
+            idx: device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+                label: Some("screen quad index buffer"),
+                usage: wgpu::BufferUsages::INDEX,
+                contents: bytemuck::cast_slice(&QUAD_INDICES),
+            }),
+        }
+    }
+
+    pub fn desc<'a>() -> wgpu::VertexBufferLayout<'a> {
+        wgpu::VertexBufferLayout {
+            array_stride: mem::size_of::<[f32; 2]>() as wgpu::BufferAddress,
+            step_mode: wgpu::VertexStepMode::Vertex,
+            attributes: &[wgpu::VertexAttribute {
+                format: wgpu::VertexFormat::Float32x2,
+                offset: 0,
+                shader_location: 0,
+            }],
+        }
+    }
+}
+
+impl Vertex for RawLight {
+    fn desc<'a>() -> wgpu::VertexBufferLayout<'a> {
+        wgpu::VertexBufferLayout {
+            array_stride: mem::size_of::<RawLight>() as wgpu::BufferAddress,
+            step_mode: wgpu::VertexStepMode::Instance,
+            attributes: &[
+                wgpu::VertexAttribute {
+                    format: wgpu::VertexFormat::Float32x3,
+                    offset: 0,
+                    shader_location: 1,
+                },
+                wgpu::VertexAttribute {
+                    format: wgpu::VertexFormat::Float32x3,
+                    offset: mem::size_of::<[f32; 3]>() as wgpu::BufferAddress,
+                    shader_location: 2,
+                },
+                wgpu::VertexAttribute {
+                    format: wgpu::VertexFormat::Float32,
+                    offset: 2 * mem::size_of::<[f32; 3]>() as wgpu::BufferAddress,
+                    shader_location: 3,
+                },
+                wgpu::VertexAttribute {
+                    format: wgpu::VertexFormat::Float32,
+                    offset: (2 * mem::size_of::<[f32; 3]>() + mem::size_of::<f32>())
+                        as wgpu::BufferAddress,
+                    shader_location: 4,
+                },
+                wgpu::VertexAttribute {
+                    format: wgpu::VertexFormat::Float32,
+                    offset: (2 * mem::size_of::<[f32; 3]>() + 2 * mem::size_of::<f32>())
+                        as wgpu::BufferAddress,
+                    shader_location: 5,
+                },
+                wgpu::VertexAttribute {
+                    format: wgpu::VertexFormat::Float32,
+                    offset: (2 * mem::size_of::<[f32; 3]>() + 3 * mem::size_of::<f32>())
+                        as wgpu::BufferAddress,
+                    shader_location: 6,
+                },
+            ],
+        }
     }
 }

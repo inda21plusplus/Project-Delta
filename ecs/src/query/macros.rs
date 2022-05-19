@@ -249,6 +249,20 @@ macro_rules! _query_defvars_combs {
     ( $comps1:expr, $comps2:expr, $lt:expr, $entity:expr, ($name:tt: Entity) ) => {
         let $name = $entity;
     };
+    // opt
+    ( $comps1:expr, $comps2:expr, $lt:expr, $entity:expr, ($name:tt: Option<$type:ty>) ) => {
+        let $name = unsafe { (
+            $crate::query::_as_opt_ref_lt($lt, $comps1[0].cast::<$type>()),
+            $crate::query::_as_opt_ref_lt($lt, $comps2[0].cast::<$type>()),
+        ) };
+    };
+    // opt mut
+    ( $comps1:expr, $comps2:expr, $lt:expr, $entity:expr, ($name:tt: mut Option<$type:ty>) ) => {
+        let $name = unsafe { (
+            $crate::query::_as_opt_mut_lt($lt, $comps1[0].cast::<$type>()),
+            $crate::query::_as_opt_mut_lt($lt, $comps2[0].cast::<$type>()),
+        ) };
+    };
     // comp
     ( $comps1:expr, $comps2:expr, $lt:expr, $entity:expr, ($name:tt: $type:ty) ) => {
         let $name = unsafe { (
