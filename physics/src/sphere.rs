@@ -22,7 +22,7 @@ impl SphereCollider {
 
     pub fn get_radius(&self, scale: Vec3) -> f32 {
         // TODO: add support for non-uniformly scaled "spheres"
-        let scale = (scale.x + scale.y + scale.z) / 3.;
+        let scale = scale.x.abs().max(scale.y.abs()).max(scale.z.abs());
 
         debug_assert!(self.radius >= 0.0);
         debug_assert!(scale >= 0.0);

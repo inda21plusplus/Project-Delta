@@ -4,7 +4,7 @@ use macros::debug_assert_finite;
 
 mod collision;
 mod cube;
-mod raycast;
+pub mod raycast;
 mod rigidbody;
 mod sphere;
 
@@ -16,6 +16,12 @@ pub use rigidbody::Rigidbody;
 pub use sphere::SphereCollider;
 
 pub struct Gravity(pub Vec3);
+
+impl Gravity {
+    pub fn zero() -> Self {
+        Gravity(Vec3::zero())
+    }
+}
 
 impl std::default::Default for Gravity {
     fn default() -> Self {
