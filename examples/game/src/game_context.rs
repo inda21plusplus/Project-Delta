@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use anyhow::Context as _;
 use rand::Rng as _;
@@ -40,6 +40,11 @@ pub struct GameBall {
     pub _player_index: u8, // what player is to play, start as 0
     pub _players: u8,      // how many players
     pub force: f32,
+}
+
+#[derive(Debug)]
+pub struct Ball {
+    pub ball_number: usize,
 }
 
 struct UnityTransform {
@@ -116,6 +121,7 @@ impl GameScene {
 
         world.add_resource(physics::Gravity::default());
         world.add_resource::<Vec<Line>>(vec![]);
+        world.add_resource::<HashSet<usize>>(HashSet::new());
 
         let unity_export: Vec<UnityTransform> = vec![
             UnityTransform {
@@ -239,7 +245,7 @@ impl GameScene {
                 },
             );
             world.add(ball, Rigidbody::new(BALL_MASS));
-
+            world.add(ball, Ball { ball_number: i });
             if i == 0 {
                 println!("Added gameball");
                 world.add(
@@ -281,6 +287,7 @@ impl GameScene {
                 })
             }
         }
+        println!("Init done 🎱");
         Ok(Self {
             ball_models,
             cube_model: table_model,
@@ -296,12 +303,12 @@ impl GameScene {
     pub fn update(&mut self, engine: &mut Engine) {
         let mut transforms: HashMap<ModelIndex, Vec<Transform>> = HashMap::new();
         let camera = engine.renderer.camera;
-        let key_map = engine
-            .world
-            .resource::<HashMap<VirtualKeyCode, bool>>()
-            .unwrap();
 
-        let time = engine.world.resource::<Time>().unwrap();
+        let world = &engine.world;
+
+        let key_map = world.resource::<HashMap<VirtualKeyCode, bool>>().unwrap();
+
+        let time = world.resource::<Time>().unwrap();
 
         let is_key_down = |keycode: VirtualKeyCode| -> bool {
             if let Some(is_down) = key_map.get(&keycode) {
@@ -311,22 +318,6 @@ impl GameScene {
             }
         };
 
-        // phx drag
-        query_iter!(engine.world, (rb: mut Rigidbody, transform : Transform) => {
-            if rb.velocity().magnitude_squared() < MIN_SPEED * MIN_SPEED {
-               rb.linear_momentum = Vec3::zero();
-               rb.angular_momentum = Vec3::zero();
-            } else {
-                if transform.position.y > BALL_RADIUS {
-                    let sub_max = 0.4*time.dt().as_secs_f32(); //* ;
-                    let sub_of =sub_max*( rb.linear_momentum.magnitude().min(5.0) / rb.linear_momentum.magnitude());
-
-                    rb.linear_momentum -= rb.linear_momentum * sub_of;
-                    rb.angular_momentum -= rb.angular_momentum * sub_of;
-                    rb.linear_momentum = Vec3::new(rb.linear_momentum.x,rb.linear_momentum.y.min(0.0),rb.linear_momentum.z).normalized() * rb.linear_momentum.magnitude();
-                }
-            }
-        });
         let mut hit_line: Option<Line> = None;
         let mut force = 0.0;
         // raycast
@@ -355,6 +346,7 @@ impl GameScene {
                 }
             }
         });
+
         let mut lines: Vec<Line> = Vec::new();
 
         if let Some(line) = hit_line {
@@ -385,12 +377,9 @@ impl GameScene {
 
         //}
 
-        query_iter!(engine.world, (rb: Rigidbody, transform : Transform) => {
-            //lines.push(Line { start: transform.position, end: transform.position + rb.linear_momentum, color: Vec3::new(1.0,0.0,0.0) })
-        });
-
-        let lines_res = engine.world.resource_mut::<Vec<Line>>().unwrap();
-        *lines_res = lines;
+        // query_iter!(engine.world, (rb: Rigidbody, transform : Transform) => {
+        //lines.push(Line { start: transform.position, end: transform.position + rb.linear_momentum, color: Vec3::new(1.0,0.0,0.0) })
+        // });
 
         let mut mgr = engine.renderer.get_models_mut();
 
@@ -405,6 +394,47 @@ impl GameScene {
             };
         });
 
+        let mut map: HashSet<usize> = HashSet::new();
+        
+        // phx drag
+        query_iter!(engine.world, (ball : Ball, rb: mut Rigidbody, transform : Transform) => {
+            if rb.velocity().magnitude_squared() < MIN_SPEED * MIN_SPEED {
+               rb.linear_momentum = Vec3::zero();
+               rb.angular_momentum = Vec3::zero();
+            } else {
+                if transform.position.y > BALL_RADIUS {
+                    let sub_max = 0.4*time.dt().as_secs_f32(); //* ;
+                    let sub_of =sub_max*( rb.linear_momentum.magnitude().min(5.0) / rb.linear_momentum.magnitude());
+
+                    rb.linear_momentum -= rb.linear_momentum * sub_of;
+                    rb.angular_momentum -= rb.angular_momentum * sub_of;
+                    rb.linear_momentum = Vec3::new(rb.linear_momentum.x,rb.linear_momentum.y.min(0.0),rb.linear_momentum.z).normalized() * rb.linear_momentum.magnitude();
+                } else {
+
+                    map.insert(ball.ball_number);
+                   // let res = commands.despawn(entity);
+                   // println!("RES::: > {:?}",res);
+                }
+            }
+        });
+
+
+        let balls_in = engine.world.resource_mut::<HashSet<usize>>().unwrap();
+        for ball in map {
+            if !balls_in.contains(&ball) {
+                println!("Hit {} into a hole", ball);
+                if ball == 0 {
+                    std::process::exit(0);
+                }
+                balls_in.insert(ball);
+            }
+        }
+
+        {
+            let lines_res = engine.world.resource_mut::<Vec<Line>>().unwrap();
+
+            *lines_res = lines;
+        }
         mgr.set_all_transforms(transforms);
     }
 }
