@@ -12,7 +12,7 @@ use common::{Vec2, Vec3};
 use game_engine::{
     physics,
     rendering::{Line, Renderer},
-    Engine,
+    GameEngine,
 };
 
 use crate::{
@@ -22,7 +22,7 @@ use crate::{
 };
 
 pub struct Editor {
-    engine: Engine,
+    engine: GameEngine,
     window: Window,
     state: EguiWinitState,
     egui_context: EguiContext,
@@ -48,7 +48,7 @@ impl Editor {
 
         let window =
             Window::new(&event_loop, icon).with_context(|| "failed to open the winit window")?;
-        let mut engine = Engine::new(
+        let mut engine = GameEngine::new(
             Renderer::new(
                 window.raw_window_handle(),
                 window.inner_size(),

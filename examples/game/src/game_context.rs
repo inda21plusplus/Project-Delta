@@ -10,7 +10,7 @@ use game_engine::{
         self, raycast::raycast, Collider, CubeCollider, PhysicsMaterial, Rigidbody, SphereCollider,
     },
     rendering::{model::ModelIndex, Light, Line},
-    Engine, Time,
+    GameEngine, Time,
 };
 use winit::event::VirtualKeyCode;
 
@@ -76,7 +76,7 @@ fn to_quaternion(yaw: f32, pitch: f32, roll: f32) -> Quaternion // yaw (Z), pitc
 }
 
 impl GameScene {
-    pub fn new(engine: &mut Engine) -> Result<Self, anyhow::Error> {
+    pub fn new(engine: &mut GameEngine) -> Result<Self, anyhow::Error> {
         let world = &mut engine.world;
         world.add_resource(HashMap::<VirtualKeyCode, bool>::new());
 
@@ -293,7 +293,7 @@ impl GameScene {
         })
     }
 
-    pub fn update(&mut self, engine: &mut Engine) {
+    pub fn update(&mut self, engine: &mut GameEngine) {
         let mut transforms: HashMap<ModelIndex, Vec<Transform>> = HashMap::new();
         let camera = engine.renderer.camera;
         let key_map = engine

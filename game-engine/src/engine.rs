@@ -5,14 +5,16 @@ use rendering::Renderer;
 
 use crate::{physics_systems, time::TIME_STEP, Time};
 
-pub struct Engine {
+use rhai::{Engine, EvalAltResult};
+
+pub struct GameEngine {
     pub renderer: Renderer,
     pub world: World,
 
     last_update: Option<Instant>,
 }
 
-impl Engine {
+impl GameEngine {
     pub fn new(renderer: Renderer) -> Self {
         Self {
             renderer,
@@ -41,5 +43,10 @@ impl Engine {
             i += 1;
         }
         self.last_update = Some(last_update);
+    }
+
+    pub fn exec_script(&mut self, script_file:&str) {
+        let engine = Engine::new();
+        engine.run_file(script_file.into());
     }
 }
